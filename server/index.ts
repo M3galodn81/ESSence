@@ -61,7 +61,7 @@ app.use((req, res, next) => {
       maxAge: 24 * 60 * 60 * 1000,
       sameSite: 'lax'
     },
-    name: 'apula.sid'
+    name: 'ess.sid'
   }));
 
   const server = await registerRoutes(app);

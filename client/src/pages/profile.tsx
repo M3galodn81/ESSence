@@ -160,7 +160,7 @@ export default function Profile() {
   return (
     <div className="p-6">
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
+        {}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="page-title">My Profile</h1>
@@ -185,7 +185,7 @@ export default function Profile() {
 
           <TabsContent value="personal">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Basic Information */}
+              {}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center">
@@ -287,7 +287,7 @@ export default function Profile() {
                 </CardContent>
               </Card>
 
-              {/* Emergency Contact */}
+              {}
               <Card>
                 <CardHeader>
                   <CardTitle>Emergency Contact</CardTitle>

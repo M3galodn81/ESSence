@@ -13,11 +13,9 @@ export default function PendingTasksCard() {
     queryKey: ["/api/user-trainings"],
   });
 
-  // Mock pending tasks - in a real app, this would come from an API
   const getPendingTasks = () => {
     const tasks = [];
     
-    // Check for incomplete required trainings
     if (trainings && userTrainings) {
       const requiredTrainings = trainings.filter((t: any) => t.isRequired);
       const completedTrainingIds = userTrainings
@@ -40,7 +38,6 @@ export default function PendingTasksCard() {
       });
     }
 
-    // Add a mock document review task
     tasks.push({
       id: 'document-review-1',
       type: 'document',

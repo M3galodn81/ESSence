@@ -33,7 +33,7 @@ export default function Header({ title, subtitle }: HeaderProps) {
         </div>
         
         <div className="flex items-center space-x-4">
-          {/* Notifications */}
+          {}
           <Button
             variant="ghost"
             size="sm"
@@ -50,7 +50,7 @@ export default function Header({ title, subtitle }: HeaderProps) {
             </Badge>
           </Button>
           
-          {/* Quick Actions */}
+          {}
           <Button
             className="bg-primary text-primary-foreground hover:bg-primary/90"
             size="sm"

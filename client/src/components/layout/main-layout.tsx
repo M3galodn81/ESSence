@@ -12,7 +12,7 @@ export default function MainLayout({ children, title = "Dashboard", subtitle }: 
   return (
     <div className="min-h-screen flex bg-background">
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden ml-0 lg:ml-64">
         <Header title={title} subtitle={subtitle} />
         <div className="flex-1 overflow-auto">
           {children}

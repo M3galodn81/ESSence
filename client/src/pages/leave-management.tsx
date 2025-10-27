@@ -38,7 +38,7 @@ export default function LeaveManagement() {
 
   const { data: pendingRequests, isLoading: pendingLoading } = useQuery({
     queryKey: ["/api/leave-requests/pending"],
-    enabled: user?.role === 'manager' || user?.role === 'hr',
+    enabled: user?.role === 'manager' || user?.role === 'admin',
   });
 
   const form = useForm<LeaveForm>({
@@ -135,12 +135,12 @@ export default function LeaveManagement() {
     return new Date(date).toLocaleDateString();
   };
 
-  const canManageLeaves = user?.role === 'manager' || user?.role === 'hr';
+  const canManageLeaves = user?.role === 'manager' || user?.role === 'admin';
 
   return (
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
+        {}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="page-title">Leave Management</h1>

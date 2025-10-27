@@ -9,14 +9,13 @@ import type { Schedule } from "@shared/schema";
 export default function Schedules() {
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Get start and end of the current week
   const getWeekBounds = (date: Date) => {
     const start = new Date(date);
-    start.setDate(date.getDate() - date.getDay()); // Start of week (Sunday)
+    start.setDate(date.getDate() - date.getDay()); 
     start.setHours(0, 0, 0, 0);
     
     const end = new Date(start);
-    end.setDate(start.getDate() + 6); // End of week (Saturday)
+    end.setDate(start.getDate() + 6); 
     end.setHours(23, 59, 59, 999);
     
     return { start, end };
@@ -68,16 +67,30 @@ export default function Schedules() {
   const getShiftBadge = (shiftType: string) => {
     switch (shiftType) {
       case 'morning':
-        return <Badge className="bg-primary text-primary-foreground">Morning</Badge>;
+        return <Badge className="bg-red-600 text-white">Morning</Badge>;
       case 'afternoon':
-        return <Badge className="bg-success text-white">Afternoon</Badge>;
+        return <Badge className="bg-gray-700 text-white">Afternoon</Badge>;
       case 'night':
-        return <Badge className="bg-accent text-accent-foreground">Night</Badge>;
+        return <Badge className="bg-black text-white">Night</Badge>;
       case 'off':
-        return <Badge variant="outline" className="text-muted-foreground">Day Off</Badge>;
+        return <Badge variant="outline" className="text-gray-500 border-gray-300">Day Off</Badge>;
       default:
         return <Badge variant="secondary">{shiftType}</Badge>;
     }
+  };
+
+  const getRoleBadge = (role: string) => {
+    const roleColors: Record<string, string> = {
+      cashier: "bg-red-100 text-red-900 border border-red-300",
+      bar: "bg-gray-800 text-white",
+      server: "bg-gray-200 text-gray-900",
+      kitchen: "bg-red-600 text-white",
+    };
+    return (
+      <Badge className={roleColors[role] || "bg-gray-100 text-gray-800"}>
+        {role.charAt(0).toUpperCase() + role.slice(1)}
+      </Badge>
+    );
   };
 
   const formatDateHeader = (date: Date) => {
@@ -107,7 +120,7 @@ export default function Schedules() {
   return (
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
+        {}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="page-title">Work Schedules</h1>
@@ -125,7 +138,7 @@ export default function Schedules() {
           </div>
         </div>
 
-        {/* Week Navigation */}
+        {}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -187,7 +200,13 @@ export default function Schedules() {
                           <div className="text-center">
                             {getShiftBadge(schedule.shiftType)}
                           </div>
-                          
+
+                          {schedule.shiftRole && (
+                            <div className="text-center">
+                              {getRoleBadge(schedule.shiftRole)}
+                            </div>
+                          )}
+
                           {schedule.shiftType !== 'off' && schedule.startTime && schedule.endTime && (
                             <div className="text-center">
                               <div className="flex items-center justify-center text-sm text-muted-foreground">
@@ -198,7 +217,7 @@ export default function Schedules() {
                               </div>
                             </div>
                           )}
-                          
+
                           {schedule.notes && (
                             <div className="text-xs text-muted-foreground text-center">
                               <p data-testid={`schedule-notes-${day.toISOString().split('T')[0]}`}>
@@ -225,7 +244,7 @@ export default function Schedules() {
           </CardContent>
         </Card>
 
-        {/* Schedule Summary */}
+        {}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader className="pb-3">
@@ -263,29 +282,29 @@ export default function Schedules() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-primary rounded-full"></div>
+                    <div className="w-3 h-3 bg-red-600 rounded-full"></div>
                     <span className="text-sm">Morning</span>
                   </div>
                   <span className="text-sm font-medium" data-testid="morning-shifts-count">
-                    {schedules ? schedules.filter((s: Schedule) => s.shiftType === 'morning').length : 0}
+                    {schedules ? schedules.filter((s: Schedule) => s.type === 'morning').length : 0}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-success rounded-full"></div>
+                    <div className="w-3 h-3 bg-gray-700 rounded-full"></div>
                     <span className="text-sm">Afternoon</span>
                   </div>
                   <span className="text-sm font-medium" data-testid="afternoon-shifts-count">
-                    {schedules ? schedules.filter((s: Schedule) => s.shiftType === 'afternoon').length : 0}
+                    {schedules ? schedules.filter((s: Schedule) => s.type === 'afternoon').length : 0}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-accent rounded-full"></div>
+                    <div className="w-3 h-3 bg-black rounded-full"></div>
                     <span className="text-sm">Night</span>
                   </div>
                   <span className="text-sm font-medium" data-testid="night-shifts-count">
-                    {schedules ? schedules.filter((s: Schedule) => s.shiftType === 'night').length : 0}
+                    {schedules ? schedules.filter((s: Schedule) => s.type === 'night').length : 0}
                   </span>
                 </div>
               </div>

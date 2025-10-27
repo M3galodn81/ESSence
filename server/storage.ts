@@ -14,7 +14,11 @@ import {
   InsertActivity,
   Training,
   UserTraining,
-  InsertUserTraining
+  InsertUserTraining,
+  Report,
+  InsertReport,
+  LaborCostData,
+  InsertLaborCostData
 } from "@shared/schema";
 import session from "express-session";
 import { db, sqlite } from "./db";
@@ -27,9 +31,11 @@ import {
   announcements,
   activities,
   trainings,
-  userTrainings
+  userTrainings,
+  reports,
+  laborCostData
 } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, inArray, or, isNull } from "drizzle-orm";
 
 class SqliteSessionStore extends session.Store {
   private db: any;
@@ -99,8 +105,10 @@ class SqliteSessionStore extends session.Store {
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getAllUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
   getUsersByDepartment(department: string): Promise<User[]>;
   getUsersByManager(managerId: string): Promise<User[]>;
 
@@ -116,6 +124,7 @@ export interface IStorage {
 
   createSchedule(schedule: InsertSchedule): Promise<Schedule>;
   getSchedulesByUser(userId: string, startDate?: Date, endDate?: Date): Promise<Schedule[]>;
+  getAllSchedules(startDate?: Date, endDate?: Date): Promise<Schedule[]>;
   updateSchedule(id: string, updates: Partial<Schedule>): Promise<Schedule | undefined>;
   deleteSchedule(id: string): Promise<boolean>;
 
@@ -135,6 +144,17 @@ export interface IStorage {
   getAllTrainings(): Promise<Training[]>;
   getUserTrainings(userId: string): Promise<UserTraining[]>;
   updateUserTraining(userId: string, trainingId: string, updates: Partial<UserTraining>): Promise<UserTraining | undefined>;
+
+  createReport(report: InsertReport): Promise<Report>;
+  getReportsByUser(userId: string): Promise<Report[]>;
+  getAllReports(): Promise<Report[]>;
+  getReportById(id: string): Promise<Report | undefined>;
+  updateReport(id: string, updates: Partial<Report>): Promise<Report | undefined>;
+
+  createLaborCostData(data: InsertLaborCostData): Promise<LaborCostData>;
+  getLaborCostData(year?: number): Promise<LaborCostData[]>;
+  getLaborCostDataByMonth(month: number, year: number): Promise<LaborCostData | undefined>;
+  updateLaborCostData(id: string, updates: Partial<LaborCostData>): Promise<LaborCostData | undefined>;
 
   sessionStore: any;
 }
@@ -156,6 +176,10 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const result = await db.insert(users).values(insertUser).returning();
     return result[0];
@@ -166,12 +190,30 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async deleteUser(id: string): Promise<boolean> {
+    await db.delete(users).where(eq(users.id, id));
+    return true;
+  }
+
   async getUsersByDepartment(department: string): Promise<User[]> {
     return await db.select().from(users).where(eq(users.department, department));
   }
 
   async getUsersByManager(managerId: string): Promise<User[]> {
     return await db.select().from(users).where(eq(users.managerId, managerId));
+  }
+
+  async getEmployeesForManager(managerId: string): Promise<User[]> {
+    
+    return await db.select().from(users).where(
+      and(
+        eq(users.role, 'employee'),
+        or(
+          eq(users.managerId, managerId),
+          isNull(users.managerId)
+        )
+      )
+    );
   }
 
   async createLeaveRequest(request: InsertLeaveRequest): Promise<LeaveRequest> {
@@ -213,6 +255,25 @@ export class DbStorage implements IStorage {
         description: `Leave request ${updates.status}`,
         metadata: { leaveRequestId: id },
       });
+
+      if (updates.status === 'approved') {
+        const user = await this.getUser(request.userId);
+        if (user) {
+          const leaveBalanceUpdates: Partial<User> = {};
+
+          if (request.type === 'annual' || request.type === 'vacation') {
+            leaveBalanceUpdates.annualLeaveBalance = (user.annualLeaveBalance || 15) - request.days;
+          } else if (request.type === 'sick') {
+            leaveBalanceUpdates.sickLeaveBalance = (user.sickLeaveBalance || 10) - request.days;
+          } else if (request.type === 'emergency') {
+            leaveBalanceUpdates.emergencyLeaveBalance = (user.emergencyLeaveBalance || 5) - request.days;
+          }
+
+          if (Object.keys(leaveBalanceUpdates).length > 0) {
+            await this.updateUser(request.userId, leaveBalanceUpdates);
+          }
+        }
+      }
     }
 
     return updatedRequest;
@@ -224,7 +285,7 @@ export class DbStorage implements IStorage {
     if (managerId) {
       const teamMembers = await this.getUsersByManager(managerId);
       const teamMemberIds = teamMembers.map(member => member.id);
-      query = query.where(leaveRequests.userId.inArray(teamMemberIds));
+      query = query.where(inArray(leaveRequests.userId, teamMemberIds));
     }
 
     return await query.orderBy(desc(leaveRequests.createdAt));
@@ -256,16 +317,33 @@ export class DbStorage implements IStorage {
 
     if (startDate && endDate) {
       query = query.where(and(
-        schedules.date >= startDate,
-        schedules.date <= endDate
+        gte(schedules.date, startDate),
+        lte(schedules.date, endDate)
       ));
     } else if (startDate) {
-      query = query.where(schedules.date >= startDate);
+      query = query.where(gte(schedules.date, startDate));
     } else if (endDate) {
-      query = query.where(schedules.date <= endDate);
+      query = query.where(lte(schedules.date, endDate));
     }
 
-    return await query.orderBy(schedules.date);
+    return await query.orderBy(asc(schedules.date));
+  }
+
+  async getAllSchedules(startDate?: Date, endDate?: Date): Promise<Schedule[]> {
+    let query = db.select().from(schedules);
+
+    if (startDate && endDate) {
+      query = query.where(and(
+        gte(schedules.date, startDate),
+        lte(schedules.date, endDate)
+      ));
+    } else if (startDate) {
+      query = query.where(gte(schedules.date, startDate));
+    } else if (endDate) {
+      query = query.where(lte(schedules.date, endDate));
+    }
+
+    return await query.orderBy(asc(schedules.date));
   }
 
   async updateSchedule(id: string, updates: Partial<Schedule>): Promise<Schedule | undefined> {
@@ -395,6 +473,74 @@ export class DbStorage implements IStorage {
     }
 
     return updatedUserTraining;
+  }
+
+  async createReport(report: InsertReport): Promise<Report> {
+    const result = await db.insert(reports).values(report).returning();
+    const newReport = result[0];
+
+    await this.createActivity({
+      userId: report.userId,
+      type: "report_created",
+      description: `${report.type === 'incident' ? 'Incident' : 'Breakage'} report submitted: ${report.title}`,
+      metadata: { reportId: newReport.id, reportType: report.type },
+    });
+
+    return newReport;
+  }
+
+  async getReportsByUser(userId: string): Promise<Report[]> {
+    return await db.select().from(reports)
+      .where(eq(reports.userId, userId))
+      .orderBy(desc(reports.createdAt));
+  }
+
+  async getAllReports(): Promise<Report[]> {
+    return await db.select().from(reports)
+      .orderBy(desc(reports.createdAt));
+  }
+
+  async getReportById(id: string): Promise<Report | undefined> {
+    const result = await db.select().from(reports).where(eq(reports.id, id)).limit(1);
+    return result[0];
+  }
+
+  async updateReport(id: string, updates: Partial<Report>): Promise<Report | undefined> {
+    const result = await db.update(reports)
+      .set(updates)
+      .where(eq(reports.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async createLaborCostData(data: InsertLaborCostData): Promise<LaborCostData> {
+    const result = await db.insert(laborCostData).values(data).returning();
+    return result[0];
+  }
+
+  async getLaborCostData(year?: number): Promise<LaborCostData[]> {
+    if (year) {
+      return await db.select().from(laborCostData)
+        .where(eq(laborCostData.year, year))
+        .orderBy(desc(laborCostData.month));
+    }
+    return await db.select().from(laborCostData)
+      .orderBy(desc(laborCostData.year), desc(laborCostData.month));
+  }
+
+  async getLaborCostDataByMonth(month: number, year: number): Promise<LaborCostData | undefined> {
+    const result = await db.select().from(laborCostData)
+      .where(and(eq(laborCostData.month, month), eq(laborCostData.year, year)))
+      .limit(1);
+    return result[0];
+  }
+
+  async updateLaborCostData(id: string, updates: Partial<LaborCostData>): Promise<LaborCostData | undefined> {
+    const result = await db.update(laborCostData)
+      .set(updates)
+      .where(eq(laborCostData.id, id))
+      .returning();
+    return result[0];
   }
 }
 

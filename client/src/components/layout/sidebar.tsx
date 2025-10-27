@@ -2,22 +2,23 @@ import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { 
-  Building, 
-  Home, 
-  User, 
-  Calendar, 
-  FileText, 
-  Clock, 
-  GraduationCap, 
-  Folder, 
-  Users, 
-  BarChart, 
-  Megaphone, 
+import {
+  Building,
+  Home,
+  User,
+  Calendar,
+  FileText,
+  Clock,
+  Users,
+  BarChart,
+  Megaphone,
   LogOut,
   Settings,
   Menu,
-  X
+  X,
+  AlertTriangle,
+  DollarSign,
+  UserPlus
 } from "lucide-react";
 import { useState } from "react";
 
@@ -26,19 +27,22 @@ interface SidebarProps {
 }
 
 const navigationItems = [
-  { path: "/", label: "Dashboard", icon: Home, roles: ["employee", "manager", "hr"] },
-  { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "hr"] },
-  { path: "/leave-management", label: "Leave Management", icon: Calendar, roles: ["employee", "manager", "hr"] },
-  { path: "/payslips", label: "Payslips", icon: FileText, roles: ["employee", "manager", "hr"] },
-  { path: "/schedules", label: "Schedules", icon: Clock, roles: ["employee", "manager", "hr"] },
-  { path: "/training", label: "Training", icon: GraduationCap, roles: ["employee", "manager", "hr"] },
-  { path: "/documents", label: "Documents", icon: Folder, roles: ["employee", "manager", "hr"] },
+  { path: "/", label: "Dashboard", icon: Home, roles: ["employee", "manager", "admin"] },
+  { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "admin"] },
+  { path: "/leave-management", label: "Leave Management", icon: Calendar, roles: ["employee", "manager", "admin"] },
+  { path: "/payslips", label: "Payslips", icon: FileText, roles: ["employee", "manager", "admin"] },
+  { path: "/schedules", label: "Schedules", icon: Clock, roles: ["employee", "manager", "admin"] },
+  { path: "/reports", label: "Reports", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
 ];
 
 const managementItems = [
-  { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "hr"] },
-  { path: "/reports-analytics", label: "Reports & Analytics", icon: BarChart, roles: ["manager", "hr"] },
-  { path: "/announcements", label: "Announcements", icon: Megaphone, roles: ["manager", "hr"] },
+  { path: "/user-management", label: "User Management", icon: UserPlus, roles: ["manager", "admin"] },
+  { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
+  { path: "/shift-management", label: "Shift Management", icon: Calendar, roles: ["manager", "admin"] },
+  { path: "/salary-computation", label: "Salary Computation", icon: DollarSign, roles: ["manager", "admin"] },
+  { path: "/reports-analytics", label: "Reports & Analytics", icon: BarChart, roles: ["manager", "admin"] },
+  { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager", "admin"] },
+  { path: "/announcements", label: "Announcements", icon: Megaphone, roles: ["manager", "admin"] },
 ];
 
 export default function Sidebar({ className }: SidebarProps) {
@@ -55,7 +59,7 @@ export default function Sidebar({ className }: SidebarProps) {
     setIsMobileOpen(false);
   };
 
-  const canAccessManagement = user?.role === "manager" || user?.role === "hr";
+  const canAccessManagement = user?.role === "manager" || user?.role === "admin";
 
   const isActive = (path: string) => {
     if (path === "/") return location === "/";
@@ -64,20 +68,18 @@ export default function Sidebar({ className }: SidebarProps) {
 
   const sidebarContent = (
     <>
-      {/* Logo and Company Name */}
-      <div className="p-6 border-b border-sidebar-border">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-sidebar-primary rounded-lg flex items-center justify-center">
-            <Building className="w-4 h-4 text-sidebar-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-sidebar-foreground" data-testid="company-name">ESS Portal</h1>
-            <p className="text-xs text-sidebar-foreground/70">TechCorp Inc.</p>
-          </div>
+      {}
+      <div className="p-6 border-b border-gray-800">
+        <div className="flex flex-col items-center space-y-2">
+          <img
+            src="/images/logo.jpeg"
+            alt="ESSence Self Service"
+            className="w-32 h-32 object-cover rounded-full border-4 border-red-600"
+          />
         </div>
       </div>
 
-      {/* User Profile */}
+      {}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-sidebar-accent rounded-full flex items-center justify-center">
@@ -94,7 +96,7 @@ export default function Sidebar({ className }: SidebarProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="text-sidebar-foreground/70 hover:text-sidebar-foreground"
+            className="text-gray-400 hover:text-white hover:bg-gray-800"
             data-testid="button-settings"
           >
             <Settings className="w-4 h-4" />
@@ -102,7 +104,7 @@ export default function Sidebar({ className }: SidebarProps) {
         </div>
       </div>
 
-      {/* Navigation Menu */}
+      {}
       <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
         {navigationItems
           .filter(item => item.roles.includes(user?.role || "employee"))
@@ -112,9 +114,9 @@ export default function Sidebar({ className }: SidebarProps) {
               variant={isActive(item.path) ? "default" : "ghost"}
               className={cn(
                 "w-full justify-start",
-                isActive(item.path) 
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground" 
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                isActive(item.path)
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-red-700"
+                  : "text-gray-300 hover:bg-gray-800 hover:text-white"
               )}
               onClick={() => handleNavigation(item.path)}
               data-testid={`nav-${item.path.slice(1) || "dashboard"}`}
@@ -124,10 +126,10 @@ export default function Sidebar({ className }: SidebarProps) {
             </Button>
           ))}
 
-        {/* Management Section */}
+        {}
         {canAccessManagement && (
-          <div className="pt-4 mt-4 border-t border-sidebar-border">
-            <p className="px-3 text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider mb-2">
+          <div className="pt-4 mt-4 border-t border-gray-800">
+            <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Management
             </p>
             {managementItems
@@ -138,9 +140,9 @@ export default function Sidebar({ className }: SidebarProps) {
                   variant={isActive(item.path) ? "default" : "ghost"}
                   className={cn(
                     "w-full justify-start",
-                    isActive(item.path) 
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground" 
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    isActive(item.path)
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-red-700"
+                      : "text-gray-300 hover:bg-gray-800 hover:text-white"
                   )}
                   onClick={() => handleNavigation(item.path)}
                   data-testid={`nav-${item.path.slice(1)}`}
@@ -153,11 +155,11 @@ export default function Sidebar({ className }: SidebarProps) {
         )}
       </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-sidebar-border">
+      {}
+      <div className="p-4 border-t border-gray-800">
         <Button
           variant="ghost"
-          className="w-full justify-start text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          className="w-full justify-start text-gray-300 hover:bg-gray-800 hover:text-white"
           onClick={handleLogout}
           disabled={logoutMutation.isPending}
           data-testid="button-logout"
@@ -171,7 +173,7 @@ export default function Sidebar({ className }: SidebarProps) {
 
   return (
     <>
-      {/* Mobile overlay */}
+      {}
       {isMobileOpen && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
@@ -180,7 +182,7 @@ export default function Sidebar({ className }: SidebarProps) {
         />
       )}
 
-      {/* Mobile toggle button */}
+      {}
       <Button
         variant="ghost"
         size="sm"
@@ -191,10 +193,10 @@ export default function Sidebar({ className }: SidebarProps) {
         {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </Button>
 
-      {/* Sidebar */}
-      <aside 
+      {}
+      <aside
         className={cn(
-          "w-64 bg-sidebar border-r border-sidebar-border sidebar-transition fixed lg:relative z-50 h-full flex flex-col",
+          "w-64 bg-sidebar border-r border-sidebar-border sidebar-transition fixed z-50 h-screen flex flex-col",
           "lg:translate-x-0",
           isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
           className

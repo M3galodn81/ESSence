@@ -12,6 +12,7 @@ type AuthContextType = {
   user: SelectUser | null;
   isLoading: boolean;
   error: Error | null;
+  needsSetup: boolean;
   loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<SelectUser, Error, InsertUser>;
@@ -30,6 +31,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
+
+  const {
+    data: setupData,
+    isLoading: setupLoading,
+  } = useQuery<{ needsSetup: boolean }, Error>({
+    queryKey: ["/api/setup/check"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+  });
+
+  const needsSetup = setupData?.needsSetup ?? false;
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
@@ -85,8 +96,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user: user ?? null,
-        isLoading,
+        isLoading: isLoading || setupLoading,
         error,
+        needsSetup,
         loginMutation,
         logoutMutation,
         registerMutation,

@@ -15,7 +15,7 @@ export default function Payslips() {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-    }).format(amount / 100); // Assuming amounts are stored in cents
+    }).format(amount / 100); 
   };
 
   const formatDate = (date: string | Date) => {
@@ -33,13 +33,13 @@ export default function Payslips() {
   return (
     <div className="p-6">
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
+        {}
         <div>
           <h1 className="text-2xl font-bold" data-testid="page-title">Payslips</h1>
           <p className="text-muted-foreground">View and download your salary statements</p>
         </div>
 
-        {/* Payslips List */}
+        {}
         <div className="space-y-4">
           {isLoading ? (
             <div className="text-center py-8" data-testid="loading-payslips">
@@ -88,7 +88,7 @@ export default function Payslips() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Earnings */}
+                    {}
                     <div className="space-y-3">
                       <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">
                         Earnings
@@ -111,7 +111,7 @@ export default function Payslips() {
                       </div>
                     </div>
 
-                    {/* Deductions */}
+                    {}
                     <div className="space-y-3">
                       <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">
                         Deductions
@@ -131,7 +131,7 @@ export default function Payslips() {
                       </div>
                     </div>
 
-                    {/* Summary */}
+                    {}
                     <div className="space-y-3">
                       <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">
                         Summary
@@ -169,7 +169,7 @@ export default function Payslips() {
           )}
         </div>
 
-        {/* Payslip Information */}
+        {}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">

@@ -16,10 +16,10 @@ export default function TeamManagement() {
 
   const { data: teamMembers, isLoading } = useQuery({
     queryKey: ["/api/team"],
-    enabled: user?.role === 'manager' || user?.role === 'hr',
+    enabled: user?.role === 'manager' || user?.role === 'admin',
   });
 
-  const canManageTeam = user?.role === 'manager' || user?.role === 'hr';
+  const canManageTeam = user?.role === 'manager' || user?.role === 'admin';
 
   if (!canManageTeam) {
     return (
@@ -30,7 +30,7 @@ export default function TeamManagement() {
               <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium text-foreground mb-2">Access Restricted</h3>
               <p className="text-muted-foreground">
-                You need manager or HR privileges to access team management features.
+                You need manager or admin privileges to access team management features.
               </p>
             </CardContent>
           </Card>
@@ -54,7 +54,7 @@ export default function TeamManagement() {
     const colors = {
       employee: "bg-muted text-muted-foreground",
       manager: "bg-primary text-primary-foreground",
-      hr: "bg-success text-white",
+      admin: "bg-red-600 text-white",
     };
 
     return (
@@ -103,7 +103,7 @@ export default function TeamManagement() {
   return (
     <div className="p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
+        {}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="page-title">Team Management</h1>
@@ -117,7 +117,7 @@ export default function TeamManagement() {
           </Button>
         </div>
 
-        {/* Team Statistics */}
+        {}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardContent className="p-6">
@@ -173,7 +173,7 @@ export default function TeamManagement() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">New This Month</p>
                   <p className="text-2xl font-bold" data-testid="new-members">
-                    {/* Mock data - in real app, filter by hire date */}
+                    {}
                     2
                   </p>
                 </div>

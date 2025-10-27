@@ -41,13 +41,12 @@ export default function Documents() {
 
   const uploadDocumentMutation = useMutation({
     mutationFn: async (data: DocumentForm) => {
-      // In a real app, you would handle file upload here
-      // For now, we'll simulate with mock data
+      
       const mockDocument = {
         ...data,
         fileName: `${data.name}.pdf`,
         filePath: `/documents/${data.name}.pdf`,
-        fileSize: Math.floor(Math.random() * 1000000) + 100000, // Random file size
+        fileSize: Math.floor(Math.random() * 1000000) + 100000, 
       };
 
       const res = await apiRequest("POST", "/api/documents", mockDocument);
@@ -134,7 +133,7 @@ export default function Documents() {
   return (
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
+        {}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="page-title">My Documents</h1>
@@ -219,7 +218,7 @@ export default function Documents() {
           </Dialog>
         </div>
 
-        {/* Document Statistics */}
+        {}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardContent className="p-6">
@@ -289,7 +288,7 @@ export default function Documents() {
           </Card>
         </div>
 
-        {/* Documents List */}
+        {}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">

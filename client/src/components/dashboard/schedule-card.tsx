@@ -25,9 +25,25 @@ export default function ScheduleCard({ schedules, isLoading }: ScheduleCardProps
     }
   };
 
-  const formatTime = (time: string | null) => {
+  const formatTime = (time: number | Date | string | null | undefined) => {
     if (!time) return '';
-    return new Date(`2000-01-01T${time}`).toLocaleTimeString('en-US', {
+
+    let date: Date;
+    if (typeof time === 'number') {
+      date = new Date(time);
+    } else if (typeof time === 'string') {
+      date = new Date(time);
+    } else if (time instanceof Date) {
+      date = time;
+    } else {
+      return '';
+    }
+
+    if (isNaN(date.getTime())) {
+      return '';
+    }
+
+    return date.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
@@ -101,15 +117,15 @@ export default function ScheduleCard({ schedules, isLoading }: ScheduleCardProps
             {getWeekSchedule().slice(0, 5).map((item, index) => (
               <div key={index} className="flex items-center justify-between py-2" data-testid={`schedule-item-${index}`}>
                 <div className="flex items-center space-x-3">
-                  <div className={`w-3 h-3 rounded-full ${item.schedule ? getScheduleColor(item.schedule.shiftType) : 'bg-muted'}`} />
+                  <div className={`w-3 h-3 rounded-full ${item.schedule ? getScheduleColor(item.schedule.type) : 'bg-muted'}`} />
                   <div>
                     <p className="text-sm font-medium" data-testid={`schedule-title-${index}`}>
-                      {item.schedule ? 
-                        (item.schedule.shiftType === 'off' ? 'Day Off' : `${item.schedule.shiftType.charAt(0).toUpperCase() + item.schedule.shiftType.slice(1)} Shift`) : 
+                      {item.schedule ?
+                        (item.schedule.type === 'off' ? 'Day Off' : `${item.schedule.type.charAt(0).toUpperCase() + item.schedule.type.slice(1)} Shift`) :
                         'No Schedule'
                       }
                     </p>
-                    {item.schedule && item.schedule.shiftType !== 'off' && item.schedule.startTime && item.schedule.endTime && (
+                    {item.schedule && item.schedule.type !== 'off' && item.schedule.startTime && item.schedule.endTime && (
                       <p className="text-xs text-muted-foreground" data-testid={`schedule-time-${index}`}>
                         {formatTime(item.schedule.startTime)} - {formatTime(item.schedule.endTime)}
                       </p>

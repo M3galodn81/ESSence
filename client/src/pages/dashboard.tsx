@@ -26,7 +26,7 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-8">
-      {/* Quick Stats Cards */}
+      {}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Leave Balance"
@@ -66,9 +66,9 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Main Content Grid */}
+      {}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column */}
+        {}
         <div className="lg:col-span-2 space-y-8">
           <AnnouncementsCard
             announcements={announcements || []}
@@ -80,7 +80,7 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Right Column */}
+        {}
         <div className="space-y-8">
           <ScheduleCard
             schedules={schedules || []}

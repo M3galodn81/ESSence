@@ -26,6 +26,10 @@ export const users = sqliteTable("users", {
   managerId: text("manager_id").references(() => users.id),
   isActive: integer("is_active", { mode: 'boolean' }).default(true),
   profilePicture: text("profile_picture"),
+  
+  annualLeaveBalance: integer("annual_leave_balance").default(15),
+  sickLeaveBalance: integer("sick_leave_balance").default(10),
+  emergencyLeaveBalance: integer("emergency_leave_balance").default(5),
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: 'timestamp_ms' }).$onUpdateFn(() => new Date()),
 });
@@ -69,6 +73,8 @@ export const schedules = sqliteTable("schedules", {
   title: text("title").notNull(),
   description: text("description"),
   location: text("location"),
+  
+  shiftRole: text("shift_role"), 
   isAllDay: integer("is_all_day", { mode: 'boolean' }).default(false),
   status: text("status").default("scheduled"),
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
@@ -134,6 +140,43 @@ export const userTrainings = sqliteTable("user_trainings", {
   startedAt: integer("started_at", { mode: 'timestamp_ms' }),
 });
 
+export const reports = sqliteTable("reports", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => users.id),
+  type: text("type").notNull(), 
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  severity: text("severity").default("low"), 
+  status: text("status").default("pending"), 
+  location: text("location"),
+  
+  itemName: text("item_name"),
+  itemQuantity: integer("item_quantity"),
+  estimatedCost: integer("estimated_cost"),
+  
+  assignedTo: text("assigned_to").references(() => users.id),
+  resolvedBy: text("resolved_by").references(() => users.id),
+  resolvedAt: integer("resolved_at", { mode: 'timestamp_ms' }),
+  notes: text("notes"),
+  attachments: json<string[]>("attachments"),
+  createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: 'timestamp_ms' }).$onUpdateFn(() => new Date()),
+});
+
+export const laborCostData = sqliteTable("labor_cost_data", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  month: integer("month").notNull(),
+  year: integer("year").notNull(),
+  totalSales: integer("total_sales").notNull(), 
+  totalLaborCost: integer("total_labor_cost").notNull(), 
+  laborCostPercentage: integer("labor_cost_percentage").notNull(), 
+  status: text("status"), 
+  performanceRating: text("performance_rating"), 
+  notes: text("notes"),
+  createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: 'timestamp_ms' }).$onUpdateFn(() => new Date()),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -152,6 +195,20 @@ export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).omit({
 export const insertPayslipSchema = createInsertSchema(payslips).omit({
   id: true,
   generatedAt: true,
+});
+
+export const insertScheduleApiSchema = z.object({
+  userId: z.string(),
+  date: z.number(),
+  startTime: z.number(),
+  endTime: z.number(),
+  type: z.string(),
+  title: z.string(),
+  description: z.string().optional(),
+  location: z.string().optional(),
+  shiftRole: z.string().optional(),
+  isAllDay: z.boolean().optional(),
+  status: z.string().optional(),
 });
 
 export const insertScheduleSchema = createInsertSchema(schedules).omit({
@@ -191,6 +248,22 @@ export const insertActivitySchema = createInsertSchema(activities).omit({
   createdAt: true,
 });
 
+export const insertReportSchema = createInsertSchema(reports).omit({
+  id: true,
+  status: true,
+  assignedTo: true,
+  resolvedBy: true,
+  resolvedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertLaborCostDataSchema = createInsertSchema(laborCostData).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
@@ -201,7 +274,7 @@ export type Payslip = typeof payslips.$inferSelect;
 export type InsertPayslip = z.infer<typeof insertPayslipSchema>;
 
 export type Schedule = typeof schedules.$inferSelect;
-export type InsertSchedule = z.infer<typeof insertScheduleSchema>;
+export type InsertSchedule = typeof schedules.$inferInsert;
 
 export type Document = typeof documents.$inferSelect;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
@@ -217,3 +290,9 @@ export type InsertTraining = z.infer<typeof insertTrainingSchema>;
 
 export type UserTraining = typeof userTrainings.$inferSelect;
 export type InsertUserTraining = z.infer<typeof insertUserTrainingSchema>;
+
+export type Report = typeof reports.$inferSelect;
+export type InsertReport = z.infer<typeof insertReportSchema>;
+
+export type LaborCostData = typeof laborCostData.$inferSelect;
+export type InsertLaborCostData = z.infer<typeof insertLaborCostDataSchema>;

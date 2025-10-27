@@ -35,7 +35,7 @@ export default function Announcements() {
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  const canManageAnnouncements = user?.role === 'manager' || user?.role === 'hr';
+  const canManageAnnouncements = user?.role === 'manager' || user?.role === 'admin';
 
   const { data: announcements, isLoading } = useQuery({
     queryKey: ["/api/announcements"],
@@ -232,7 +232,7 @@ export default function Announcements() {
   return (
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
+        {}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="page-title">Announcements</h1>
@@ -381,7 +381,7 @@ export default function Announcements() {
           </Dialog>
         </div>
 
-        {/* Statistics Cards */}
+        {}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardContent className="p-6">
@@ -448,7 +448,7 @@ export default function Announcements() {
           </Card>
         </div>
 
-        {/* Filters and Content */}
+        {}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">

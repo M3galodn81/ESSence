@@ -134,13 +134,13 @@ export default function Training() {
   return (
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
+        {}
         <div>
           <h1 className="text-2xl font-bold" data-testid="page-title">Training & Development</h1>
           <p className="text-muted-foreground">Enhance your skills with our training programs</p>
         </div>
 
-        {/* Training Stats */}
+        {}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card>
             <CardContent className="p-6">

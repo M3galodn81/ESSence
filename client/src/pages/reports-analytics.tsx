@@ -48,7 +48,6 @@ export default function ReportsAnalytics() {
     const active = teamMembers.filter((member: any) => member.isActive).length;
     const departments = new Set(teamMembers.map((member: any) => member.department).filter(Boolean)).size;
     
-    // Mock new hires in the last 30 days
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const newHires = teamMembers.filter((member: any) => 
@@ -63,7 +62,6 @@ export default function ReportsAnalytics() {
     
     const pending = leaveRequests.length;
     
-    // Mock data for demonstration
     const thisMonth = Math.floor(Math.random() * 20) + 5;
     const approved = Math.floor(Math.random() * 15) + 3;
     
@@ -89,8 +87,7 @@ export default function ReportsAnalytics() {
       reports: [
         "Employee Directory",
         "Attendance Summary",
-        "Performance Overview",
-        "Department Distribution"
+        "Performance Overview"
       ]
     },
     {
@@ -118,7 +115,7 @@ export default function ReportsAnalytics() {
   return (
     <div className="p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
+        {}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="page-title">Reports & Analytics</h1>
@@ -145,7 +142,7 @@ export default function ReportsAnalytics() {
           </div>
         </div>
 
-        {/* Key Metrics */}
+        {}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card>
             <CardContent className="p-6">
@@ -237,8 +234,8 @@ export default function ReportsAnalytics() {
           </TabsList>
 
           <TabsContent value="overview">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Trends Chart */}
+            <div className="grid grid-cols-1 gap-6">
+              {}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center">
@@ -256,38 +253,6 @@ export default function ReportsAnalytics() {
                         Data: {mockChartData.length} months of metrics
                       </p>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Department Breakdown */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Department Distribution</CardTitle>
-                  <CardDescription>Employee distribution across departments</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4" data-testid="department-breakdown">
-                    {[
-                      { name: "Engineering", count: 45, percentage: 47 },
-                      { name: "Marketing", count: 18, percentage: 19 },
-                      { name: "Sales", count: 22, percentage: 23 },
-                      { name: "HR", count: 8, percentage: 8 },
-                      { name: "Finance", count: 3, percentage: 3 },
-                    ].map((dept, index) => (
-                      <div key={dept.name} className="space-y-2" data-testid={`department-${index}`}>
-                        <div className="flex justify-between text-sm">
-                          <span className="font-medium">{dept.name}</span>
-                          <span className="text-muted-foreground">{dept.count} employees</span>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-2">
-                          <div
-                            className="bg-primary h-2 rounded-full transition-all"
-                            style={{ width: `${dept.percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 </CardContent>
               </Card>
