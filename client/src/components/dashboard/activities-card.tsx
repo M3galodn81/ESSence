@@ -25,6 +25,23 @@ export default function ActivitiesCard({ activities, isLoading }: ActivitiesCard
     }
   };
 
+  const getActivityText = (type: string) => {
+    switch (type) {
+      case "leave_approved":
+        return "approved a leave request";
+      case "leave_rejected":
+        return "rejected a leave request";
+      // case "training_completed":
+      //   return "bg-primary";
+      case "profile_updated":
+        return "updated profile information";
+      // case "document_uploaded":
+      //   return "bg-warning";
+      default:
+        return "bg-muted-foreground";
+    }
+  };
+
   const formatTimeAgo = (date: Date) => {
     const now = new Date();
     const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
@@ -63,7 +80,7 @@ export default function ActivitiesCard({ activities, isLoading }: ActivitiesCard
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getActivityColor(activity.type)}`} />
                 <div className="flex-1">
                   <p className="text-sm text-foreground" data-testid={`activity-description-${activity.id}`}>
-                    {activity.description}
+                    {activity.userId} {getActivityText(activity.type)}
                   </p>
                   <p className="text-xs text-muted-foreground" data-testid={`activity-time-${activity.id}`}>
                     {formatTimeAgo(new Date(activity.createdAt!))}

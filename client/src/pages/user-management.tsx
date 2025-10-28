@@ -306,6 +306,7 @@ export default function UserManagement() {
     if (user?.role === "admin") {
       return [
         { value: "manager", label: "Manager" },
+        { value: "employee", label: "Employee" },
       ];
     } else if (user?.role === "manager") {
       return [
@@ -324,6 +325,7 @@ export default function UserManagement() {
     return <Badge className={colors[role] || "bg-gray-100"}>{role.toUpperCase()}</Badge>;
   };
 
+  // Permission check
   if (user?.role !== "admin" && user?.role !== "manager") {
     return (
       <div className="p-8">
@@ -340,6 +342,8 @@ export default function UserManagement() {
 
   return (
     <div className="p-8 space-y-6">
+
+      {/* User Management Title */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -350,6 +354,8 @@ export default function UserManagement() {
             Create and manage user accounts
           </p>
         </div>
+
+        {/* Dialog  */}
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -408,7 +414,8 @@ export default function UserManagement() {
                   </p>
                 )}
               </div>
-
+              
+              {/* Username / Password */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="username">Username *</Label>
@@ -438,7 +445,8 @@ export default function UserManagement() {
                   )}
                 </div>
               </div>
-
+              
+              {/* Role */}
               <div>
                 <Label htmlFor="role">Role *</Label>
                 <Select
@@ -462,7 +470,8 @@ export default function UserManagement() {
                   </p>
                 )}
               </div>
-
+              
+              {/* Department / Position */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="department">Department</Label>
@@ -481,7 +490,8 @@ export default function UserManagement() {
                   />
                 </div>
               </div>
-
+              
+              {/* Employee ID / Phone Number */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="employeeId">Employee ID</Label>
@@ -500,7 +510,8 @@ export default function UserManagement() {
                   />
                 </div>
               </div>
-
+              
+              {/* Manager ID */}
               {createForm.watch("role") === "employee" && (
                 <div>
                   <Label htmlFor="managerId">Manager</Label>
@@ -540,7 +551,8 @@ export default function UserManagement() {
           </DialogContent>
         </Dialog>
       </div>
-
+      
+      {/* User List */}
       <Card>
         <CardHeader>
           <CardTitle>All Users</CardTitle>

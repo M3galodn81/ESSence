@@ -25,12 +25,12 @@ export default function QuickActionsCard() {
       action: () => navigate("/profile"),
       testId: "quick-action-profile",
     },
-    {
-      icon: FolderOpen,
-      label: "My Documents",
-      action: () => navigate("/documents"),
-      testId: "quick-action-documents",
-    },
+    // {
+    //   icon: FolderOpen,
+    //   label: "My Documents",
+    //   action: () => navigate("/documents"),
+    //   testId: "quick-action-documents",
+    // },
   ];
 
   return (

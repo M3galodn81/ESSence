@@ -49,10 +49,13 @@ export default function AnnouncementsCard({ announcements, isLoading }: Announce
     <Card data-testid="announcements-card">
       <CardHeader>
         <div className="flex items-center justify-between">
+
           <CardTitle className="text-lg font-semibold">Recent Announcements</CardTitle>
+          {/* TODO: Link to announcements page/ add notif if there are no announcement */}
           <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80" data-testid="button-view-all-announcements">
             View All
           </Button>
+
         </div>
       </CardHeader>
       <CardContent>

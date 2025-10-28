@@ -4,3 +4,7 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+ESS.db 
+ESS.db-shm 
+ESS.db-wal
