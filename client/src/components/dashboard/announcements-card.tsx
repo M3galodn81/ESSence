@@ -4,6 +4,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Megaphone, Trophy, Info } from "lucide-react";
 import type { Announcement } from "@shared/schema";
 
+import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
+import { useState } from "react";
 interface AnnouncementsCardProps {
   announcements: Announcement[];
   isLoading?: boolean;
@@ -45,6 +48,19 @@ export default function AnnouncementsCard({ announcements, isLoading }: Announce
     return date.toLocaleDateString();
   };
 
+  const { user, logoutMutation } = useAuth();
+  const [location, navigate] = useLocation();
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  
+  const handleLogout = () => {
+    logoutMutation.mutate();
+  };
+  
+  const handleNavigation = (path: string) => {
+    navigate(path);
+    setIsMobileOpen(false);
+  };
+
   return (
     <Card data-testid="announcements-card">
       <CardHeader>
@@ -52,7 +68,8 @@ export default function AnnouncementsCard({ announcements, isLoading }: Announce
 
           <CardTitle className="text-lg font-semibold">Recent Announcements</CardTitle>
           {/* TODO: Link to announcements page/ add notif if there are no announcement */}
-          <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80" data-testid="button-view-all-announcements">
+          <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80" data-testid="button-view-all-announcements"
+          onClick={() => handleNavigation("/announcements")}>
             View All
           </Button>
 

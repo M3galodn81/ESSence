@@ -89,7 +89,7 @@ export default function Sidebar({ className }: SidebarProps) {
             <p className="text-sm font-medium truncate text-sidebar-foreground" data-testid="user-name">
               {user ? `${user.firstName} ${user.lastName}` : "Loading..."}
             </p>
-            <p className="text-xs text-sidebar-foreground/70 capitalize" data-testid="user-role">
+            <p className="text-xs text-sidebar-foreground capitalize" data-testid="user-role">
               {user?.position || user?.role || "Employee"}
             </p>
           </div>

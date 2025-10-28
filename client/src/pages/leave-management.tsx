@@ -60,8 +60,8 @@ export default function LeaveManagement() {
 
       const res = await apiRequest("POST", "/api/leave-requests", {
         ...data,
-        startDate,
-        endDate,
+        startDate , 
+        endDate , 
         days,
       });
       return await res.json();
