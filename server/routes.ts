@@ -468,6 +468,19 @@ export function registerRoutes(app: Express): Server {
     res.json(activities);
   });
 
+  app.get("/api/activities/all", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    const user = req.user!;
+    if (user.role !== 'manager' && user.role !== 'admin') {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+    const activities = await storage.getAllActivities(limit);
+    res.json(activities);
+  });
+
   app.get("/api/trainings", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     

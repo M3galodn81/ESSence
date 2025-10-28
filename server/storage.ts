@@ -105,6 +105,7 @@ class SqliteSessionStore extends session.Store {
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserById(id: string): Promise<User | undefined>;
   getAllUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
@@ -140,6 +141,7 @@ export interface IStorage {
 
   createActivity(activity: InsertActivity): Promise<Activity>;
   getActivitiesByUser(userId: string, limit?: number): Promise<Activity[]>;
+  getAllActivities( limit?: number): Promise<Activity[]>;
 
   getAllTrainings(): Promise<Training[]>;
   getUserTrainings(userId: string): Promise<UserTraining[]>;
@@ -173,6 +175,11 @@ export class DbStorage implements IStorage {
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+    return result[0];
+  }
+
+  async getUserById(id: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
     return result[0];
   }
 
@@ -423,6 +430,12 @@ export class DbStorage implements IStorage {
   async getActivitiesByUser(userId: string, limit = 10): Promise<Activity[]> {
     return await db.select().from(activities)
       .where(eq(activities.userId, userId))
+      .orderBy(desc(activities.createdAt))
+      .limit(limit);
+  }
+
+  async getAllActivities(limit = 10): Promise<Activity[]> {
+    return await db.select().from(activities)
       .orderBy(desc(activities.createdAt))
       .limit(limit);
   }

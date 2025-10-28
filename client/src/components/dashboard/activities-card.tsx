@@ -1,14 +1,47 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Activity } from "@shared/schema";
-
+import { storage } from "server/storage";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
+import type { User } from "@shared/schema";
 
 interface ActivitiesCardProps {
   activities: Activity[];
   isLoading?: boolean;
 }
 
-export default function ActivitiesCard({ activities, isLoading }: ActivitiesCardProps) {
+export default function ActivitiesCard({ activities, isLoading: activitiesLoading }: ActivitiesCardProps) {
+  // Fetch all users to map user IDs to names
+  const { data: users, isLoading: usersLoading } = useQuery<User[]>({
+    queryKey: ["/api/users/"], // An endpoint that returns all users
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/users/"); 
+      return res.json();
+    }
+  });
+
+  // Memoized map of user IDs to names
+  const userMap = useMemo(() => {
+    if (!users) {
+      return new Map<string, string>();
+    }
+    // Creates a Map from user ID to full name
+    return users.reduce((map, user) => {
+      map.set(user.id, `${user.firstName} ${user.lastName}`);
+      return map;
+    }, new Map<string, string>());
+    
+  }, [users]);
+
+  const getUserName = (userId: string) => {
+    return userMap.get(userId) || "Unknown User";
+  };
+
+  const isOverallLoading = activitiesLoading || usersLoading;
+  
   const getActivityColor = (type: string) => {
     switch (type) {
       case "leave_approved":
@@ -32,8 +65,8 @@ export default function ActivitiesCard({ activities, isLoading }: ActivitiesCard
         return "approved a leave request";
       case "leave_rejected":
         return "rejected a leave request";
-      // case "training_completed":
-      //   return "bg-primary";
+      case "leave_requested":
+        return "requested leave";
       case "profile_updated":
         return "updated profile information";
       case "report_created":
@@ -70,7 +103,7 @@ export default function ActivitiesCard({ activities, isLoading }: ActivitiesCard
         <CardTitle className="text-lg font-semibold">Recent Activities</CardTitle>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {isOverallLoading ? (
           <div className="space-y-4">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="flex items-center space-x-4">
@@ -89,7 +122,7 @@ export default function ActivitiesCard({ activities, isLoading }: ActivitiesCard
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getActivityColor(activity.type)}`} />
                 <div className="flex-1">
                   <p className="text-sm text-foreground" data-testid={`activity-description-${activity.id}`}>
-                    {activity.userId} {getActivityText(activity.type)}
+                    <strong className="font-medium">{getUserName(activity.userId)}</strong> {getActivityText(activity.type)}
                   </p>
                   <p className="text-xs text-muted-foreground" data-testid={`activity-time-${activity.id}`}>
                     {formatTimeAgo(new Date(activity.createdAt!))}

@@ -7,6 +7,9 @@ import QuickActionsCard from "@/components/dashboard/quick-actions-card";
 import PendingTasksCard from "@/components/dashboard/pending-tasks-card";
 import { Calendar, Clock, AlertTriangle, GraduationCap } from "lucide-react";
 
+import { isAdmin } from "@/lib/helper";
+import { useAuth } from "@/hooks/use-auth";
+
 export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/dashboard-stats"],
@@ -16,8 +19,16 @@ export default function Dashboard() {
     queryKey: ["/api/announcements"],
   });
 
+  const { user } = useAuth();
+  const userIsAdmin = isAdmin(user);
+
+  const activitiesQueryKey = userIsAdmin
+  ? ["/api/activities/all"]
+  : ["/api/activities"];
+
   const { data: activities, isLoading: activitiesLoading } = useQuery({
-    queryKey: ["/api/activities"],
+    queryKey: activitiesQueryKey,
+
   });
 
   const { data: schedules, isLoading: schedulesLoading } = useQuery({
