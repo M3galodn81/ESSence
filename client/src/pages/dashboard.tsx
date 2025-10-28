@@ -55,7 +55,7 @@ export default function Dashboard() {
           isLoading={statsLoading}
           data-testid="stat-pending-approvals"
         />
-        <StatCard
+        {/* <StatCard
           title="Training Progress"
           value={stats?.trainingProgress || "0%"}
           icon={GraduationCap}
@@ -63,7 +63,7 @@ export default function Dashboard() {
           bgColor="bg-accent/10"
           isLoading={statsLoading}
           data-testid="stat-training-progress"
-        />
+        /> */}
       </div>
 
       {}

@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, Clock, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import type { Schedule } from "@shared/schema";
 
+import { apiRequest } from "@/lib/queryClient";
+
 export default function Schedules() {
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -24,8 +26,16 @@ export default function Schedules() {
   const { start: weekStart, end: weekEnd } = getWeekBounds(currentDate);
 
   const { data: schedules, isLoading } = useQuery({
-    queryKey: ["/api/schedules", weekStart.toISOString(), weekEnd.toISOString()],
-  });
+  queryKey: ["/api/schedules", weekStart.toISOString(), weekEnd.toISOString()],
+  queryFn: async () => {
+    const res = await apiRequest(
+      "GET",
+      `/api/schedules?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`
+    );
+    return await res.json();
+  },
+});
+
 
   const navigateWeek = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate);
@@ -57,7 +67,7 @@ export default function Schedules() {
 
   const formatTime = (time: string | null) => {
     if (!time) return '';
-    return new Date(`2000-01-01T${time}`).toLocaleTimeString('en-US', {
+    return new Date(time).toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
@@ -65,18 +75,25 @@ export default function Schedules() {
   };
 
   const getShiftBadge = (shiftType: string) => {
-    switch (shiftType) {
-      case 'morning':
-        return <Badge className="bg-red-600 text-white">Morning</Badge>;
-      case 'afternoon':
-        return <Badge className="bg-gray-700 text-white">Afternoon</Badge>;
-      case 'night':
-        return <Badge className="bg-black text-white">Night</Badge>;
-      case 'off':
-        return <Badge variant="outline" className="text-gray-500 border-gray-300">Day Off</Badge>;
-      default:
-        return <Badge variant="secondary">{shiftType}</Badge>;
+    const shiftColors: Record<string, string> = {
+      morning: "bg-red-600 text-white",
+      afternoon:"bg-gray-700 text-white",
+      night: "bg-black text-white",
+      off: "text-gray-500 border-gray-300",
     }
+    if (!shiftType) {
+      return <Badge className="bg-gray-100 text-gray-800">{shiftType}</Badge>;
+    }
+
+    const normalizedType = shiftType.trim().toLowerCase();
+
+    return (
+      <Badge className={shiftColors[normalizedType] || "bg-gray-100 text-gray-800"}>
+        {normalizedType.charAt(0).toUpperCase() + normalizedType.slice(1)}
+      </Badge>
+    );
+
+    
   };
 
   const getRoleBadge = (role: string) => {
@@ -177,6 +194,7 @@ export default function Schedules() {
             ) : (
               <div className="grid grid-cols-7 gap-4">
                 {getDaysOfWeek().map((day, index) => {
+
                   const schedule = getScheduleForDate(day);
                   const todayClass = isToday(day) ? 'ring-2 ring-primary' : '';
                   
@@ -198,7 +216,7 @@ export default function Schedules() {
                       {schedule ? (
                         <div className="space-y-3">
                           <div className="text-center">
-                            {getShiftBadge(schedule.shiftType)}
+                            {getShiftBadge(schedule.type)}
                           </div>
 
                           {schedule.shiftRole && (

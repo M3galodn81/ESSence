@@ -9,7 +9,8 @@ import {
   insertScheduleSchema,
   insertScheduleApiSchema,
   insertReportSchema,
-  insertLaborCostDataSchema
+  insertLaborCostDataSchema,
+  apiInsertLeaveRequestSchema
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -166,15 +167,20 @@ export function registerRoutes(app: Express): Server {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
-      const leaveData = insertLeaveRequestSchema.parse({
-        ...req.body,
-        userId: req.user!.id,
-      });
-      const leaveRequest = await storage.createLeaveRequest(leaveData);
+     const leaveData = apiInsertLeaveRequestSchema.parse(req.body);
+
+     const leaveRequest = await storage.createLeaveRequest(leaveData);
       res.json(leaveRequest);
-    } catch (error) {
+    } 
+    catch (error) {
+      console.error("Error in POST /api/leave-requests:", error);
+
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation failed", errors: error.errors });
+      }
+
       res.status(400).json({ message: "Invalid leave request data" });
-    }
+      }
   });
 
   app.get("/api/leave-requests", async (req, res) => {

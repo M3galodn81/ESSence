@@ -38,8 +38,8 @@ export const leaveRequests = sqliteTable("leave_requests", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text("user_id").notNull().references(() => users.id),
   type: text("type").notNull(),
-  startDate: integer("start_date", { mode: 'timestamp_ms' }).notNull(),
-  endDate: integer("end_date", { mode: 'timestamp_ms' }).notNull(),
+  startDate: integer("start_date").notNull(),
+  endDate: integer("end_date").notNull(),
   days: integer("days").notNull(),
   reason: text("reason"),
   status: text("status").default("pending"),
@@ -191,6 +191,20 @@ export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).omit({
   createdAt: true,
   updatedAt: true,
 });
+
+export const baseInsertLeaveRequestSchema = createInsertSchema(leaveRequests).omit({
+  id: true,
+  status: true,
+  approvedBy: true,
+  approvedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const apiInsertLeaveRequestSchema = baseInsertLeaveRequestSchema.extend({
+  startDate: z.number(), 
+  endDate: z.number(),
+});
+
 
 export const insertPayslipSchema = createInsertSchema(payslips).omit({
   id: true,

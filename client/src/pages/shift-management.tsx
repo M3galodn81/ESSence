@@ -72,6 +72,13 @@ export default function ShiftManagement() {
 
   const { data: allSchedules, isLoading } = useQuery({
     queryKey: ["/api/schedules/all", weekStart.toISOString(), weekEnd.toISOString()],
+    queryFn: async () => {
+        const res = await apiRequest(
+          "GET",
+          `/api/schedules/all?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`
+        );
+        return await res.json();
+      },
   });
 
   const createForm = useForm<ShiftForm>({

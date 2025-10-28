@@ -20,9 +20,21 @@ import { Calendar, Clock, Plus, Check, X, Eye } from "lucide-react";
 import type { LeaveRequest } from "@shared/schema";
 
 const leaveFormSchema = insertLeaveRequestSchema.extend({
-  startDate: z.string().min(1, "Start date is required"),
-  endDate: z.string().min(1, "End date is required"),
-}).omit({ userId: true });
+ startDate: z.string().min(1, "Date is required"),
+  endDate: z.string().min(1, "Date is required"),
+}).omit({ userId: true , days: true })
+.refine((data) => {
+    // Convert to Date objects for comparison
+    const start = new Date(data.startDate);
+    const end = new Date(data.endDate);
+    
+    // Check if dates are valid and if end is on or after start
+    return !isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start;
+  }, {
+    // This error message will be attached to the 'endDate' field
+    message: "End date must be on or after the start date",
+    path: ["endDate"],
+  });
 
 type LeaveForm = z.infer<typeof leaveFormSchema>;
 
@@ -45,23 +57,32 @@ export default function LeaveManagement() {
     resolver: zodResolver(leaveFormSchema),
     defaultValues: {
       type: "annual",
-      startDate: "",
+      startDate: "", // Use 'undefined' for empty date/number fields
       endDate: "",
-      days: 1,
       reason: "",
     },
   });
 
   const createLeaveRequestMutation = useMutation({
     mutationFn: async (data: LeaveForm) => {
+
+      if (!user?.id) {
+        throw new Error("User not authenticated. Please log in again.");
+      }
+
       const startDate = new Date(data.startDate);
       const endDate = new Date(data.endDate);
-      const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+      const startUTC = Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate());
+      const endUTC = Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate());
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const days = (endUTC - startUTC) / msPerDay + 1;
 
       const res = await apiRequest("POST", "/api/leave-requests", {
         ...data,
-        startDate , 
-        endDate , 
+        startDate: startDate.getTime(),
+        endDate: endDate.getTime(),
+        userId: user.id,
         days,
       });
       return await res.json();
