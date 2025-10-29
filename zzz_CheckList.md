@@ -1,13 +1,30 @@
-Debug List
+# Bugs
+Making Manager User is not working | FORIEGN KEY constrint failed 
 
-Making Announcements 403/Access Denied
-Recent Activites Label is empty
-Making Manager/Employee is not working | FORIEGN KEY constrint failed 
-Cant make leave | 400 "Invalid leave request data"
-Setting is empty
+Team Management -> Manager cant edit User details/view
+Toast resets all form inputs / closes dialog  
+All schedules are not showing 
+Shift Management cant edit shift info
+
+Can't make Leave Request 
+Leave Request start dates can't be before 1 week from today (1 week leave notice)
+- end dates can't be before start dates
 
 
 
-Working List
+# 
+
+
+
+# To be Added 
+Make leave request dates automatically set to 1 week after today
+    end leave dates can't be before start date
+
+Settings Pages
+Rework Schedules
+Notification Page 
+
+
+# Working List
 
 Reports | Breakage, Incidents

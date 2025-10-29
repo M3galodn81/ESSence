@@ -216,7 +216,7 @@ export default function Announcements() {
 
   const stats = getAnnouncementStats();
 
-  const departments = ["Engineering", "Marketing", "Sales", "HR", "Finance", "Operations"];
+  const departments = ["Employee", "Manager", "Admin"];
 
   const resetForm = () => {
     setEditingAnnouncement(null);
