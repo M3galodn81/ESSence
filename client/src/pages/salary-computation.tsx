@@ -17,17 +17,8 @@ export default function SalaryComputation() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  if (user?.role !== 'manager' && user?.role !== 'admin') {
-    return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">Access denied. Manager or Admin role required.</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const isEmployee = user?.role === 'employee';
+  const isManagerOrAdmin = user?.role === 'manager' || user?.role === 'admin';
 
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
   const [month, setMonth] = useState(new Date().getMonth() + 1);
@@ -46,6 +37,7 @@ export default function SalaryComputation() {
 
   const { data: teamMembers } = useQuery({
     queryKey: ["/api/team"],
+    enabled: isManagerOrAdmin,
   });
 
   const formatCurrency = (amount: number) => {
@@ -184,72 +176,95 @@ export default function SalaryComputation() {
         <div>
           <h1 className="text-2xl font-bold flex items-center">
             <Calculator className="w-6 h-6 mr-2" />
-            Salary Computation
+            Salary {isEmployee ? 'Calculator' : 'Computation'}
           </h1>
-          <p className="text-muted-foreground">Calculate and generate employee payslips</p>
+          <p className="text-muted-foreground">
+            {isEmployee
+              ? 'Calculate and verify your salary breakdown for transparency'
+              : 'Calculate and generate employee payslips'}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {}
           <div className="lg:col-span-2 space-y-6">
             {}
-            <Card>
-              <CardHeader>
-                <CardTitle>Employee Information</CardTitle>
-                <CardDescription>Select employee and pay period</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="employee">Employee *</Label>
-                  <Select value={selectedEmployee} onValueChange={handleEmployeeChange}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select employee" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {teamMembers?.map((member: User) => (
-                        <SelectItem key={member.id} value={member.id}>
-                          {member.firstName} {member.lastName} - {member.position || "No position"}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+            {isManagerOrAdmin && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Employee Information</CardTitle>
+                  <CardDescription>Select employee and pay period</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div>
-                    <Label htmlFor="month">Month</Label>
-                    <Select value={month.toString()} onValueChange={(val) => setMonth(parseInt(val))}>
+                    <Label htmlFor="employee">Employee *</Label>
+                    <Select value={selectedEmployee} onValueChange={handleEmployeeChange}>
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Select employee" />
                       </SelectTrigger>
                       <SelectContent>
-                        {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                          <SelectItem key={m} value={m.toString()}>
-                            {new Date(2000, m - 1).toLocaleString('default', { month: 'long' })}
+                        {teamMembers?.map((member: User) => (
+                          <SelectItem key={member.id} value={member.id}>
+                            {member.firstName} {member.lastName} - {member.position || "No position"}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div>
-                    <Label htmlFor="year">Year</Label>
-                    <Select value={year.toString()} onValueChange={(val) => setYear(parseInt(val))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
-                          <SelectItem key={y} value={y.toString()}>
-                            {y}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="month">Month</Label>
+                      <Select value={month.toString()} onValueChange={(val) => setMonth(parseInt(val))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                            <SelectItem key={m} value={m.toString()}>
+                              {new Date(2000, m - 1).toLocaleString('default', { month: 'long' })}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="year">Year</Label>
+                      <Select value={year.toString()} onValueChange={(val) => setYear(parseInt(val))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                            <SelectItem key={y} value={y.toString()}>
+                              {y}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
+
+            {isEmployee && (
+              <Card className="bg-blue-50 border-blue-200">
+                <CardHeader>
+                  <CardTitle className="text-blue-900">Salary Calculator</CardTitle>
+                  <CardDescription className="text-blue-700">
+                    Enter your salary details to calculate your net pay and verify deductions
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-blue-800">
+                    This calculator helps you understand your salary breakdown based on Philippine tax laws and mandatory contributions (SSS, PhilHealth, Pag-IBIG).
+                    Use the "Auto Calculate" button in the Deductions section to automatically compute your mandatory deductions.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {}
             <Card>
@@ -421,14 +436,16 @@ export default function SalaryComputation() {
                 <Separator className="my-4" />
 
                 <div className="space-y-2">
-                  <Button
-                    className="w-full"
-                    onClick={() => createPayslipMutation.mutate()}
-                    disabled={!selectedEmployee || createPayslipMutation.isPending}
-                  >
-                    <Save className="w-4 h-4 mr-2" />
-                    {createPayslipMutation.isPending ? "Generating..." : "Generate Payslip"}
-                  </Button>
+                  {isManagerOrAdmin && (
+                    <Button
+                      className="w-full"
+                      onClick={() => createPayslipMutation.mutate()}
+                      disabled={!selectedEmployee || createPayslipMutation.isPending}
+                    >
+                      <Save className="w-4 h-4 mr-2" />
+                      {createPayslipMutation.isPending ? "Generating..." : "Generate Payslip"}
+                    </Button>
+                  )}
 
                   <Button
                     variant="outline"

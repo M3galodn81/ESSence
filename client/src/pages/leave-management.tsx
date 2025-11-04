@@ -20,9 +20,24 @@ import { Calendar, Clock, Plus, Check, X, Eye } from "lucide-react";
 import type { LeaveRequest } from "@shared/schema";
 
 const leaveFormSchema = insertLeaveRequestSchema.extend({
-  startDate: z.string().min(1, "Start date is required"),
+  startDate: z.string().min(1, "Start date is required")
+    .refine((date) => {
+      const selectedDate = new Date(date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const oneWeekFromNow = new Date(today);
+      oneWeekFromNow.setDate(today.getDate() + 7);
+      return selectedDate >= oneWeekFromNow;
+    }, "Start date must be at least 1 week from today"),
   endDate: z.string().min(1, "End date is required"),
-}).omit({ userId: true });
+}).omit({ userId: true }).refine((data) => {
+  const start = new Date(data.startDate);
+  const end = new Date(data.endDate);
+  return end >= start;
+}, {
+  message: "End date must be on or after start date",
+  path: ["endDate"],
+});
 
 type LeaveForm = z.infer<typeof leaveFormSchema>;
 
@@ -54,8 +69,22 @@ export default function LeaveManagement() {
 
   const createLeaveRequestMutation = useMutation({
     mutationFn: async (data: LeaveForm) => {
+      // Validate dates again before submission
       const startDate = new Date(data.startDate);
       const endDate = new Date(data.endDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const oneWeekFromNow = new Date(today);
+      oneWeekFromNow.setDate(today.getDate() + 7);
+
+      if (startDate < oneWeekFromNow) {
+        throw new Error("Start date must be at least 1 week from today");
+      }
+
+      if (endDate < startDate) {
+        throw new Error("End date must be on or after start date");
+      }
+
       const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
       const res = await apiRequest("POST", "/api/leave-requests", {
@@ -146,7 +175,12 @@ export default function LeaveManagement() {
             <h1 className="text-2xl font-bold" data-testid="page-title">Leave Management</h1>
             <p className="text-muted-foreground">Manage your leave requests and approvals</p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) {
+              form.reset();
+            }
+          }}>
             <DialogTrigger asChild>
               <Button data-testid="button-apply-leave">
                 <Plus className="w-4 h-4 mr-2" />
@@ -183,6 +217,11 @@ export default function LeaveManagement() {
                       id="startDate"
                       type="date"
                       data-testid="input-start-date"
+                      min={(() => {
+                        const date = new Date();
+                        date.setDate(date.getDate() + 7);
+                        return date.toISOString().split('T')[0];
+                      })()}
                       {...form.register("startDate")}
                     />
                     {form.formState.errors.startDate && (
@@ -197,6 +236,11 @@ export default function LeaveManagement() {
                       id="endDate"
                       type="date"
                       data-testid="input-end-date"
+                      min={form.watch("startDate") || (() => {
+                        const date = new Date();
+                        date.setDate(date.getDate() + 7);
+                        return date.toISOString().split('T')[0];
+                      })()}
                       {...form.register("endDate")}
                     />
                     {form.formState.errors.endDate && (

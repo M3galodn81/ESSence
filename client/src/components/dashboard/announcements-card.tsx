@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Megaphone, Trophy, Info } from "lucide-react";
+import { useLocation } from "wouter";
 import type { Announcement } from "@shared/schema";
 
 interface AnnouncementsCardProps {
@@ -10,6 +11,7 @@ interface AnnouncementsCardProps {
 }
 
 export default function AnnouncementsCard({ announcements, isLoading }: AnnouncementsCardProps) {
+  const [, navigate] = useLocation();
   const getAnnouncementIcon = (type: string) => {
     switch (type) {
       case "urgent":
@@ -50,7 +52,13 @@ export default function AnnouncementsCard({ announcements, isLoading }: Announce
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-semibold">Recent Announcements</CardTitle>
-          <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80" data-testid="button-view-all-announcements">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-primary hover:text-primary/80"
+            onClick={() => navigate("/announcements")}
+            data-testid="button-view-all-announcements"
+          >
             View All
           </Button>
         </div>

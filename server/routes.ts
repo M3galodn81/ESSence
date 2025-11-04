@@ -90,8 +90,24 @@ export function registerRoutes(app: Express): Server {
         password: await hashPassword(req.body.password),
       };
 
+      // Handle managerId for different roles
       if (user.role === 'manager' && requestedRole === 'employee' && !userData.managerId) {
         userData.managerId = user.id;
+      }
+
+      // For managers created by admin, ensure managerId is either null or empty string
+      if (requestedRole === 'manager') {
+        // Managers typically don't have a manager, or they report to admin
+        // Set to null/undefined to avoid foreign key constraint issues
+        if (!userData.managerId || userData.managerId === '') {
+          delete userData.managerId;
+        } else {
+          // Validate that the managerId exists if provided
+          const managerExists = await storage.getUser(userData.managerId);
+          if (!managerExists) {
+            return res.status(400).send("Invalid manager ID provided");
+          }
+        }
       }
 
       const newUser = await storage.createUser(userData);
@@ -436,9 +452,9 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/announcements", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'hr') {
+    if (user.role !== 'manager' && user.role !== 'hr' && user.role !== 'admin') {
       return res.status(403).json({ message: "Access denied" });
     }
 

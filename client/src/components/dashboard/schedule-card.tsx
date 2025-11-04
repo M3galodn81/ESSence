@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "lucide-react";
+import { useLocation } from "wouter";
 import type { Schedule } from "@shared/schema";
 
 interface ScheduleCardProps {
@@ -10,6 +11,7 @@ interface ScheduleCardProps {
 }
 
 export default function ScheduleCard({ schedules, isLoading }: ScheduleCardProps) {
+  const [, navigate] = useLocation();
   const getScheduleColor = (shiftType: string) => {
     switch (shiftType) {
       case "morning":
@@ -91,7 +93,13 @@ export default function ScheduleCard({ schedules, isLoading }: ScheduleCardProps
             <Calendar className="w-5 h-5 mr-2" />
             This Week's Schedule
           </CardTitle>
-          <Button variant="ghost" size="sm" className="text-primary hover:text-primary/80" data-testid="button-view-calendar">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-primary hover:text-primary/80"
+            onClick={() => navigate("/schedule")}
+            data-testid="button-view-calendar"
+          >
             View Calendar
           </Button>
         </div>

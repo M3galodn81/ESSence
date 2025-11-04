@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarPlus, FileText, UserCog, FolderOpen } from "lucide-react";
+import { CalendarPlus, FileText, UserCog } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function QuickActionsCard() {
@@ -24,12 +24,6 @@ export default function QuickActionsCard() {
       label: "Update Profile",
       action: () => navigate("/profile"),
       testId: "quick-action-profile",
-    },
-    {
-      icon: FolderOpen,
-      label: "My Documents",
-      action: () => navigate("/documents"),
-      testId: "quick-action-documents",
     },
   ];
 

@@ -18,13 +18,22 @@ const profileUpdateSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Invalid email address"),
-  phoneNumber: z.string().optional(),
+  phoneNumber: z.string().optional().refine((val) => {
+    if (!val || val.trim() === "") return true;
+    // Allow only digits, spaces, hyphens, parentheses, and plus sign
+    const phoneRegex = /^[\d\s\-\(\)\+]+$/;
+    return phoneRegex.test(val);
+  }, "Phone number can only contain numbers and basic formatting characters"),
 });
 
 const emergencyContactSchema = z.object({
   name: z.string().min(1, "Emergency contact name is required"),
   relationship: z.string().min(1, "Relationship is required"),
-  phone: z.string().min(1, "Emergency contact phone is required"),
+  phone: z.string().min(1, "Emergency contact phone is required").refine((val) => {
+    // Allow only digits, spaces, hyphens, parentheses, and plus sign
+    const phoneRegex = /^[\d\s\-\(\)\+]+$/;
+    return phoneRegex.test(val);
+  }, "Phone number can only contain numbers and basic formatting characters"),
 });
 
 const addressSchema = z.object({
