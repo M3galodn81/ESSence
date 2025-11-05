@@ -19,6 +19,7 @@ import { insertAnnouncementSchema } from "@shared/schema";
 import { z } from "zod";
 import { Megaphone, Plus, Edit, Eye, EyeOff, Trash2, Users, Calendar, Filter } from "lucide-react";
 import type { Announcement } from "@shared/schema";
+import { canManageAnnouncements } from "@/lib/permissions";
 
 const announcementFormSchema = insertAnnouncementSchema.extend({
   targetDepartments: z.array(z.string()).optional(),
@@ -35,7 +36,7 @@ export default function Announcements() {
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  const canManageAnnouncements = user?.role === 'manager' || user?.role === 'admin';
+  const canManage = canManageAnnouncements(user);
 
   const { data: announcements, isLoading } = useQuery({
     queryKey: ["/api/announcements"],
@@ -97,7 +98,7 @@ export default function Announcements() {
     },
   });
 
-  if (!canManageAnnouncements) {
+  if (!canManage) {
     return (
       <div className="p-6">
         <div className="max-w-4xl mx-auto">

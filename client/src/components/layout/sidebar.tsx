@@ -21,6 +21,7 @@ import {
   UserPlus
 } from "lucide-react";
 import { useState } from "react";
+import { canAccessManagementTab } from "@/lib/permissions";
 
 interface SidebarProps {
   className?: string;
@@ -59,11 +60,11 @@ export default function Sidebar({ className }: SidebarProps) {
     setIsMobileOpen(false);
   };
 
-  const canAccessManagement = user?.role === "manager" || user?.role === "admin";
+  const canAccessManagement = canAccessManagementTab(user);
 
   const isActive = (path: string) => {
     if (path === "/") return location === "/";
-    return location.startsWith(path);
+      return location === path;
   };
 
   const sidebarContent = (
@@ -89,7 +90,7 @@ export default function Sidebar({ className }: SidebarProps) {
             <p className="text-sm font-medium truncate text-sidebar-foreground" data-testid="user-name">
               {user ? `${user.firstName} ${user.lastName}` : "Loading..."}
             </p>
-            <p className="text-xs text-sidebar-foreground/70 capitalize" data-testid="user-role">
+            <p className="text-xs text-sidebar-foreground capitalize" data-testid="user-role">
               {user?.position || user?.role || "Employee"}
             </p>
           </div>
