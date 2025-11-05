@@ -12,11 +12,12 @@ export default function Payslips() {
   });
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-PH', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'PHP',
     }).format(amount / 100); 
   };
+
 
   const formatDate = (date: string | Date) => {
     return new Date(date).toLocaleDateString();
