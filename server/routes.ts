@@ -78,9 +78,7 @@ export function registerRoutes(app: Express): Server {
     if (user.role === 'manager' && requestedRole !== 'employee') {
       return res.status(403).send("Managers can only create employee accounts");
     }
-    if (user.role === 'admin' && requestedRole !== 'manager') {
-      return res.status(403).send("Admins can only create manager accounts");
-    }
+    
     if (user.role !== 'admin' && user.role !== 'manager') {
       return res.status(403).send("Access denied");
     }
