@@ -12,6 +12,7 @@ import {
   insertLaborCostDataSchema
 } from "@shared/schema";
 import { z } from "zod";
+import { ZodError } from "zod";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -182,14 +183,27 @@ export function registerRoutes(app: Express): Server {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     try {
-      const leaveData = insertLeaveRequestSchema.parse({
+      const apiData = insertLeaveRequestSchema.parse({
         ...req.body,
         userId: req.user!.id,
+        startDate: new Date(req.body.startDate),
+        endDate: new Date(req.body.endDate),
       });
-      const leaveRequest = await storage.createLeaveRequest(leaveData);
+
+      const leaveRequest = await storage.createLeaveRequest(apiData);
       res.json(leaveRequest);
+
     } catch (error) {
-      res.status(400).json({ message: "Invalid leave request data" });
+          if (error instanceof ZodError) {
+          console.error("[ZOD ERROR] Leave request validation failed:", error.errors);
+          return res.status(400).json({
+            message: "Invalid leave request data",
+            debug: error.errors,      // optional: send detailed validation errors
+          });
+        }
+
+        console.error("[SERVER ERROR] Unexpected error:", error);
+        return res.sendStatus(500);
     }
   });
 

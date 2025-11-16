@@ -97,7 +97,7 @@ export default function ScheduleCard({ schedules, isLoading }: ScheduleCardProps
             variant="ghost"
             size="sm"
             className="text-primary hover:text-primary/80"
-            onClick={() => navigate("/schedule")}
+            onClick={() => navigate("/schedules")}
             data-testid="button-view-calendar"
           >
             View Calendar
