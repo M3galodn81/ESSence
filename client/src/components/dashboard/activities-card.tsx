@@ -66,7 +66,7 @@ export default function ActivitiesCard({ activities, isLoading }: ActivitiesCard
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getActivityColor(activity.type)}`} />
                 <div className="flex-1">
                   <p className="text-sm text-foreground" data-testid={`activity-description-${activity.id}`}>
-                    {activity.description}
+                    {activity.type}
                   </p>
                   <p className="text-xs text-muted-foreground" data-testid={`activity-time-${activity.id}`}>
                     {formatTimeAgo(new Date(activity.createdAt!))}

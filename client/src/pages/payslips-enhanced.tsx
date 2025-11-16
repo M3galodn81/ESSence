@@ -75,7 +75,7 @@ export default function PayslipsEnhanced() {
         percentage: ((value / payslip.grossPay) * 100).toFixed(1),
       })),
       {
-        name: "Net Pay (Take Home)",
+        name: "Net Pay",
         value: netPay,
         percentage: ((netPay / payslip.grossPay) * 100).toFixed(1),
       }
@@ -100,6 +100,35 @@ export default function PayslipsEnhanced() {
 
   const thirteenthMonthData = calculate13thMonthPay();
   const netPayProgress = getNetPayProgress();
+
+  const renderCustomLabel = ({
+    cx,
+    cy,
+    midAngle,
+    outerRadius,
+    percent,
+    name,
+    percentage,
+  }) => {
+    if (percentage < 2) return null; // hide small ones
+
+    const RADIAN = Math.PI / 180;
+    const r = outerRadius + 25;
+    const x = cx + r * Math.cos(-midAngle * RADIAN);
+    const y = cy + r * Math.sin(-midAngle * RADIAN);
+
+    return (
+      <text
+        x={x}
+        y={y}
+        fill="#333"
+        textAnchor={x > cx ? "start" : "end"}
+        dominantBaseline="central"
+      >
+        {`${name}: ${percentage}%`}
+      </text>
+    );
+  };
 
   return (
     <div className="p-6">
@@ -261,8 +290,8 @@ export default function PayslipsEnhanced() {
                                 cx="50%"
                                 cy="50%"
                                 labelLine={false}
-                                label={({ name, percentage }) => `${name}: ${percentage}%`}
-                                outerRadius={80}
+                                label={renderCustomLabel}
+                                outerRadius={90}
                                 fill="#8884d8"
                                 dataKey="value"
                               >
@@ -271,6 +300,7 @@ export default function PayslipsEnhanced() {
                                 ))}
                               </Pie>
                               <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                              
                             </PieChart>
                           </ResponsiveContainer>
 
