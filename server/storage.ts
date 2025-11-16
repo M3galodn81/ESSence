@@ -134,6 +134,7 @@ export interface IStorage {
   deleteDocument(id: string): Promise<boolean>;
 
   createAnnouncement(announcement: InsertAnnouncement): Promise<Announcement>;
+  getAllAnnouncements(department?: string): Promise<Announcement[]>;
   getActiveAnnouncements(department?: string): Promise<Announcement[]>;
   getAnnouncementById(id: string): Promise<Announcement | undefined>;
   updateAnnouncement(id: string, updates: Partial<Announcement>): Promise<Announcement | undefined>;
@@ -403,6 +404,23 @@ export class DbStorage implements IStorage {
     }
 
     return await query.orderBy(desc(announcements.createdAt));
+  }
+  
+  async getAllAnnouncements(department?: string): Promise<Announcement[]> {
+    const query = db.select().from(announcements);
+
+    const allAnnouncements = await query;
+
+    const visibleAnnouncements = allAnnouncements
+      .filter(announcement =>
+        // Show if no targetDepartments OR empty array OR includes the user's department
+        !announcement.targetDepartments ||
+        (announcement.targetDepartments as string[]).length === 0 ||
+        (announcement.targetDepartments as string[]).includes(department!)
+      )
+      .sort((a, b) => b.createdAt!.getTime() - a.createdAt!.getTime());
+
+    return visibleAnnouncements;
   }
 
   async getAnnouncementById(id: string): Promise<Announcement | undefined> {

@@ -460,7 +460,7 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/announcements", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
-    const announcements = await storage.getActiveAnnouncements(req.user!.department || undefined);
+    const announcements = await storage.getAllAnnouncements(req.user!.department);
     res.json(announcements);
   });
 
@@ -484,6 +484,39 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  //app.patch
+  app.patch("/api/announcements/:id", async (req, res) => {
+  try {
+    // Ensure user is authenticated
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    const user = req.user!;
+    
+    // Only allow managers, HR, or admins
+    if (!["manager", "hr", "admin"].includes(user.role)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    // Validate incoming data (partial updates allowed)
+    const updateData = insertAnnouncementSchema.partial().parse(req.body);
+
+    // Update the announcement in your storage
+    const updated = await storage.updateAnnouncement(req.params.id, updateData);
+
+    if (!updated) {
+      return res.status(404).json({ message: "Announcement not found" });
+    }
+
+    // Send JSON response
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ message: "Invalid update data" });
+  }
+});
+
+
+
   app.get("/api/activities", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
@@ -504,31 +537,6 @@ export function registerRoutes(app: Express): Server {
     
     const userTrainings = await storage.getUserTrainings(req.user!.id);
     res.json(userTrainings);
-  });
-
-  app.patch("/api/user-trainings/:trainingId", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    try {
-      const updates = z.object({
-        status: z.enum(["not_started", "in_progress", "completed"]).optional(),
-        progress: z.number().min(0).max(100).optional(),
-      }).parse(req.body);
-
-      if (updates.status === 'completed') {
-        updates.progress = 100;
-      }
-
-      const userTraining = await storage.updateUserTraining(
-        req.user!.id,
-        req.params.trainingId,
-        updates
-      );
-
-      res.json(userTraining);
-    } catch (error) {
-      res.status(400).json({ message: "Invalid training update data" });
-    }
   });
 
   app.patch("/api/profile", async (req, res) => {
