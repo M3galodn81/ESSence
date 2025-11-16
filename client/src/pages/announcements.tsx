@@ -77,13 +77,18 @@ export default function Announcements() {
     },
   });
 
-  const updateAnnouncementMutation = useMutation({
+ const updateAnnouncementMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<Announcement> }) => {
-      const res = await apiRequest("PATCH", `/api/announcements/${id}`, data);
+      const res = await fetch(`/api/announcements/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
       return await res.json();
     },
     onSuccess: () => {
       toast({
+        
         title: "Announcement updated",
         description: "The announcement has been updated successfully.",
       });
@@ -98,23 +103,24 @@ export default function Announcements() {
     },
   });
 
-  if (!canManage) {
-    return (
-      <div className="p-6">
-        <div className="max-w-4xl mx-auto">
-          <Card>
-            <CardContent className="text-center py-12">
-              <Megaphone className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">Access Restricted</h3>
-              <p className="text-muted-foreground">
-                You need manager or HR privileges to manage announcements.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
+
+  // if (!canManage) {
+  //   return (
+  //     <div className="p-6">
+  //       <div className="max-w-4xl mx-auto">
+  //         <Card>
+  //           <CardContent className="text-center py-12">
+  //             <Megaphone className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+  //             <h3 className="text-lg font-medium text-foreground mb-2">Access Restricted</h3>
+  //             <p className="text-muted-foreground">
+  //               You need manager or HR privileges to manage announcements.
+  //             </p>
+  //           </CardContent>
+  //         </Card>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   const onSubmit = (data: AnnouncementForm) => {
     if (editingAnnouncement) {
@@ -217,7 +223,6 @@ export default function Announcements() {
 
   const stats = getAnnouncementStats();
 
-  const departments = ["Engineering", "Marketing", "Sales", "HR", "Finance", "Operations"];
 
   const resetForm = () => {
     setEditingAnnouncement(null);
@@ -241,6 +246,7 @@ export default function Announcements() {
               Create and manage company-wide communications
             </p>
           </div>
+          {canManage && (
           <Dialog open={isDialogOpen} onOpenChange={(open) => {
             setIsDialogOpen(open);
             if (!open) resetForm();
@@ -325,35 +331,8 @@ export default function Announcements() {
                   </div>
                 </div>
 
-                <div>
-                  <Label>Target Departments (Optional)</Label>
-                  <div className="grid grid-cols-3 gap-2 mt-2">
-                    {departments.map((dept) => (
-                      <div key={dept} className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          id={`dept-${dept}`}
-                          data-testid={`checkbox-${dept.toLowerCase()}`}
-                          onChange={(e) => {
-                            const current = form.getValues("targetDepartments") || [];
-                            if (e.target.checked) {
-                              form.setValue("targetDepartments", [...current, dept]);
-                            } else {
-                              form.setValue("targetDepartments", current.filter(d => d !== dept));
-                            }
-                          }}
-                          checked={form.watch("targetDepartments")?.includes(dept)}
-                        />
-                        <Label htmlFor={`dept-${dept}`} className="text-sm">
-                          {dept}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Leave empty to target all departments
-                  </p>
-                </div>
+                
+          
 
                 <div className="flex justify-end space-x-2 pt-4">
                   <Button
@@ -380,6 +359,7 @@ export default function Announcements() {
               </form>
             </DialogContent>
           </Dialog>
+          )}
         </div>
 
         {}
@@ -537,6 +517,7 @@ export default function Announcements() {
                             </div>
                           </div>
                         </div>
+                        {canManage && (
                         <div className="flex items-center space-x-2">
                           <Button
                             variant="outline"
@@ -556,6 +537,7 @@ export default function Announcements() {
                             <Edit className="w-4 h-4" />
                           </Button>
                         </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

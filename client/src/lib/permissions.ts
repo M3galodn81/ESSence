@@ -2,12 +2,10 @@
 import type { User } from "@/hooks/use-auth";
 
 export function canManageAnnouncements(user?: User | null): boolean {
-    console.log("User role:", user?.role);
   return user?.role === "admin" || user?.role === "manager";
 }
 
 export function canAccessManagementTab(user?: User | null): boolean {
-    console.log("User role:", user?.role);
   return user?.role === "admin" || user?.role === "manager";
 }
 
