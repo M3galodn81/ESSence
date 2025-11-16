@@ -42,8 +42,8 @@ const managementItems = [
   { path: "/user-management", label: "User Management", icon: UserPlus, roles: ["manager", "admin"] },
   { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
   { path: "/shift-management", label: "Shift Management", icon: Calendar, roles: ["manager", "admin"] },
-  { path: "/reports-analytics", label: "Reports & Analytics", icon: BarChart, roles: ["manager", "admin"] },
-  { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager", "admin"] },
+  { path: "/reports-analytics", label: "Reports & Analytics", icon: BarChart, roles: ["manager"] },
+  { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager"] },
   
 ];
 

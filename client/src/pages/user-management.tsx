@@ -306,6 +306,7 @@ export default function UserManagement() {
     if (user?.role === "admin") {
       return [
         { value: "manager", label: "Manager" },
+        { value: "employee", label: "Employee" },
       ];
     } else if (user?.role === "manager") {
       return [
