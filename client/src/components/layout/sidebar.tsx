@@ -31,7 +31,7 @@ const navigationItems = [
   { path: "/", label: "Dashboard", icon: Home, roles: ["employee", "manager", "admin"] },
   { path: "/announcements", label: "Announcements", icon: Megaphone, roles: ["employee","manager", "admin"] },
   { path: "/leave-management", label: "Leave Management", icon: Calendar, roles: ["employee", "manager", "admin"] },
-  { path: "/payslips", label: "Payslips", icon: FileText, roles: ["employee", "manager", "admin"] },
+  { path: "/payslips", label: "Payslips", icon: FileText, roles: ["employee"] },
   { path: "/salary-computation", label: "Salary Calculator", icon: DollarSign, roles: ["employee", "manager", "admin"] },
   { path: "/schedules", label: "Schedules", icon: Clock, roles: ["employee", "manager", "admin"] },
   { path: "/reports", label: "Reports", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
