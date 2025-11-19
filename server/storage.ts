@@ -141,6 +141,7 @@ export interface IStorage {
 
   createActivity(activity: InsertActivity): Promise<Activity>;
   getActivitiesByUser(userId: string, limit?: number): Promise<Activity[]>;
+  getAllActivities(): Promise<Activity[]>;
 
   getAllTrainings(): Promise<Training[]>;
   getUserTrainings(userId: string): Promise<UserTraining[]>;
@@ -443,6 +444,12 @@ export class DbStorage implements IStorage {
       .where(eq(activities.userId, userId))
       .orderBy(desc(activities.createdAt))
       .limit(limit);
+  }
+
+  async getAllActivities(limit = 10): Promise<Activity[]> {
+    return await db.select().from(activities)
+      .limit(limit)
+      .orderBy(desc(activities.createdAt));
   }
 
   async getAllTrainings(): Promise<Training[]> {

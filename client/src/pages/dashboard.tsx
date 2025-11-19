@@ -17,7 +17,7 @@ export default function Dashboard() {
   });
 
   const { data: activities, isLoading: activitiesLoading } = useQuery({
-    queryKey: ["/api/activities"],
+    queryKey: ["/api/activities/all"],
   });
 
   const { data: schedules, isLoading: schedulesLoading } = useQuery({

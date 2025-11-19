@@ -12,6 +12,7 @@ import Profile from "@/pages/profile";
 import LeaveManagement from "@/pages/leave-management";
 import PayslipsEnhanced from "@/pages/payslips-enhanced";
 import PayslipMobile from "@/pages/payslip-mobile";
+import PayslipGenerator from "./pages/payslip-generator";
 import SalaryComputation from "@/pages/salary-computation";
 import Schedules from "@/pages/schedules";
 import ShiftManagement from "@/pages/shift-management";
@@ -65,6 +66,11 @@ function Router() {
       )} />
       <ProtectedRoute path="/payslip-mobile" component={() => (
         <PayslipMobile />
+      )} />
+      <ProtectedRoute path="/payslip-generator" component={() => (
+        <MainLayout>
+          <PayslipGenerator />
+        </MainLayout>
       )} />
       <ProtectedRoute path="/salary-computation" component={() => (
         <MainLayout>

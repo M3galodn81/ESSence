@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState , useMemo} from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -55,6 +55,32 @@ export default function LeaveManagement() {
     queryKey: ["/api/leave-requests/pending"],
     enabled: user?.role === 'manager' || user?.role === 'admin',
   });
+
+  // Fetch all users to map user IDs to names
+  const { data: users, isLoading: usersLoading } = useQuery<User[]>({
+    queryKey: ["/api/users/"], // An endpoint that returns all users
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/users/"); 
+      return res.json();
+    }
+  });
+
+  // Memoized map of user IDs to names
+  const userMap = useMemo(() => {
+    if (!users) {
+      return new Map<string, string>();
+    }
+    // Creates a Map from user ID to full name
+    return users.reduce((map, user) => {
+      map.set(user.id, `${user.firstName} ${user.lastName}`);
+      return map;
+    }, new Map<string, string>());
+    
+  }, [users]);
+
+  const getUserName = (userId: string) => {
+    return userMap.get(userId) || "Unknown User";
+  };
 
   const form = useForm<LeaveForm>({
     resolver: zodResolver(leaveFormSchema),
@@ -386,7 +412,7 @@ export default function LeaveManagement() {
                             </div>
                             <div>
                               <h4 className="font-medium" data-testid={`pending-employee-${request.id}`}>
-                                Employee ID: {request.userId}
+                                Employee Name: {getUserName(request.userId)}
                               </h4>
                               <p className="text-sm text-muted-foreground capitalize" data-testid={`pending-type-${request.id}`}>
                                 {request.type} Leave
