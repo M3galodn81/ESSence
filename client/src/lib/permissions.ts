@@ -1,22 +1,26 @@
-
 import type { User } from "@/hooks/use-auth";
 
-export function canManageAnnouncements(user?: User | null): boolean {
-  return user?.role === "admin" || user?.role === "manager";
-}
+// 1. Single source of truth for role strings
+export const ROLES = {
+  ADMIN: "admin",
+  MANAGER: "manager",
+  EMPLOYEE: "employee",
+  PAYROLL_OFFICER_: "payroll_officer"
+} as const;
 
+// 2. Define hierarchies or groups
+const ADMIN_LEVEL = [ROLES.ADMIN, ROLES.MANAGER];
+
+// 3. Refactored functions using the constants
+export const isAdmin = (u?: User | null) => u?.role === ROLES.ADMIN;
+export const isManager = (u?: User | null) => u?.role === ROLES.MANAGER;
+export const isEmployee = (u?: User | null) => u?.role === ROLES.EMPLOYEE;
+
+// 4. Consolidated permissions
 export function canAccessManagementTab(user?: User | null): boolean {
-  return user?.role === "admin" || user?.role === "manager";
+  return !!user?.role && ADMIN_LEVEL.includes(user.role as any);
 }
 
-export function isAdmin(user?: User | null): boolean {
-  return user?.role === "admin";
-}
+export const canManageAnnouncements = canAccessManagementTab;
 
-export function isManager(user?: User | null): boolean {
-  return user?.role === "manager";
-}
-
-export function isEmployee(user?: User | null): boolean {
-  return user?.role === "employee";
-}
+// TODO Add more permission / move all permissions to be here

@@ -51,6 +51,7 @@ export default function LeaveManagement() {
     queryKey: ["/api/leave-requests"],
   });
 
+  //move this to permissions.ts
   const { data: pendingRequests, isLoading: pendingLoading } = useQuery({
     queryKey: ["/api/leave-requests/pending"],
     enabled: user?.role === 'manager' || user?.role === 'admin',
@@ -190,6 +191,7 @@ export default function LeaveManagement() {
     return new Date(date).toLocaleDateString();
   };
 
+  //move this to permissions.ts
   const canManageLeaves = user?.role === 'manager' || user?.role === 'admin';
 
   return (
@@ -277,7 +279,7 @@ export default function LeaveManagement() {
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="reason">Reason (Optional)</Label>
+                  <Label htmlFor="reason">Reason</Label>
                   <Textarea
                     id="reason"
                     data-testid="input-reason"
@@ -447,6 +449,17 @@ export default function LeaveManagement() {
                               <X className="w-4 h-4 mr-1" />
                               Reject
                             </Button>
+                            {/* TODO make a popup if rejecting leave
+                                <div>
+                              <Label htmlFor="reason">Reason</Label>
+                              <Textarea
+                                id="reason"
+                                data-testid="input-reason"
+                                {...form.register("reason")}
+                                placeholder="Provide a reason for your leave request"
+                                rows={3}
+                              />
+                            </div> */}
                           </div>
                         </div>
                       ))}

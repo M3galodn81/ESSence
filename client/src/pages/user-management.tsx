@@ -307,6 +307,7 @@ export default function UserManagement() {
       return [
         { value: "manager", label: "Manager" },
         { value: "employee", label: "Employee" },
+        { value: "payroll_officer", label: "Payroll Officer" },
       ];
     } else if (user?.role === "manager") {
       return [
@@ -325,6 +326,7 @@ export default function UserManagement() {
     return <Badge className={colors[role] || "bg-gray-100"}>{role.toUpperCase()}</Badge>;
   };
 
+  //move this to permissions.ts
   if (user?.role !== "admin" && user?.role !== "manager") {
     return (
       <div className="p-8">
@@ -739,7 +741,8 @@ export default function UserManagement() {
                 />
               </div>
             </div>
-
+            
+            {/* TODO: Make this return the ID */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="edit-employeeId">Employee ID</Label>

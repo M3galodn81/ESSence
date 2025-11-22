@@ -24,6 +24,7 @@ export default function Dashboard() {
     queryKey: ["/api/schedules"],
   });
 
+  //TODO: Fix view for admin/managers
   return (
     <div className="p-6 space-y-8">
       {}

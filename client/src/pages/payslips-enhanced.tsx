@@ -10,6 +10,8 @@ import { FileText, Download, Eye, Calendar, TrendingUp, DollarSign } from "lucid
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
 import type { Payslip } from "@shared/schema";
 
+//Remove Data Analytics here
+
 export default function PayslipsEnhanced() {
   const { user } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
@@ -84,6 +86,7 @@ export default function PayslipsEnhanced() {
     return data;
   };
 
+  //Fix display
   const getNetPayProgress = () => {
     if (!payslips || payslips.length === 0) return [];
     

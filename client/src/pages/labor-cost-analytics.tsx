@@ -162,6 +162,7 @@ export default function LaborCostAnalytics() {
     laborPercent: data.laborCostPercentage / 100,
   })) || [];
 
+  // move this to permissions.ts
   if (user?.role !== 'manager' && user?.role !== 'hr') {
     return (
       <div className="p-6">

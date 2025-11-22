@@ -358,6 +358,8 @@ export default function Reports() {
 
 function ReportCard({ report, user, onUpdate, formatDate, formatCurrency, getStatusBadge, getSeverityBadge }: any) {
   const [notes, setNotes] = useState("");
+
+  // permissions.ts
   const isManager = user?.role === "manager" || user?.role === "hr";
 
   return (
