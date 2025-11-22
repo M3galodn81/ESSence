@@ -19,6 +19,7 @@ export default function TeamManagement() {
     enabled: user?.role === 'manager' || user?.role === 'admin',
   });
 
+  //move this to permissions.ts
   const canManageTeam = user?.role === 'manager' || user?.role === 'admin';
 
   if (!canManageTeam) {

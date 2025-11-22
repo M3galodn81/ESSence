@@ -40,6 +40,7 @@ export default function ShiftManagement() {
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
 
+  //move this to permissions.ts
   if (user?.role !== 'manager' && user?.role !== 'admin') {
     return (
       <div className="p-6">

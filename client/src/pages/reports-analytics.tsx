@@ -21,6 +21,7 @@ export default function ReportsAnalytics() {
     enabled: user?.role === 'manager' || user?.role === 'hr',
   });
 
+  //move this to permissions.ts
   const canViewReports = user?.role === 'manager' || user?.role === 'hr';
 
   if (!canViewReports) {

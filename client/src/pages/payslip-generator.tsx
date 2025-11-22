@@ -17,12 +17,13 @@ export default function PayslipGenerator() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  if (user?.role !== 'admin' ) {
+  //permissions.ts
+  if (user?.role !== 'payroll_officer' ) {
     return (
       <div className="p-6">
         <Card>
           <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">Access denied. Admin role required.</p>
+            <p className="text-center text-muted-foreground">Access denied. Payroll Officer role required.</p>
           </CardContent>
         </Card>
       </div>

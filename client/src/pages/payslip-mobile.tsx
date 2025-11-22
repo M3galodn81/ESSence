@@ -9,6 +9,7 @@ import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, PieChart, Pie, Cell
 import { useLocation } from "wouter";
 import type { Payslip } from "@shared/schema";
 
+//Remove Data Analytics here
 export default function PayslipMobile() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
