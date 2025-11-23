@@ -17,6 +17,7 @@ const MANAGEMENT_ROLES = [ROLES.ADMIN, ROLES.MANAGER] as const;
 const HR_ROLES = [ROLES.ADMIN, ROLES.PAYROLL_OFFICER, ROLES.MANAGER] as const;
 
 const EMPLOYEE_FEATURES = [ROLES.EMPLOYEE];
+const PAYROLL_FEATURES = [ROLES.PAYROLL_OFFICER];
 
 // 3. Simple role checks (Using a factory function)
 const hasRole = (role: Role) => (u?: User | null) => u?.role === role;
@@ -55,12 +56,12 @@ export const canViewDashoardPendingTasks = canViewEmployeeDashboardFeatures;
 // #endregion
 
 // #region Announcement Features
-export const canMakeAnnouncements = (user?: User | null) =>
+export const canManageAnnouncements = (user?: User | null) =>
  hasAnyRole(user, MANAGEMENT_ROLES);
 
-export const canEditAnnouncements = canMakeAnnouncements
-export const canHideAnnouncements = canMakeAnnouncements
-export const canDeleteAnnouncements = canMakeAnnouncements
+export const canEditAnnouncements = canManageAnnouncements
+export const canHideAnnouncements = canManageAnnouncements
+export const canDeleteAnnouncements = canManageAnnouncements
 
 // #endregion
 
@@ -70,7 +71,6 @@ export const canAcceptDenyLeaveRequest = (user?: User | null) =>
 
 export const canViewLeaveDetails = canViewEmployeeDashboardFeatures;
 // #endregion
-
 
 // #region Reports
 
@@ -83,31 +83,56 @@ export const canViewLeaveDetails = canViewEmployeeDashboardFeatures;
 // #endregion
 
 // ---------------------------------------
-// #region User Management 
-
-// #endregion
-
-// #region Team Management 
-
-// #endregion
-
-// #region Shift Management
-
-// #endregion
-
-// #region Payslip Generator
-
-// #endregion
-
-// #region Labor Cost Analysis
-
-// #endregion
-
 
 export const canAccessManagementTab = (user?: User | null) =>
  hasAnyRole(user, MANAGEMENT_ROLES);
 
-export const canManageAnnouncements = canAccessManagementTab;
+// #region User Management 
+export const canViewUserManagement = (user?: User | null) =>
+ hasAnyRole(user, MANAGEMENT_ROLES);
 
-export const canViewPayrollData = (user?: User | null) =>
-  hasAnyRole(user, HR_ROLES);
+export const canCreateUser = canViewUserManagement;
+export const canEditUser = canViewUserManagement;
+export const canDeleteUser = canViewUserManagement;
+export const canChangeUserPassword = canViewUserManagement;
+// #endregion
+
+// #region Team Management 
+export const canViewTeamManagement = (user?: User | null) =>
+ hasAnyRole(user, MANAGEMENT_ROLES);
+
+export const canAddTeamMember = canViewTeamManagement;
+export const canEditTeamMember = canViewTeamManagement;
+export const canRemoveTeamMember = canViewTeamManagement;
+
+// #endregion
+
+// #region Shift Management
+export const canViewShiftManagement = (user?: User | null) =>
+ hasAnyRole(user, MANAGEMENT_ROLES);
+
+export const canCreateShift = canViewShiftManagement;
+export const canEditShift = canViewShiftManagement;
+export const canDeleteShift = canViewShiftManagement;
+
+// #endregion
+
+// #region Payslip Generator
+export const canViewPayslipGenerator = (user?: User | null) =>
+ hasAnyRole(user, PAYROLL_FEATURES);
+
+export const canGeneratePayslip = canViewPayslipGenerator;
+export const canEditPayslip = canViewPayslipGenerator;
+export const canDeletePayslip = canViewPayslipGenerator;
+
+// #endregion
+
+// #region Labor Cost Analysis
+export const canViewLaborCostAnalysis = (user?: User | null) =>
+  hasAnyRole(user, [ROLES.MANAGER]);
+
+export const canGenerateLaborCostReport = canViewLaborCostAnalysis;
+
+// #endregion
+
+

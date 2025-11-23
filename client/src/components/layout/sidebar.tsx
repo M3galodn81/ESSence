@@ -28,23 +28,23 @@ interface SidebarProps {
 }
 
 const navigationItems = [
-  { path: "/", label: "Dashboard", icon: Home, roles: ["employee", "manager", "admin"] },
-  { path: "/announcements", label: "Announcements", icon: Megaphone, roles: ["employee","manager", "admin"] },
+  { path: "/", label: "Dashboard", icon: Home, roles: ["employee", "manager", "admin", "payroll_officer"] },
+  { path: "/announcements", label: "Announcements", icon: Megaphone, roles: ["employee", "manager", "admin", "payroll_officer"] },
   { path: "/leave-management", label: "Leave Management", icon: Calendar, roles: ["employee", "manager", "admin"] },
   { path: "/payslips", label: "Payslips", icon: FileText, roles: ["employee"] },
   { path: "/salary-computation", label: "Salary Calculator", icon: DollarSign, roles: ["employee"] },
   { path: "/schedules", label: "Schedules", icon: Clock, roles: ["employee"] },
-  { path: "/reports", label: "Reports", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
-  { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "admin"] },
+  { path: "/reports", label: "Incidents & Breakages", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
+  { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "admin", "payroll_officer"] },
 ];
 
 const managementItems = [
   { path: "/user-management", label: "User Management", icon: UserPlus, roles: ["manager", "admin"] },
   { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
   { path: "/shift-management", label: "Shift Management", icon: Calendar, roles: ["manager", "admin"] },
-  { path: "/payslip-generator", label: "Payslip Generator", icon: DollarSign, roles: [ "admin"] },
-  { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager"] },
-  
+  // ✅ Added 'admin' and ensured 'payroll_officer' is present
+  { path: "/payslip-generator", label: "Payslip Generator", icon: DollarSign, roles: ["admin", "payroll_officer"] },
+  { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager", "admin"] },
 ];
 
 export default function Sidebar({ className }: SidebarProps) {
@@ -61,16 +61,17 @@ export default function Sidebar({ className }: SidebarProps) {
     setIsMobileOpen(false);
   };
 
-  const canAccessManagement = canAccessManagementTab(user);
+  // ✅ Updated Check: Explicitly allow payroll_officer to see the Management section
+  // independent of what the helper function returns.
+  const canAccessManagement = canAccessManagementTab(user) || user?.role === "payroll_officer";
 
   const isActive = (path: string) => {
     if (path === "/") return location === "/";
-      return location === path;
+    return location === path;
   };
 
   const sidebarContent = (
     <>
-      {}
       <div className="p-6 border-b border-gray-800">
         <div className="flex flex-col items-center space-y-2">
           <img
@@ -81,7 +82,6 @@ export default function Sidebar({ className }: SidebarProps) {
         </div>
       </div>
 
-      {}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-sidebar-accent rounded-full flex items-center justify-center">
@@ -106,7 +106,6 @@ export default function Sidebar({ className }: SidebarProps) {
         </div>
       </div>
 
-      {}
       <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
         {navigationItems
           .filter(item => item.roles.includes(user?.role || "employee"))
@@ -128,7 +127,6 @@ export default function Sidebar({ className }: SidebarProps) {
             </Button>
           ))}
 
-        {}
         {canAccessManagement && (
           <div className="pt-4 mt-4 border-t border-gray-800">
             <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -157,7 +155,6 @@ export default function Sidebar({ className }: SidebarProps) {
         )}
       </nav>
 
-      {}
       <div className="p-4 border-t border-gray-800">
         <Button
           variant="ghost"
@@ -175,7 +172,6 @@ export default function Sidebar({ className }: SidebarProps) {
 
   return (
     <>
-      {}
       {isMobileOpen && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
@@ -184,7 +180,6 @@ export default function Sidebar({ className }: SidebarProps) {
         />
       )}
 
-      {}
       <Button
         variant="ghost"
         size="sm"
@@ -195,7 +190,6 @@ export default function Sidebar({ className }: SidebarProps) {
         {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </Button>
 
-      {}
       <aside
         className={cn(
           "w-64 bg-sidebar border-r border-sidebar-border sidebar-transition fixed z-50 h-screen flex flex-col",

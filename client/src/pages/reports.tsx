@@ -149,7 +149,7 @@ export default function Reports() {
         {}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Reports</h1>
+            <h1 className="text-2xl font-bold">Incident and Breakage Reports</h1>
             <p className="text-muted-foreground">Submit and track incident and breakage reports</p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

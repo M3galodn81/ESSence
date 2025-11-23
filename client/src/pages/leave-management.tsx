@@ -20,23 +20,25 @@ import { Calendar, Clock, Plus, Check, X, Eye, Activity, AlertCircle, Briefcase 
 import type { LeaveRequest, User } from "@shared/schema"; // Added User type
 
 const leaveFormSchema = insertLeaveRequestSchema.extend({
-  startDate: z.string().min(1, "Start date is required")
-    .refine((date) => {
-      const selectedDate = new Date(date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const oneWeekFromNow = new Date(today);
-      oneWeekFromNow.setDate(today.getDate() + 7);
-      return selectedDate >= oneWeekFromNow;
-    }, "Start date must be at least 1 week from today"),
-  endDate: z.string().min(1, "End date is required"),
+  startDate: z.string().min(1, "Start date is required")
+    .refine((date) => {
+      const selectedDate = new Date(date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Normalize today to midnight
+      
+      const minDate = new Date(today);
+      minDate.setDate(today.getDate() + 7); // Add 7 days
+      
+      return selectedDate >= minDate;
+    }, "Start date must be at least 1 week from today"),
+  endDate: z.string().min(1, "End date is required"),
 }).omit({ userId: true }).refine((data) => {
-  const start = new Date(data.startDate);
-  const end = new Date(data.endDate);
-  return end >= start;
+  const start = new Date(data.startDate);
+  const end = new Date(data.endDate);
+  return end >= start;
 }, {
-  message: "End date must be on or after start date",
-  path: ["endDate"],
+  message: "End date must be on or after start date",
+  path: ["endDate"],
 });
 
 type LeaveForm = z.infer<typeof leaveFormSchema>;
@@ -46,6 +48,12 @@ const rejectFormSchema = z.object({
     comments: z.string().min(10, "A detailed reason (at least 10 characters) is required for rejection"),
 });
 type RejectForm = z.infer<typeof rejectFormSchema>;
+
+const getMinStartDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return date.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+};
 
 export default function LeaveManagement() {
   const { user } = useAuth();
@@ -282,11 +290,7 @@ export default function LeaveManagement() {
                       id="startDate"
                       type="date"
                       data-testid="input-start-date"
-                      min={(() => {
-                        const date = new Date();
-                        date.setDate(date.getDate() + 7);
-                        return date.toISOString().split('T')[0];
-                      })()}
+                     min={getMinStartDate()} 
                       {...form.register("startDate")}
                     />
                     {form.formState.errors.startDate && (
@@ -458,13 +462,13 @@ export default function LeaveManagement() {
                                                 </p>
                                                 {request.reason && (
                                 <p className="text-sm text-muted-foreground mt-1" data-testid={`request-reason-${request.id}`}>
-                                  **Reason:** {request.reason}
+                                  <b>Reason:</b> {request.reason}
                                 </p>
                               )}
                               {/* 🟢 Display Rejection Comment if status is rejected and comments exist */}
                               {request.status === 'rejected' && request.comments && (
                                 <p className="text-sm text-destructive mt-1" data-testid={`rejection-comments-${request.id}`}>
-                                  **Rejected Reason:** {request.comments}
+                                  <b>Rejected Reason:</b> {request.comments}
                                 </p>
                               )}
                                             </div>
