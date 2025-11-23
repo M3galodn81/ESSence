@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0 0% 98%);
+  --foreground: hsl(0 0% 10%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(0 0% 10%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(0 0% 10%);
+  --primary: hsl(0 84% 50%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(0 0% 90%);
+  --secondary-foreground: hsl(0 0% 10%);
+  --muted: hsl(0 0% 95%);
+  --muted-foreground: hsl(0 0% 45%);
+  --accent: hsl(0 0% 20%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(0 84% 50%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(0 0% 88%);
+  --input: hsl(0 0% 88%);
+  --ring: hsl(0 84% 50%);
+  --success: hsl(0 84% 50%);
+  --warning: hsl(0 0% 40%);
+  --chart-1: hsl(0 84% 50%);
+  --chart-2: hsl(0 0% 20%);
+  --chart-3: hsl(0 0% 50%);
+  --chart-4: hsl(0 0% 70%);
+  --chart-5: hsl(0 60% 40%);
+  --sidebar: hsl(0 0% 10%);
+  --sidebar-foreground: hsl(0 0% 100%);
+  --sidebar-primary: hsl(0 84% 50%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(0 0% 20%);
+  --sidebar-accent-foreground: hsl(0 0% 100%);
+  --sidebar-border: hsl(0 0% 25%);
+  --sidebar-ring: hsl(0 84% 50%);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Menlo, monospace;
+  --radius: 8px;
+}
+
+.dark {
+  --background: hsl(0 0% 10%);
+  --foreground: hsl(0 0% 98%);
+  --card: hsl(0 0% 15%);
+  --card-foreground: hsl(0 0% 98%);
+  --popover: hsl(0 0% 15%);
+  --popover-foreground: hsl(0 0% 98%);
+  --primary: hsl(0 84% 50%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(0 0% 25%);
+  --secondary-foreground: hsl(0 0% 98%);
+  --muted: hsl(0 0% 25%);
+  --muted-foreground: hsl(0 0% 65%);
+  --accent: hsl(0 84% 50%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(0 84% 50%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(0 0% 25%);
+  --input: hsl(0 0% 25%);
+  --ring: hsl(0 84% 50%);
+  --success: hsl(0 84% 50%);
+  --warning: hsl(0 0% 60%);
+  --sidebar: hsl(0 0% 5%);
+  --sidebar-foreground: hsl(0 0% 98%);
+  --sidebar-primary: hsl(0 84% 50%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(0 0% 20%);
+  --sidebar-accent-foreground: hsl(0 0% 98%);
+  --sidebar-border: hsl(0 0% 20%);
+  --sidebar-ring: hsl(0 84% 50%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .sidebar-transition {
+    transition: transform 0.3s ease-in-out;
+  }
+}
