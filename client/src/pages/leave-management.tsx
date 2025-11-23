@@ -11,16 +11,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"; // Added DialogFooter
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertLeaveRequestSchema } from "@shared/schema";
 import { z } from "zod";
 import { Calendar, Clock, Plus, Check, X, Eye } from "lucide-react";
-import type { LeaveRequest } from "@shared/schema";
+import type { LeaveRequest, User } from "@shared/schema"; // Added User type
 
 const leaveFormSchema = insertLeaveRequestSchema.extend({
-  startDate: z.string().min(1, "Start date is required")
+ startDate: z.string().min(1, "Start date is required")
     .refine((date) => {
       const selectedDate = new Date(date);
       const today = new Date();
@@ -41,18 +41,30 @@ const leaveFormSchema = insertLeaveRequestSchema.extend({
 
 type LeaveForm = z.infer<typeof leaveFormSchema>;
 
+// New schema for rejection comments
+const rejectFormSchema = z.object({
+    comments: z.string().min(10, "A detailed reason (at least 10 characters) is required for rejection"),
+});
+type RejectForm = z.infer<typeof rejectFormSchema>;
+
+
+
 export default function LeaveManagement() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const { data: leaveRequests, isLoading } = useQuery({
+    // 🆕 New State for Rejection Dialog
+    const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
+    const [rejectionRequestId, setRejectionRequestId] = useState<string | null>(null);
+
+  const { data: leaveRequests, isLoading } = useQuery<LeaveRequest[]>({
     queryKey: ["/api/leave-requests"],
   });
 
   //move this to permissions.ts
-  const { data: pendingRequests, isLoading: pendingLoading } = useQuery({
+  const { data: pendingRequests, isLoading: pendingLoading } = useQuery<LeaveRequest[]>({
     queryKey: ["/api/leave-requests/pending"],
     enabled: user?.role === 'manager' || user?.role === 'admin',
   });
@@ -94,6 +106,19 @@ export default function LeaveManagement() {
     },
   });
 
+    // 🆕 New form for rejection comments
+    const rejectForm = useForm<RejectForm>({
+        resolver: zodResolver(rejectFormSchema),
+        defaultValues: {
+            comments: "",
+        },
+    });
+
+    // 🔴 REMOVED: The following line was erroneous as `request` was undefined here.
+    // const rejectedRequest = leaveRequests?.find(
+    //     (req) => req.id === request.id && req.status === 'rejected' && req.comments
+    // );
+    
   const createLeaveRequestMutation = useMutation({
     mutationFn: async (data: LeaveForm) => {
       // Validate dates again before submission
@@ -148,12 +173,17 @@ export default function LeaveManagement() {
       });
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
       toast({
-        title: "Leave request updated",
-        description: "The leave request has been updated successfully.",
+        title: `Leave request ${variables.status}`,
+        description: `The leave request has been ${variables.status} successfully.`,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/leave-requests/pending"] });
+        if (variables.status === 'rejected') {
+            setIsRejectDialogOpen(false);
+            setRejectionRequestId(null);
+            rejectForm.reset();
+        }
     },
     onError: (error: Error) => {
       toast({
@@ -172,9 +202,23 @@ export default function LeaveManagement() {
     approveLeaveRequestMutation.mutate({ id, status: "approved" });
   };
 
+    // 🟢 Updated handleReject: Opens the dialog instead of rejecting immediately
   const handleReject = (id: string) => {
-    approveLeaveRequestMutation.mutate({ id, status: "rejected" });
+        setRejectionRequestId(id);
+        setIsRejectDialogOpen(true);
   };
+    
+    // 🟢 New function for rejection submission
+    const onRejectSubmit = (data: RejectForm) => {
+        if (rejectionRequestId) {
+            approveLeaveRequestMutation.mutate({ 
+                id: rejectionRequestId, 
+                status: "rejected", 
+                comments: data.comments 
+            });
+        }
+    };
+
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -191,16 +235,13 @@ export default function LeaveManagement() {
     return new Date(date).toLocaleDateString();
   };
 
-<<<<<<< HEAD
   //move this to permissions.ts
-=======
->>>>>>> repo_b_source/main
   const canManageLeaves = user?.role === 'manager' || user?.role === 'admin';
 
   return (
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {}
+        {/* Header and Apply Leave Dialog (Unchanged) */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="page-title">Leave Management</h1>
@@ -282,11 +323,7 @@ export default function LeaveManagement() {
                   </div>
                 </div>
                 <div>
-<<<<<<< HEAD
-                  <Label htmlFor="reason">Reason</Label>
-=======
                   <Label htmlFor="reason">Reason (Optional)</Label>
->>>>>>> repo_b_source/main
                   <Textarea
                     id="reason"
                     data-testid="input-reason"
@@ -318,7 +355,8 @@ export default function LeaveManagement() {
         </div>
 
         <Tabs defaultValue="my-requests" className="space-y-6">
-          <TabsList data-testid="leave-tabs">
+          {/* TabsList and TabsContent for My Requests (Unchanged) */}
+            <TabsList data-testid="leave-tabs">
             <TabsTrigger value="my-requests" data-testid="tab-my-requests">My Requests</TabsTrigger>
             {canManageLeaves && (
               <TabsTrigger value="pending" data-testid="tab-pending">
@@ -331,66 +369,72 @@ export default function LeaveManagement() {
               </TabsTrigger>
             )}
           </TabsList>
-
-          <TabsContent value="my-requests">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Calendar className="w-5 h-5 mr-2" />
-                  My Leave Requests
-                </CardTitle>
-                <CardDescription>View and track your leave requests</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <div className="text-center py-8" data-testid="loading-my-requests">
-                    <p className="text-muted-foreground">Loading leave requests...</p>
-                  </div>
-                ) : leaveRequests && leaveRequests.length > 0 ? (
-                  <div className="space-y-4">
-                    {leaveRequests.map((request: LeaveRequest) => (
-                      <div
-                        key={request.id}
-                        className="flex items-center justify-between p-4 border rounded-lg"
-                        data-testid={`request-${request.id}`}
-                      >
-                        <div className="flex items-center space-x-4">
-                          <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                            <Calendar className="w-6 h-6 text-primary" />
-                          </div>
-                          <div>
-                            <h4 className="font-medium capitalize" data-testid={`request-type-${request.id}`}>
-                              {request.type} Leave
-                            </h4>
-                            <p className="text-sm text-muted-foreground" data-testid={`request-dates-${request.id}`}>
-                              {formatDate(request.startDate)} - {formatDate(request.endDate)} ({request.days} days)
-                            </p>
-                            {request.reason && (
-                              <p className="text-sm text-muted-foreground mt-1" data-testid={`request-reason-${request.id}`}>
-                                {request.reason}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          {getStatusBadge(request.status!)}
-                          <p className="text-xs text-muted-foreground mt-1" data-testid={`request-created-${request.id}`}>
-                            Applied on {formatDate(request.createdAt!)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8" data-testid="no-requests">
-                    <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">No leave requests found</p>
-                    <p className="text-sm text-muted-foreground">Start by applying for your first leave</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+            
+            <TabsContent value="my-requests">
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center">
+                            <Calendar className="w-5 h-5 mr-2" />
+                            My Leave Requests
+                        </CardTitle>
+                        <CardDescription>View and track your leave requests</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {isLoading ? (
+                            <div className="text-center py-8" data-testid="loading-my-requests">
+                                <p className="text-muted-foreground">Loading leave requests...</p>
+                            </div>
+                        ) : leaveRequests && leaveRequests.length > 0 ? (
+                            <div className="space-y-4">
+                                {leaveRequests.map((request: LeaveRequest) => (
+                                    <div
+                                        key={request.id}
+                                        className="flex items-center justify-between p-4 border rounded-lg"
+                                        data-testid={`request-${request.id}`}
+                                    >
+                                        <div className="flex items-center space-x-4">
+                                            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                                                <Calendar className="w-6 h-6 text-primary" />
+                                            </div>
+                                            <div>
+                                                <h4 className="font-medium capitalize" data-testid={`request-type-${request.id}`}>
+                                                    {request.type} Leave
+                                                </h4>
+                                                <p className="text-sm text-muted-foreground" data-testid={`request-dates-${request.id}`}>
+                                                    {formatDate(request.startDate)} - {formatDate(request.endDate)} ({request.days} days)
+                                                </p>
+                                                {request.reason && (
+                                <p className="text-sm text-muted-foreground mt-1" data-testid={`request-reason-${request.id}`}>
+                                  Reason: {request.reason}
+                                </p>
+                              )}
+                              {/* 🟢 Display Rejection Comment if status is rejected and comments exist */}
+                              {request.status === 'rejected' && request.comments && (
+                                <p className="text-sm text-destructive mt-1" data-testid={`rejection-comments-${request.id}`}>
+                                  <b>Rejected Reason:</b> {request.comments}
+                                </p>
+                              )}
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            {getStatusBadge(request.status!)}
+                                            <p className="text-xs text-muted-foreground mt-1" data-testid={`request-created-${request.id}`}>
+                                                Applied on {formatDate(request.createdAt!)}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8" data-testid="no-requests">
+                                <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                                <p className="text-muted-foreground">No leave requests found</p>
+                                <p className="text-sm text-muted-foreground">Start by applying for your first leave</p>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            </TabsContent>
 
           {canManageLeaves && (
             <TabsContent value="pending">
@@ -449,27 +493,13 @@ export default function LeaveManagement() {
                             <Button
                               size="sm"
                               variant="destructive"
-                              onClick={() => handleReject(request.id)}
+                              onClick={() => handleReject(request.id)} // 🟢 Calls new handleReject
                               disabled={approveLeaveRequestMutation.isPending}
                               data-testid={`button-reject-${request.id}`}
                             >
                               <X className="w-4 h-4 mr-1" />
                               Reject
                             </Button>
-<<<<<<< HEAD
-                            {/* TODO make a popup if rejecting leave
-                                <div>
-                              <Label htmlFor="reason">Reason</Label>
-                              <Textarea
-                                id="reason"
-                                data-testid="input-reason"
-                                {...form.register("reason")}
-                                placeholder="Provide a reason for your leave request"
-                                rows={3}
-                              />
-                            </div> */}
-=======
->>>>>>> repo_b_source/main
                           </div>
                         </div>
                       ))}
@@ -486,11 +516,60 @@ export default function LeaveManagement() {
             </TabsContent>
           )}
         </Tabs>
+        
+        {/* 🟢 New Rejection Pop-up Dialog */}
+        <Dialog open={isRejectDialogOpen} onOpenChange={(open) => {
+            setIsRejectDialogOpen(open);
+            if (!open) {
+                setRejectionRequestId(null);
+                rejectForm.reset();
+            }
+        }}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle className="text-destructive">Reject Leave Request</DialogTitle>
+                    <DialogDescription>
+                        Please provide a detailed reason for rejecting this leave request. This reason will be sent to the employee.
+                    </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={rejectForm.handleSubmit(onRejectSubmit)} className="space-y-4">
+                    <div>
+                        <Label htmlFor="reject-comments">Rejection Reason *</Label>
+                        <Textarea
+                            id="reject-comments"
+                            data-testid="input-reject-comments"
+                            {...rejectForm.register("comments")}
+                            placeholder="e.g., Conflicts with a major project deadline, insufficient coverage, etc."
+                            rows={4}
+                        />
+                        {rejectForm.formState.errors.comments && (
+                            <p className="text-sm text-destructive mt-1">
+                                {rejectForm.formState.errors.comments.message}
+                            </p>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsRejectDialogOpen(false)}
+                            data-testid="button-reject-cancel"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            variant="destructive"
+                            disabled={approveLeaveRequestMutation.isPending || !rejectionRequestId}
+                            data-testid="button-confirm-reject"
+                        >
+                            {approveLeaveRequestMutation.isPending ? "Rejecting..." : "Confirm Rejection"}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
 }
-
-
-
-
