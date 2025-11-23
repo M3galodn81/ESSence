@@ -32,8 +32,8 @@ const navigationItems = [
   { path: "/announcements", label: "Announcements", icon: Megaphone, roles: ["employee","manager", "admin"] },
   { path: "/leave-management", label: "Leave Management", icon: Calendar, roles: ["employee", "manager", "admin"] },
   { path: "/payslips", label: "Payslips", icon: FileText, roles: ["employee"] },
-  { path: "/salary-computation", label: "Salary Calculator", icon: DollarSign, roles: ["employee", "manager", "admin"] },
-  { path: "/schedules", label: "Schedules", icon: Clock, roles: ["employee", "manager", "admin"] },
+  { path: "/salary-computation", label: "Salary Calculator", icon: DollarSign, roles: ["employee"] },
+  { path: "/schedules", label: "Schedules", icon: Clock, roles: ["employee"] },
   { path: "/reports", label: "Reports", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
   { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "admin"] },
 ];
@@ -43,7 +43,6 @@ const managementItems = [
   { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
   { path: "/shift-management", label: "Shift Management", icon: Calendar, roles: ["manager", "admin"] },
   { path: "/payslip-generator", label: "Payslip Generator", icon: DollarSign, roles: [ "admin"] },
-  { path: "/reports-analytics", label: "Reports & Analytics", icon: BarChart, roles: ["manager"] },
   { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager"] },
   
 ];

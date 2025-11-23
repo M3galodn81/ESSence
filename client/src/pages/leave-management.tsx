@@ -191,7 +191,10 @@ export default function LeaveManagement() {
     return new Date(date).toLocaleDateString();
   };
 
+<<<<<<< HEAD
   //move this to permissions.ts
+=======
+>>>>>>> repo_b_source/main
   const canManageLeaves = user?.role === 'manager' || user?.role === 'admin';
 
   return (
@@ -279,7 +282,11 @@ export default function LeaveManagement() {
                   </div>
                 </div>
                 <div>
+<<<<<<< HEAD
                   <Label htmlFor="reason">Reason</Label>
+=======
+                  <Label htmlFor="reason">Reason (Optional)</Label>
+>>>>>>> repo_b_source/main
                   <Textarea
                     id="reason"
                     data-testid="input-reason"
@@ -449,6 +456,7 @@ export default function LeaveManagement() {
                               <X className="w-4 h-4 mr-1" />
                               Reject
                             </Button>
+<<<<<<< HEAD
                             {/* TODO make a popup if rejecting leave
                                 <div>
                               <Label htmlFor="reason">Reason</Label>
@@ -460,6 +468,8 @@ export default function LeaveManagement() {
                                 rows={3}
                               />
                             </div> */}
+=======
+>>>>>>> repo_b_source/main
                           </div>
                         </div>
                       ))}
