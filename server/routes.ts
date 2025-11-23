@@ -267,7 +267,7 @@ export function registerRoutes(app: Express): Server {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin') {
+    if (user.role !== 'payroll_officer') {
       return res.status(403).json({ message: "Access denied" });
     }
 
