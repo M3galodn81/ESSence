@@ -308,14 +308,26 @@ export default function ShiftManagement() {
 
   const getSchedulesForDate = (date: Date, userId?: string) => {
     if (!allSchedules) return [];
+
+    // Utility function to get a date's string representation in YYYY-MM-DD format (timezone independent)
+    const getNormalizedDateString = (d: Date) => {
+        return d.toISOString().split('T')[0];
+    };
+
+    const targetDateString = getNormalizedDateString(date);
     
     return allSchedules.filter((schedule: Schedule) => {
-      const scheduleDate = new Date(schedule.date);
-      const dateMatch = scheduleDate.toDateString() === date.toDateString();
-      const userMatch = !userId || userId === "all" || schedule.userId === userId;
-      return dateMatch && userMatch;
+        // schedule.date is a timestamp (number), create a new Date object from it.
+        const scheduleDate = new Date(schedule.date);
+        
+        // Compare the normalized date strings
+        const dateMatch = getNormalizedDateString(scheduleDate) === targetDateString;
+        
+        const userMatch = !userId || userId === "all" || schedule.userId === userId;
+        
+        return dateMatch && userMatch;
     });
-  };
+};
 
   const getEmployeeName = (userId: string) => {
     const employee = teamMembers?.find((m: User) => m.id === userId);

@@ -40,30 +40,6 @@ export default function PayslipsEnhanced() {
     return months[month - 1];
   };
 
-  const calculate13thMonthPay = () => {
-    if (!payslips || payslips.length === 0) return null;
-
-    const currentYear = new Date().getFullYear();
-    const currentMonth = new Date().getMonth() + 1;
-    
-    const yearPayslips = payslips.filter((p: Payslip) => p.year === currentYear);
-    const totalBasicSalary = yearPayslips.reduce((sum: number, p: Payslip) => sum + p.basicSalary, 0);
-    const monthsWorked = yearPayslips.length;
-    
-    const averageMonthly = monthsWorked > 0 ? totalBasicSalary / monthsWorked : 0;
-    const estimated13thMonth = averageMonthly;
-    
-    const confidence = monthsWorked >= 3 ? 65 : monthsWorked >= 6 ? 75 : monthsWorked >= 9 ? 85 : 50;
-    const variance = averageMonthly * 0.08; 
-
-    return {
-      estimated: estimated13thMonth,
-      confidence,
-      monthsWorked,
-      variance,
-      isEarlyEstimate: monthsWorked < 6,
-    };
-  };
 
   const getDeductionBreakdown = (payslip: Payslip) => {
     const deductions = payslip.deductions as Record<string, number> || {};
@@ -101,7 +77,6 @@ export default function PayslipsEnhanced() {
 
   const COLORS = ['#dc2626', '#000000', '#6b7280', '#9ca3af', '#374151', '#1f2937'];
 
-  const thirteenthMonthData = calculate13thMonthPay();
   const netPayProgress = getNetPayProgress();
 
   const renderCustomLabel = ({
@@ -143,88 +118,7 @@ export default function PayslipsEnhanced() {
         </div>
 
         {}
-        {thirteenthMonthData && (
-          <Card className="bg-gradient-to-br from-red-600 to-black text-white">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <DollarSign className="w-6 h-6" />
-                  <CardTitle className="text-white">13th Month Pay Prediction</CardTitle>
-                </div>
-                <Calendar className="w-5 h-5" />
-              </div>
-              <CardDescription className="text-gray-200">
-                Employee: {user?.firstName} {user?.lastName} • As of {getMonthName(new Date().getMonth() + 1)} {new Date().getDate()}, {new Date().getFullYear()}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-48 h-48 rounded-full border-8 border-gray-300/30 flex items-center justify-center bg-gray-800/30">
-                    <div>
-                      <p className="text-4xl font-bold">{formatCurrency(thirteenthMonthData.estimated)}</p>
-                      <p className="text-sm text-gray-200 mt-1">ESTIMATED</p>
-                      <p className="text-xs text-gray-300">(± {formatCurrency(thirteenthMonthData.variance)})</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-800/50 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-lg font-semibold">{thirteenthMonthData.confidence}%</span>
-                  <Badge className="bg-gray-400 text-gray-900">
-                    {thirteenthMonthData.isEarlyEstimate ? "⚠️ Early Estimate" : "📊 Confident"}
-                  </Badge>
-                </div>
-                <p className="text-sm text-gray-200">
-                  Confidence Level (Based on {thirteenthMonthData.monthsWorked} months of actual data)
-                </p>
-              </div>
-
-              <div className="bg-black/50 rounded-lg p-4 border-2 border-gray-400">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg">ℹ️</span>
-                  <span className="font-semibold">
-                    {thirteenthMonthData.isEarlyEstimate ? "Early Estimate" : "Improving Accuracy"}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-200">
-                  This prediction will become more accurate each month as we collect more data about your earnings.
-                </p>
-              </div>
-
-              <div className="text-center text-sm text-gray-200">
-                <p className="font-semibold">💰 ESTIMATED 13TH MONTH PAY</p>
-                <p>December {new Date().getFullYear()}</p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {}
-        {netPayProgress.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                Net Pay Progress
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={netPayProgress}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => `₱${value.toLocaleString()}`} />
-                  <Line type="monotone" dataKey="netPay" stroke="#dc2626" strokeWidth={2} dot={{ fill: '#dc2626', r: 4 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
-
+        
         {}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Salary History</h2>

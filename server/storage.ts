@@ -208,15 +208,12 @@ export class DbStorage implements IStorage {
   async getEmployeesForManager(managerId: string): Promise<User[]> {
     
     return await db.select().from(users).where(
-      and(
-        eq(users.role, 'employee'),
-        or(
-          eq(users.managerId, managerId),
-          isNull(users.managerId)
+        and(
+            eq(users.role, 'employee'),
+            eq(users.managerId, managerId) 
         )
-      )
     );
-  }
+}
 
   async createLeaveRequest(request: InsertLeaveRequest): Promise<LeaveRequest> {
     const result = await db.insert(leaveRequests).values(request).returning();
