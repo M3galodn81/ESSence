@@ -261,15 +261,7 @@ export default function Reports() {
                       />
                     </div>
 
-                    <div className="space-y-2 col-span-2">
-                      <Label htmlFor="estimatedCost">Estimated Cost (₱)</Label>
-                      <Input
-                        id="estimatedCost"
-                        type="number"
-                        {...form.register("estimatedCost", { valueAsNumber: true })}
-                        placeholder="Estimated replacement cost"
-                      />
-                    </div>
+                    
                   </div>
                 )}
 
@@ -408,11 +400,7 @@ function ReportCard({ report, user, onUpdate, formatDate, formatCurrency, getSta
                 <span className="font-medium">Quantity:</span> {report.itemQuantity}
               </div>
             )}
-            {report.estimatedCost && (
-              <div>
-                <span className="font-medium">Est. Cost:</span> {formatCurrency(report.estimatedCost)}
-              </div>
-            )}
+           
           </div>
         )}
 

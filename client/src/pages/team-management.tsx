@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Search, Mail, Phone, Calendar, Building, UserPlus, Briefcase, User } from "lucide-react";
+import { Users, Search, Mail, Phone, Calendar, Building, UserPlus, Briefcase, User, Hash } from "lucide-react";
 import { useState, useMemo } from "react";
 import type { User as UserType } from "@shared/schema";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -97,7 +97,7 @@ export default function TeamManagement() {
 
     return (
       <Badge className={colors[role as keyof typeof colors] || colors.employee}>
-        {role.toUpperCase()}
+        {role.replace(/_/g, " ").toUpperCase()}
       </Badge>
     );
   };
@@ -375,8 +375,11 @@ export default function TeamManagement() {
                             <DetailRow icon={User} label="Username" value={selectedMember.username} />
                             <DetailRow icon={Briefcase} label="Position" value={selectedMember.position || 'N/A'} />
                             <DetailRow icon={Building} label="Department" value={selectedMember.department || 'N/A'} />
-                            <DetailRow icon={Users} label="Manager" value={getManagerName(selectedMember.managerId)} />
+                            {selectedMember.role === 'employee' && selectedMember.managerId && (
+                                <DetailRow icon={Users} label="Manager" value={getManagerName(selectedMember.managerId)} />
+                            )}
                             <DetailRow icon={Phone} label="Phone" value={selectedMember.phoneNumber || 'N/A'} />
+                            <DetailRow icon={Hash} label="ID" value={selectedMember.employeeId || 'N/A'} />
                             <DetailRow icon={Calendar} label="Hire Date" value={formatDate(selectedMember.hireDate)} />
                         </div>
                     </div>

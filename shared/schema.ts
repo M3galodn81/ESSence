@@ -30,10 +30,14 @@ export const users = sqliteTable("users", {
   annualLeaveBalance: integer("annual_leave_balance").default(15),
   sickLeaveBalance: integer("sick_leave_balance").default(10),
   serviceIncentiveLeaveBalance: integer("emergency_leave_balance").default(5),
-  
+
+  annualLeaveBalanceLimit: integer("annual_leave_balance_limit").default(15),
+  sickLeaveBalanceLimit: integer("sick_leave_balance_limit").default(10),
+  serviceIncentiveLeaveBalanceLimit: integer("emergency_leave_balance_limit").default(5),
+
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: 'timestamp_ms' }).$onUpdateFn(() => new Date()),
-});
+}); 
 
 export const leaveRequests = sqliteTable("leave_requests", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),

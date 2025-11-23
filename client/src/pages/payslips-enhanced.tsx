@@ -11,7 +11,6 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, L
 import type { Payslip } from "@shared/schema";
 
 //Remove Data Analytics here
-
 export default function PayslipsEnhanced() {
   const { user } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);

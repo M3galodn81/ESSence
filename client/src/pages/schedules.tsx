@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar, Clock, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import type { Schedule } from "@shared/schema";
 
@@ -11,11 +12,11 @@ export default function Schedules() {
 
   const getWeekBounds = (date: Date) => {
     const start = new Date(date);
-    start.setDate(date.getDate() - date.getDay()); 
+    start.setDate(date.getDate() - date.getDay()); // Set to Sunday
     start.setHours(0, 0, 0, 0);
     
     const end = new Date(start);
-    end.setDate(start.getDate() + 6); 
+    end.setDate(start.getDate() + 6); // Set to Saturday
     end.setHours(23, 59, 59, 999);
     
     return { start, end };
@@ -23,8 +24,8 @@ export default function Schedules() {
 
   const { start: weekStart, end: weekEnd } = getWeekBounds(currentDate);
 
-  const { data: schedules, isLoading } = useQuery({
-    queryKey: ["/api/schedules", weekStart.toISOString(), weekEnd.toISOString()],
+  const { data: schedules, isLoading } = useQuery<Schedule[]>({
+    queryKey: ["/api/schedules"],
   });
 
   const navigateWeek = (direction: 'prev' | 'next') => {
@@ -46,18 +47,31 @@ export default function Schedules() {
     return days;
   };
 
-  const getScheduleForDate = (date: Date) => {
+  // 🟢 Fix: Robust date comparison handling ISO strings vs Local Date objects
+  const getScheduleForDate = (viewDate: Date) => {
     if (!schedules) return null;
     
-    return schedules.find((schedule: Schedule) => {
+    // Get the "YYYY-MM-DD" string for the column we are rendering (Local Time)
+    // 'en-CA' locale reliably returns YYYY-MM-DD format
+    const viewDateStr = viewDate.toLocaleDateString('en-CA'); 
+
+    return schedules.find((schedule: any) => {
+      // Handle the API date which is an ISO string/timestamp
+      // We extract the date part (YYYY-MM-DD) from the ISO string.
       const scheduleDate = new Date(schedule.date);
-      return scheduleDate.toDateString() === date.toDateString();
+      const scheduleDateStr = scheduleDate.toISOString().split('T')[0];
+      
+      return scheduleDateStr === viewDateStr;
     });
   };
 
-  const formatTime = (time: string | null) => {
+  // 🟢 Fix: Handle numeric timestamps from schema
+  const formatTime = (time: number | null) => {
     if (!time) return '';
-    return new Date(`2000-01-01T${time}`).toLocaleTimeString('en-US', {
+    const date = new Date(time);
+    if (isNaN(date.getTime())) return '';
+
+    return date.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
@@ -120,7 +134,7 @@ export default function Schedules() {
   return (
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold" data-testid="page-title">Work Schedules</h1>
@@ -138,7 +152,7 @@ export default function Schedules() {
           </div>
         </div>
 
-        {}
+        {/* Weekly Schedule Grid */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -171,8 +185,19 @@ export default function Schedules() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8" data-testid="loading-schedules">
-                <p className="text-muted-foreground">Loading schedules...</p>
+              <div className="grid grid-cols-7 gap-4" data-testid="loading-schedules">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <div key={i} className="p-4 rounded-lg border space-y-3">
+                    <div className="flex justify-center">
+                        <Skeleton className="h-4 w-20" />
+                    </div>
+                    <div className="space-y-2">
+                        <Skeleton className="h-6 w-full rounded-full" />
+                        <Skeleton className="h-6 w-full rounded-full" />
+                        <Skeleton className="h-4 w-3/4 mx-auto" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="grid grid-cols-7 gap-4">
@@ -198,7 +223,8 @@ export default function Schedules() {
                       {schedule ? (
                         <div className="space-y-3">
                           <div className="text-center">
-                            {getShiftBadge(schedule.shiftType)}
+                            {/* 🟢 Fix: Use 'type' property instead of 'shiftType' */}
+                            {getShiftBadge(schedule.type)}
                           </div>
 
                           {schedule.shiftRole && (
@@ -207,7 +233,8 @@ export default function Schedules() {
                             </div>
                           )}
 
-                          {schedule.shiftType !== 'off' && schedule.startTime && schedule.endTime && (
+                          {/* 🟢 Fix: Check 'type' instead of 'shiftType' */}
+                          {schedule.type !== 'off' && schedule.startTime && schedule.endTime && (
                             <div className="text-center">
                               <div className="flex items-center justify-center text-sm text-muted-foreground">
                                 <Clock className="w-3 h-3 mr-1" />
@@ -218,10 +245,11 @@ export default function Schedules() {
                             </div>
                           )}
 
-                          {schedule.notes && (
+                          {/* 🟢 Fix: Use 'description' property instead of 'notes' */}
+                          {schedule.description && (
                             <div className="text-xs text-muted-foreground text-center">
                               <p data-testid={`schedule-notes-${day.toISOString().split('T')[0]}`}>
-                                {schedule.notes}
+                                {schedule.description}
                               </p>
                             </div>
                           )}
@@ -244,7 +272,7 @@ export default function Schedules() {
           </CardContent>
         </Card>
 
-        {}
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader className="pb-3">
@@ -255,19 +283,22 @@ export default function Schedules() {
                 <div className="flex justify-between">
                   <span className="text-sm">Working Days</span>
                   <span className="font-medium" data-testid="working-days-count">
-                    {schedules ? schedules.filter((s: Schedule) => s.shiftType !== 'off').length : 0}
+                    {/* 🟢 Fix: Use 'type' property */}
+                    {schedules ? schedules.filter((s: Schedule) => s.type !== 'off').length : 0}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm">Days Off</span>
                   <span className="font-medium" data-testid="days-off-count">
-                    {schedules ? schedules.filter((s: Schedule) => s.shiftType === 'off').length : 0}
+                    {/* 🟢 Fix: Use 'type' property */}
+                    {schedules ? schedules.filter((s: Schedule) => s.type === 'off').length : 0}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm">Estimated Hours</span>
                   <span className="font-medium" data-testid="estimated-hours">
-                    {schedules ? schedules.filter((s: Schedule) => s.shiftType !== 'off').length * 8 : 0}h
+                    {/* 🟢 Fix: Use 'type' property */}
+                    {schedules ? schedules.filter((s: Schedule) => s.type !== 'off').length * 8 : 0}h
                   </span>
                 </div>
               </div>
@@ -286,6 +317,7 @@ export default function Schedules() {
                     <span className="text-sm">Morning</span>
                   </div>
                   <span className="text-sm font-medium" data-testid="morning-shifts-count">
+                    {/* 🟢 Fix: Use 'type' property */}
                     {schedules ? schedules.filter((s: Schedule) => s.type === 'morning').length : 0}
                   </span>
                 </div>
@@ -295,6 +327,7 @@ export default function Schedules() {
                     <span className="text-sm">Afternoon</span>
                   </div>
                   <span className="text-sm font-medium" data-testid="afternoon-shifts-count">
+                    {/* 🟢 Fix: Use 'type' property */}
                     {schedules ? schedules.filter((s: Schedule) => s.type === 'afternoon').length : 0}
                   </span>
                 </div>
@@ -304,6 +337,7 @@ export default function Schedules() {
                     <span className="text-sm">Night</span>
                   </div>
                   <span className="text-sm font-medium" data-testid="night-shifts-count">
+                    {/* 🟢 Fix: Use 'type' property */}
                     {schedules ? schedules.filter((s: Schedule) => s.type === 'night').length : 0}
                   </span>
                 </div>

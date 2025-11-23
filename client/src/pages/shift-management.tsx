@@ -40,7 +40,7 @@ export default function ShiftManagement() {
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
 
-  //move this to permissions.ts
+  // move this to permissions.ts
   if (user?.role !== 'manager' && user?.role !== 'admin') {
     return (
       <div className="p-6">
@@ -67,12 +67,12 @@ export default function ShiftManagement() {
 
   const { start: weekStart, end: weekEnd } = getWeekBounds(currentDate);
 
-  const { data: teamMembers } = useQuery({
+  const { data: teamMembers } = useQuery<User[]>({
     queryKey: ["/api/team"],
   });
 
-  const { data: allSchedules, isLoading } = useQuery({
-    queryKey: ["/api/schedules/all", weekStart.toISOString(), weekEnd.toISOString()],
+  const { data: allSchedules, isLoading } = useQuery<Schedule[]>({
+    queryKey: ["/api/schedules/all"],
   });
 
   const createForm = useForm<ShiftForm>({
@@ -89,11 +89,10 @@ export default function ShiftManagement() {
 
   const createShiftMutation = useMutation({
     mutationFn: async (data: ShiftForm) => {
-      const shiftDate = new Date(data.date);
-      
       let startTime = data.startTime;
       let endTime = data.endTime;
       
+      // Default times if not provided based on shift type
       if (!startTime || !endTime) {
         switch (data.shiftType) {
           case "morning":
@@ -102,7 +101,7 @@ export default function ShiftManagement() {
             break;
           case "afternoon":
             startTime = "16:00";
-            endTime = "00:00";
+            endTime = "00:00"; 
             break;
           case "night":
             startTime = "00:00";
@@ -115,13 +114,17 @@ export default function ShiftManagement() {
         }
       }
 
-      const startDateTime = new Date(shiftDate);
-      const [startHour, startMinute] = startTime!.split(':');
-      startDateTime.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
+      // 🟢 Fix: Robust Date Construction
+      // Combine date and time strings directly for local time construction
+      const startDateTime = new Date(`${data.date}T${startTime}`);
+      const endDateTime = new Date(`${data.date}T${endTime}`);
+      
+      // Handle night shifts crossing midnight (if end time is earlier than start time)
+      if (endDateTime < startDateTime && data.shiftType !== 'off') {
+        endDateTime.setDate(endDateTime.getDate() + 1);
+      }
 
-      const endDateTime = new Date(shiftDate);
-      const [endHour, endMinute] = endTime!.split(':');
-      endDateTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
+      const shiftDate = new Date(data.date);
 
       const res = await apiRequest("POST", "/api/schedules", {
         userId: data.userId,
@@ -164,20 +167,25 @@ export default function ShiftManagement() {
       if (data.shiftRole) updates.shiftRole = data.shiftRole;
       if (data.location) updates.location = data.location;
       
-      if (data.startTime && data.date) {
+      if (data.date) {
         const shiftDate = new Date(data.date);
-        const [startHour, startMinute] = data.startTime.split(':');
-        const startDateTime = new Date(shiftDate);
-        startDateTime.setHours(parseInt(startHour), parseInt(startMinute), 0, 0);
-        updates.startTime = startDateTime.getTime();
-      }
+        updates.date = shiftDate.getTime();
 
-      if (data.endTime && data.date) {
-        const shiftDate = new Date(data.date);
-        const [endHour, endMinute] = data.endTime.split(':');
-        const endDateTime = new Date(shiftDate);
-        endDateTime.setHours(parseInt(endHour), parseInt(endMinute), 0, 0);
-        updates.endTime = endDateTime.getTime();
+        // 🟢 Fix: Robust Update Logic
+        if (data.startTime) {
+            const startDateTime = new Date(`${data.date}T${data.startTime}`);
+            updates.startTime = startDateTime.getTime();
+        }
+        if (data.endTime) {
+            const endDateTime = new Date(`${data.date}T${data.endTime}`);
+             // Handle crossover for updates if both times are present or inferred
+             // Simplified: if we are updating both, check crossover.
+             // If updating only one, logic might be complex, but assuming form sends both on edit usually.
+             if (data.startTime && data.endTime < data.startTime) {
+                 endDateTime.setDate(endDateTime.getDate() + 1);
+             }
+            updates.endTime = endDateTime.getTime();
+        }
       }
 
       const res = await apiRequest("PATCH", `/api/schedules/${id}`, updates);
@@ -260,17 +268,25 @@ export default function ShiftManagement() {
 
   const handleEdit = (schedule: Schedule) => {
     setSelectedSchedule(schedule);
+    // 🟢 Fix: Extract string formats safely for inputs
     const scheduleDate = new Date(schedule.date);
-    const startTime = new Date(schedule.startTime);
-    const endTime = new Date(schedule.endTime);
+    // Use ISO string part for date input (YYYY-MM-DD)
+    const dateString = scheduleDate.toISOString().split('T')[0];
+
+    // Use locale string with en-GB to force 24h format (HH:MM) for time inputs
+    const start = new Date(schedule.startTime);
+    const startString = start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+    const end = new Date(schedule.endTime);
+    const endString = end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     
     editForm.reset({
       userId: schedule.userId,
-      date: scheduleDate.toISOString().split('T')[0],
+      date: dateString,
       shiftType: schedule.type as any,
       shiftRole: schedule.shiftRole as any,
-      startTime: `${startTime.getHours().toString().padStart(2, '0')}:${startTime.getMinutes().toString().padStart(2, '0')}`,
-      endTime: `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`,
+      startTime: startString,
+      endTime: endString,
       location: schedule.location || "",
     });
     setIsEditDialogOpen(true);
@@ -306,28 +322,23 @@ export default function ShiftManagement() {
     return days;
   };
 
+  // 🟢 Fix: Robust Date Comparison
   const getSchedulesForDate = (date: Date, userId?: string) => {
     if (!allSchedules) return [];
-
-    // Utility function to get a date's string representation in YYYY-MM-DD format (timezone independent)
-    const getNormalizedDateString = (d: Date) => {
-        return d.toISOString().split('T')[0];
-    };
-
-    const targetDateString = getNormalizedDateString(date);
+    
+    // Use locale date string to align with what the user sees in the column header
+    const targetDateString = date.toLocaleDateString('en-CA'); // YYYY-MM-DD format
     
     return allSchedules.filter((schedule: Schedule) => {
-        // schedule.date is a timestamp (number), create a new Date object from it.
-        const scheduleDate = new Date(schedule.date);
-        
-        // Compare the normalized date strings
-        const dateMatch = getNormalizedDateString(scheduleDate) === targetDateString;
-        
-        const userMatch = !userId || userId === "all" || schedule.userId === userId;
-        
-        return dateMatch && userMatch;
+      const scheduleDate = new Date(schedule.date);
+      // API returns ISO dates, we take the YYYY-MM-DD part
+      const scheduleDateStr = scheduleDate.toISOString().split('T')[0];
+      
+      const dateMatch = scheduleDateStr === targetDateString;
+      const userMatch = !userId || userId === "all" || schedule.userId === userId;
+      return dateMatch && userMatch;
     });
-};
+  };
 
   const getEmployeeName = (userId: string) => {
     const employee = teamMembers?.find((m: User) => m.id === userId);
@@ -390,7 +401,7 @@ export default function ShiftManagement() {
   return (
     <div className="p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        {}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Shift Management</h1>
@@ -539,7 +550,7 @@ export default function ShiftManagement() {
           </div>
         </div>
 
-        {}
+        {/* Filters */}
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -575,7 +586,7 @@ export default function ShiftManagement() {
           </CardContent>
         </Card>
 
-        {}
+        {/* Schedule Grid */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -704,7 +715,7 @@ export default function ShiftManagement() {
           </CardContent>
         </Card>
 
-        {}
+        {/* Edit Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent>
             <DialogHeader>
@@ -803,7 +814,7 @@ export default function ShiftManagement() {
           </DialogContent>
         </Dialog>
 
-        {}
+        {/* Delete Alert Dialog */}
         <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
