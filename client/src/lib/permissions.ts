@@ -16,7 +16,7 @@ const ALL_ROLES = [ROLES.ADMIN, ROLES.EMPLOYEE, ROLES.MANAGER, ROLES.PAYROLL_OFF
 const MANAGEMENT_ROLES = [ROLES.ADMIN, ROLES.MANAGER] as const;
 const HR_ROLES = [ROLES.ADMIN, ROLES.PAYROLL_OFFICER, ROLES.MANAGER] as const;
 
-const EMPLOYEE_DASHBOARD_FEATURES = [ROLES.EMPLOYEE];
+const EMPLOYEE_FEATURES = [ROLES.EMPLOYEE];
 
 // 3. Simple role checks (Using a factory function)
 const hasRole = (role: Role) => (u?: User | null) => u?.role === role;
@@ -44,7 +44,7 @@ export function hasAnyRole(
 
 // #region Dashboard Features
 export const canViewEmployeeDashboardFeatures = (user?: User | null) =>
- hasAnyRole(user, EMPLOYEE_DASHBOARD_FEATURES);
+ hasAnyRole(user, EMPLOYEE_FEATURES);
 
 export const canViewDashoardLeaveBalance = canViewEmployeeDashboardFeatures;
 export const canViewDashoardHoursThisWeek = canViewEmployeeDashboardFeatures;
@@ -67,10 +67,13 @@ export const canDeleteAnnouncements = canMakeAnnouncements
 // #region Leave Management Features
 export const canAcceptDenyLeaveRequest = (user?: User | null) =>
  hasAnyRole(user, MANAGEMENT_ROLES);
+
+export const canViewLeaveDetails = canViewEmployeeDashboardFeatures;
 // #endregion
 
 
 // #region Reports
+
 
 // #endregion
 

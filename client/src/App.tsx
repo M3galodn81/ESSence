@@ -17,7 +17,6 @@ import SalaryComputation from "@/pages/salary-computation";
 import Schedules from "@/pages/schedules";
 import ShiftManagement from "@/pages/shift-management";
 import TeamManagement from "@/pages/team-management";
-import ReportsAnalytics from "@/pages/reports-analytics";
 import Announcements from "@/pages/announcements";
 import Reports from "@/pages/reports";
 import LaborCostAnalytics from "@/pages/labor-cost-analytics";

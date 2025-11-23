@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -49,24 +49,23 @@ const createUserSchema = z.object({
   managerId: z.string().optional(),
 });
 
-// 🟢 UPDATED SCHEMA: Includes both Balance (current) and BalanceLimit (max) fields
+// 🟢 UPDATED SCHEMA: Removed current balance fields, keeping only limits
 const editUserSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   email: z.string().email("Invalid email address"),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
-  role: z.enum(["employee", "manager", "admin","payroll_officer"]),
+  role: z.enum(["employee", "manager", "admin"]),
   department: z.string().optional(),
   position: z.string().optional(),
   employeeId: z.string().optional(),
   phoneNumber: z.string().optional(),
   managerId: z.string().optional(),
-  
-  // Current Balances
-  annualLeaveBalance: z.string().optional(),
-  sickLeaveBalance: z.string().optional(),
-  serviceIncentiveLeaveBalance: z.string().optional(),
-
+  
+  // Maximum Limits (Only these are editable)
+  annualLeaveBalanceLimit: z.string().optional(),
+  sickLeaveBalanceLimit: z.string().optional(),
+  serviceIncentiveLeaveBalanceLimit: z.string().optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -109,13 +108,12 @@ export default function UserManagement() {
     },
   });
 
+  const watchedCreateRole = createForm.watch("role");
+
   const editForm = useForm<EditUserForm>({
     resolver: zodResolver(editUserSchema),
-    // 🟢 Initializing new fields
+    // 🟢 Initializing only limit fields
     defaultValues: {
-        annualLeaveBalance: "",
-        sickLeaveBalance: "",
-        serviceIncentiveLeaveBalance: "",
         annualLeaveBalanceLimit: "",
         sickLeaveBalanceLimit: "",
         serviceIncentiveLeaveBalanceLimit: "",
@@ -138,6 +136,40 @@ export default function UserManagement() {
   // Filter out managers for the employee creation/edit process
   const managers = users.filter((u: any) => u.role === "manager");
 
+  const generateNextEmployeeId = (role: string) => {
+    let prefix = "EMP";
+    if (role === "manager") prefix = "MAN";
+    if (role === "admin") prefix = "ADM";
+    if (role === "payroll_officer") prefix = "PAY"; // Future proofing
+
+    // Find all IDs that start with this prefix
+    const existingIds = users
+      .map((u: any) => u.employeeId)
+      .filter((id: string) => id && id.startsWith(prefix));
+
+    let maxNum = 0;
+    existingIds.forEach((id: string) => {
+      // Split "EMP-001" -> ["EMP", "001"]
+      const parts = id.split("-");
+      if (parts.length === 2) {
+        const num = parseInt(parts[1], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+
+    // Generate next number formatted with leading zeros (e.g., 005)
+    const nextNum = (maxNum + 1).toString().padStart(3, "0");
+    return `${prefix}-${nextNum}`;
+  };
+
+  useEffect(() => {
+    if (isCreateDialogOpen && users.length > 0) {
+      const nextId = generateNextEmployeeId(watchedCreateRole);
+      createForm.setValue("employeeId", nextId);
+    }
+  }, [watchedCreateRole, isCreateDialogOpen, users, createForm.setValue]);
 
   const createUserMutation = useMutation({
     mutationFn: async (data: CreateUserForm) => {
@@ -201,12 +233,7 @@ export default function UserManagement() {
             // Ensure managerId is null if employee role is changed to non-employee (Admin/Manager)
             managerId: (data.role !== 'employee' || !data.managerId) ? null : data.managerId,
             
-            // 🟢 LEAVE BALANCES (Current)
-            annualLeaveBalance: parseOptionalInt(data.annualLeaveBalance),
-            sickLeaveBalance: parseOptionalInt(data.sickLeaveBalance),
-            serviceIncentiveLeaveBalance: parseOptionalInt(data.serviceIncentiveLeaveBalance),
-
-            // 🟢 LEAVE BALANCES (Limit)
+            // 🟢 LEAVE BALANCES (Limit Only)
             annualLeaveBalanceLimit: parseOptionalInt(data.annualLeaveBalanceLimit),
             sickLeaveBalanceLimit: parseOptionalInt(data.sickLeaveBalanceLimit),
             serviceIncentiveLeaveBalanceLimit: parseOptionalInt(data.serviceIncentiveLeaveBalanceLimit),
@@ -363,13 +390,8 @@ export default function UserManagement() {
       phoneNumber: userData.phoneNumber || "",
       // managerId is set to "" if null, matching the Select component's requirement for a string value
       managerId: userData.managerId || "",
-      
-      // 🟢 LEAVE BALANCES (Current): Populate the form fields.
-      annualLeaveBalance: userData.annualLeaveBalance?.toString() || "",
-      sickLeaveBalance: userData.sickLeaveBalance?.toString() || "",
-      serviceIncentiveLeaveBalance: userData.serviceIncentiveLeaveBalance?.toString() || "",
 
-      // 🟢 LEAVE BALANCES (Limit): Populate the new limit fields.
+      // 🟢 LEAVE BALANCES (Limit Only): Populate the new limit fields.
       annualLeaveBalanceLimit: userData.annualLeaveBalanceLimit?.toString() || "",
       sickLeaveBalanceLimit: userData.sickLeaveBalanceLimit?.toString() || "",
       serviceIncentiveLeaveBalanceLimit: userData.serviceIncentiveLeaveBalanceLimit?.toString() || "",
@@ -398,8 +420,8 @@ export default function UserManagement() {
     if (user?.role === "admin") {
       return [
         { value: "manager", label: "Manager" },
-        { value: "employee", label: "Employee" },
         { value: "payroll_officer", label: "Payroll Officer" }, // Admin can create Admin
+        { value: "employee", label: "Employee" },
       ];
     } else if (user?.role === "manager") {
       return [
@@ -413,10 +435,10 @@ export default function UserManagement() {
     const colors: Record<string, string> = {
       admin: "bg-red-600 text-white",
       manager: "bg-gray-500 text-white",
-      payroll_officer: "bg-gray-400 text-white",
+      payroll_officer: "bg-blue-400 text-white",
       employee: "bg-gray-300 text-gray-900",
     };
-    return <Badge className={colors[role] || "bg-gray-100"}>{role.toUpperCase()}</Badge>;
+    return <Badge className={colors[role] || "bg-gray-100"}>{role.replace(/_/g, " ").toUpperCase()}</Badge>;
   };
 
   //move this to permissions.ts
@@ -477,7 +499,7 @@ export default function UserManagement() {
                   {createForm.formState.errors.firstName && (
                     <p className="text-sm text-destructive mt-1">
                       {createForm.formState.errors.firstName.message}
-                    </p>
+                  </p>
                   )}
                 </div>
                 <div>
@@ -490,7 +512,7 @@ export default function UserManagement() {
                   {createForm.formState.errors.lastName && (
                     <p className="text-sm text-destructive mt-1">
                       {createForm.formState.errors.lastName.message}
-                    </p>
+                  </p>
                   )}
                 </div>
               </div>
@@ -508,7 +530,7 @@ export default function UserManagement() {
                     {createForm.formState.errors.email.message}
                   </p>
                 )}
-              </div>
+                </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -565,14 +587,14 @@ export default function UserManagement() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-{/*                 <div>
+                <div>
                   <Label htmlFor="department">Department</Label>
                   <Input
                     id="department"
                     {...createForm.register("department")}
                     placeholder="Department"
                   />
-                </div> */}
+                </div>
                 <div>
                   <Label htmlFor="position">Position</Label>
                   <Input
@@ -585,13 +607,16 @@ export default function UserManagement() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="employeeId">Employee ID</Label>
-                  <Input
-                    id="employeeId"
-                    {...createForm.register("employeeId")}
-                    placeholder="EMP-001"
-                  />
-                </div>
+                  <Label htmlFor="employeeId">Employee ID</Label>
+                  <Input
+                    id="employeeId"
+                    {...createForm.register("employeeId")}
+                    placeholder="Autogenerated (e.g. EMP-001)"
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Auto-generated based on role: {generateNextEmployeeId(watchedCreateRole)}
+                  </p>
+                </div>
                 <div>
                   <Label htmlFor="phoneNumber">Phone Number</Label>
                   <Input
@@ -861,7 +886,7 @@ export default function UserManagement() {
             <p className="text-sm text-muted-foreground">Adjust the employee's current used balance and their maximum annual entitlement.</p>
             
             {/* Row 1: Current Balances */}
-            <h5 className="font-medium mt-4">Current Balance (Days Remaining)</h5>
+            {/* <h5 className="font-medium mt-4">Current Balance (Days Remaining)</h5>
             <div className="grid grid-cols-3 gap-4">
                 <div>
                     <Label htmlFor="annualLeaveBalance">Annual Leave</Label>
@@ -893,7 +918,7 @@ export default function UserManagement() {
                         placeholder="Current Balance"
                     />
                 </div>
-            </div>
+            </div> */}
 
             {/* Row 2: Maximum Limits */}
             <h5 className="font-medium mt-4">Maximum Limit (Annual Entitlement)</h5>
