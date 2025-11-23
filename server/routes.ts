@@ -586,12 +586,12 @@ export function registerRoutes(app: Express): Server {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin') {
+    if (user.role !== 'manager' && user.role !== 'admin' && user.role !== 'payroll_officer') {
         return res.status(403).json({ message: "Access denied" });
     }
 
     let teamMembers;
-    if (user.role === 'admin') {
+    if (user.role === 'admin' || user.role === 'payroll_officer') {
         // Admin: Return ALL users (Admins, Managers, Employees) for a comprehensive view
         // This is crucial for cross-referencing manager names in the frontend.
         teamMembers = await storage.getAllUsers();

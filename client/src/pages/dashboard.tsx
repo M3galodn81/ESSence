@@ -6,6 +6,8 @@ import ScheduleCard from "@/components/dashboard/schedule-card";
 import QuickActionsCard from "@/components/dashboard/quick-actions-card";
 import PendingTasksCard from "@/components/dashboard/pending-tasks-card";
 import { Calendar, Clock, AlertTriangle, GraduationCap } from "lucide-react";
+import { canViewDashoardHoursThisWeek, canViewDashoardLeaveBalance, canViewDashoardWeekSchedule } from "@/lib/permissions";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -24,12 +26,15 @@ export default function Dashboard() {
     queryKey: ["/api/schedules"],
   });
 
+  const { user } = useAuth();
+
   //TODO: Fix view for admin/managers
   return (
     <div className="p-6 space-y-8">
       {}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
+        {canViewDashoardLeaveBalance(user) && (
+          <StatCard
           title="Leave Balance"
           value={stats?.leaveBalance || "0 days"}
           icon={Calendar}
@@ -38,6 +43,8 @@ export default function Dashboard() {
           isLoading={statsLoading}
           data-testid="stat-leave-balance"
         />
+        )}
+        {canViewDashoardHoursThisWeek(user) && (
         <StatCard
           title="Hours This Week"
           value={stats?.weeklyHours || "0 hrs"}
@@ -47,6 +54,7 @@ export default function Dashboard() {
           isLoading={statsLoading}
           data-testid="stat-weekly-hours"
         />
+        )}
         <StatCard
           title="Pending Approvals"
           value={stats?.pendingApprovals?.toString() || "0"}
@@ -83,10 +91,13 @@ export default function Dashboard() {
 
         {}
         <div className="space-y-8">
-          <ScheduleCard
+          {canViewDashoardWeekSchedule(user) && (
+            <ScheduleCard
             schedules={schedules || []}
             isLoading={schedulesLoading}
           />
+          )}
+          
           <QuickActionsCard />
           <PendingTasksCard />
         </div>

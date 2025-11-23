@@ -38,14 +38,14 @@ export default function PendingTasksCard() {
       });
     }
 
-    tasks.push({
-      id: 'document-review-1',
-      type: 'document',
-      title: 'Review Document',
-      description: 'Updated Employee Handbook',
-      priority: 'medium',
-      action: 'Review',
-    });
+    // tasks.push({
+    //   id: 'document-review-1',
+    //   type: 'document',
+    //   title: 'Review Document',
+    //   description: 'Updated Employee Handbook',
+    //   priority: 'medium',
+    //   action: 'Review',
+    // });
 
     return tasks;
   };

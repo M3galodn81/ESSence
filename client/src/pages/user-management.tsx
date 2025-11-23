@@ -55,7 +55,7 @@ const editUserSchema = z.object({
   email: z.string().email("Invalid email address"),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
-  role: z.enum(["employee", "manager", "admin"]),
+  role: z.enum(["employee", "manager", "admin","payroll_officer"]),
   department: z.string().optional(),
   position: z.string().optional(),
   employeeId: z.string().optional(),
@@ -420,7 +420,7 @@ export default function UserManagement() {
     if (user?.role === "admin") {
       return [
         { value: "manager", label: "Manager" },
-        { value: "payroll_officer", label: "Payroll Officer" }, // Admin can create Admin
+        { value: "payroll_officer", label: "Payroll Officer" }, 
         { value: "employee", label: "Employee" },
       ];
     } else if (user?.role === "manager") {
@@ -831,7 +831,7 @@ export default function UserManagement() {
                 <SelectContent>
                   <SelectItem value="employee">Employee</SelectItem>
                   <SelectItem value="manager">Manager</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="payroll_officer">Payroll Officer</SelectItem>
                 </SelectContent>
               </Select>
               {editForm.formState.errors.role && (
