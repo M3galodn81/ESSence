@@ -13,6 +13,7 @@ import LeaveManagement from "@/pages/leave-management";
 import PayslipsEnhanced from "@/pages/payslips-enhanced";
 import PayslipMobile from "@/pages/payslip-mobile";
 import PayslipGenerator from "./pages/payslip-generator";
+import PayslipManagement from "./pages/payslip-management";
 import SalaryComputation from "@/pages/salary-computation";
 import Schedules from "@/pages/schedules";
 import ShiftManagement from "@/pages/shift-management";
@@ -21,6 +22,7 @@ import Announcements from "@/pages/announcements";
 import Reports from "@/pages/reports";
 import LaborCostAnalytics from "@/pages/labor-cost-analytics";
 import UserManagement from "@/pages/user-management";
+import TimeClock from "@/pages/time-clock";
 import NotFound from "@/pages/not-found";
 import MainLayout from "@/components/layout/main-layout";
 
@@ -81,6 +83,11 @@ function Router() {
           <Schedules />
         </MainLayout>
       )} />
+      <ProtectedRoute path="/time-clock" component={() => (
+        <MainLayout>
+          <TimeClock />
+        </MainLayout>
+      )} />
       <ProtectedRoute path="/shift-management" component={() => (
         <MainLayout>
           <ShiftManagement />
@@ -96,9 +103,9 @@ function Router() {
           <Reports />
         </MainLayout>
       )} />
-      <ProtectedRoute path="/reports-analytics" component={() => (
+      <ProtectedRoute path="/payroll-management" component={() => (
         <MainLayout>
-          <ReportsAnalytics />
+          <PayslipManagement />
         </MainLayout>
       )} />
       <ProtectedRoute path="/labor-cost-analytics" component={() => (

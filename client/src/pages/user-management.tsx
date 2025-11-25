@@ -49,7 +49,6 @@ const createUserSchema = z.object({
   managerId: z.string().optional(),
 });
 
-// 🟢 UPDATED SCHEMA: Removed current balance fields, keeping only limits
 const editUserSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   email: z.string().email("Invalid email address"),
@@ -62,7 +61,6 @@ const editUserSchema = z.object({
   phoneNumber: z.string().optional(),
   managerId: z.string().optional(),
   
-  // Maximum Limits (Only these are editable)
   annualLeaveBalanceLimit: z.string().optional(),
   sickLeaveBalanceLimit: z.string().optional(),
   serviceIncentiveLeaveBalanceLimit: z.string().optional(),
@@ -132,15 +130,15 @@ export default function UserManagement() {
     queryKey: ["/api/users"],
     enabled: user?.role === "admin" || user?.role === "manager",
   });
-    
-  // Filter out managers for the employee creation/edit process
-  const managers = users.filter((u: any) => u.role === "manager");
+
+  // Filter out managers and admins for the employee creation/edit process
+  const managers = users.filter((u: any) => u.role === "manager" );
 
   const generateNextEmployeeId = (role: string) => {
     let prefix = "EMP";
     if (role === "manager") prefix = "MAN";
     if (role === "admin") prefix = "ADM";
-    if (role === "payroll_officer") prefix = "PAY"; // Future proofing
+    if (role === "payroll_officer") prefix = "PAY";
 
     // Find all IDs that start with this prefix
     const existingIds = users
@@ -629,23 +627,34 @@ export default function UserManagement() {
 
               {createForm.watch("role") === "employee" && (
                 <div>
-                  <Label htmlFor="managerId">Manager</Label>
+                  <Label htmlFor="managerId">Manager (Optional)</Label>
                   <Select
                     value={createForm.watch("managerId") || ""}
                     onValueChange={(value) => createForm.setValue("managerId", value)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select manager" />
+                      <SelectValue placeholder={managers.length > 0 ? "Select manager" : "No managers available"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {managers.map((manager: any) => (
-                          <SelectItem key={manager.id} value={manager.id}>
-                            {manager.firstName} {manager.lastName}
-                          </SelectItem>
-                        ))}
+                      {managers.length > 0 ? (
+                        managers.map((manager: any) => (
+                          <SelectItem key={manager.id} value={manager.id}>
+                            {manager.firstName} {manager.lastName} ({manager.role})
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="none" disabled>
+                          No managers or admins available
+                        </SelectItem>
+                      )}
                     </SelectContent>
                 </Select>
-                </div>
+                {managers.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Create a manager or admin user first to assign them to employees
+                  </p>
+                )}
+                </div>
               )}
 
               <div className="flex gap-2 justify-end">
@@ -957,7 +966,7 @@ export default function UserManagement() {
 
             {editForm.watch("role") === "employee" && (
               <div>
-                <Label htmlFor="edit-managerId">Manager</Label>
+                <Label htmlFor="edit-managerId">Manager (Optional)</Label>
                 <Select
                   value={editForm.watch("managerId") || ""}
                   onValueChange={(value) => editForm.setValue("managerId", value)}
@@ -966,13 +975,19 @@ export default function UserManagement() {
                     <SelectValue placeholder="Select manager" />
                   </SelectTrigger>
                   <SelectContent>
-                    {managers.map((manager: any) => (
-                        <SelectItem key={manager.id} value={manager.id}>
-                          {manager.firstName} {manager.lastName}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                    {managers.length > 0 ? (
+                      managers.map((manager: any) => (
+                        <SelectItem key={manager.id} value={manager.id}>
+                          {manager.firstName} {manager.lastName} ({manager.role})
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="none" disabled>
+                        No managers or admins available
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 

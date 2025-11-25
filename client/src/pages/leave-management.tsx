@@ -167,33 +167,37 @@ export default function LeaveManagement() {
   });
 
   const approveLeaveRequestMutation = useMutation({
-    mutationFn: async ({ id, status, comments }: { id: string; status: string; comments?: string }) => {
-      const res = await apiRequest("PATCH", `/api/leave-requests/${id}`, {
-        status,
-        comments,
-      });
-      return await res.json();
-    },
-    onSuccess: (data, variables) => {
-      toast({
-        title: `Leave request ${variables.status}`,
-        description: `The leave request has been ${variables.status} successfully.`,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/leave-requests/pending"] });
-        if (variables.status === 'rejected') {
-            setIsRejectDialogOpen(false);
-            setRejectionRequestId(null);
-            rejectForm.reset();
-        }
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Update failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+    mutationFn: async ({ id, status, comments }: { id: string; status: string; comments?: string }) => {
+      const res = await apiRequest("PATCH", `/api/leave-requests/${id}`, {
+        status,
+        comments,
+      });
+      return await res.json();
+    },
+    onSuccess: (data, variables) => {
+      toast({
+        title: `Leave request ${variables.status}`,
+        description: `The leave request has been ${variables.status} successfully.`,
+      });
+      
+      // 🟢 FIX 1: Invalidate BOTH queries to ensure UI syncs everywhere
+      queryClient.invalidateQueries({ queryKey: ["/api/leave-requests/pending"] }); // Refreshes Manager View
+      queryClient.invalidateQueries({ queryKey: ["/api/leave-requests"] });         // Refreshes User History View
+
+      if (variables.status === 'rejected') {
+        setIsRejectDialogOpen(false);
+        setRejectionRequestId(null);
+        rejectForm.reset();
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const onSubmit = (data: LeaveForm) => {
     createLeaveRequestMutation.mutate(data);
@@ -238,6 +242,10 @@ export default function LeaveManagement() {
 
   //move this to permissions.ts
   const canManageLeaves = user?.role === 'manager' || user?.role === 'admin';
+
+
+  const pendingCount = pendingRequests?.filter(req => req.status === 'pending').length || 0;
+
 
   return (
     <div className="p-6">
@@ -416,15 +424,16 @@ export default function LeaveManagement() {
             <TabsList data-testid="leave-tabs">
             <TabsTrigger value="my-requests" data-testid="tab-my-requests">My Requests</TabsTrigger>
             {canManageLeaves && (
-              <TabsTrigger value="pending" data-testid="tab-pending">
-                Pending Approvals
-                {pendingRequests && pendingRequests.length > 0 && (
-                  <Badge variant="destructive" className="ml-2">
-                    {pendingRequests.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-            )}
+            <TabsTrigger value="pending" data-testid="tab-pending">
+                Pending Approvals
+                {pendingCount > 0 && (
+                <Badge variant="destructive" className="ml-2">
+                    {pendingCount}
+                </Badge>
+                )}
+            </TabsTrigger>
+            )}
+              
           </TabsList>
             
             <TabsContent value="my-requests">
@@ -494,84 +503,93 @@ export default function LeaveManagement() {
             </TabsContent>
 
           {canManageLeaves && (
-            <TabsContent value="pending">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Clock className="w-5 h-5 mr-2" />
-                    Pending Approvals
-                  </CardTitle>
-                  <CardDescription>Review and approve leave requests from your team</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {pendingLoading ? (
-                    <div className="text-center py-8" data-testid="loading-pending">
-                      <p className="text-muted-foreground">Loading pending requests...</p>
-                    </div>
-                  ) : pendingRequests && pendingRequests.length > 0 ? (
-                    <div className="space-y-4">
-                      {pendingRequests.map((request: LeaveRequest) => (
-                        <div
-                          key={request.id}
-                          className="flex items-center justify-between p-4 border rounded-lg"
-                          data-testid={`pending-request-${request.id}`}
-                        >
-                          <div className="flex items-center space-x-4">
-                            <div className="w-12 h-12 bg-warning/10 rounded-lg flex items-center justify-center">
-                              <Clock className="w-6 h-6 text-warning" />
-                            </div>
-                            <div>
-                              <h4 className="font-medium" data-testid={`pending-employee-${request.id}`}>
-                                Employee Name: {getUserName(request.userId)}
-                              </h4>
-                              <p className="text-sm text-muted-foreground capitalize" data-testid={`pending-type-${request.id}`}>
-                                {request.type} Leave
-                              </p>
-                              <p className="text-sm text-muted-foreground" data-testid={`pending-dates-${request.id}`}>
-                                {formatDate(request.startDate)} - {formatDate(request.endDate)} ({request.days} days)
-                              </p>
-                              {request.reason && (
-                                <p className="text-sm text-muted-foreground mt-1" data-testid={`pending-reason-${request.id}`}>
-                                  Reason: {request.reason}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex space-x-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleApprove(request.id)}
-                              disabled={approveLeaveRequestMutation.isPending}
-                              data-testid={`button-approve-${request.id}`}
-                            >
-                              <Check className="w-4 h-4 mr-1" />
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleReject(request.id)} // 🟢 Calls new handleReject
-                              disabled={approveLeaveRequestMutation.isPending}
-                              data-testid={`button-reject-${request.id}`}
-                            >
-                              <X className="w-4 h-4 mr-1" />
-                              Reject
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8" data-testid="no-pending">
-                      <Clock className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground">No pending approvals</p>
-                      <p className="text-sm text-muted-foreground">All leave requests have been processed</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
+            <TabsContent value="pending">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Clock className="w-5 h-5 mr-2" />
+                    Pending Approvals
+                  </CardTitle>
+                  <CardDescription>Review and approve leave requests from your team</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {pendingLoading ? (
+                    <div className="text-center py-8" data-testid="loading-pending">
+                      <p className="text-muted-foreground">Loading pending requests...</p>
+                    </div>
+                  ) : (
+                    // 🟢 FIX 2: Create a filtered variable block or chain filter() directly
+                    // This ensures processed items vanish immediately
+                    (() => {
+                      const activePendingRequests = pendingRequests?.filter(r => r.status === 'pending') || [];
+                      
+                      return activePendingRequests.length > 0 ? (
+                        <div className="space-y-4">
+                          {activePendingRequests.map((request: LeaveRequest) => (
+                            <div
+                              key={request.id}
+                              className="flex items-center justify-between p-4 border rounded-lg"
+                              data-testid={`pending-request-${request.id}`}
+                            >
+                              {/* ... (Existing render content inside the loop remains exactly the same) ... */}
+                              <div className="flex items-center space-x-4">
+                                <div className="w-12 h-12 bg-warning/10 rounded-lg flex items-center justify-center">
+                                  <Clock className="w-6 h-6 text-warning" />
+                                </div>
+                                <div>
+                                  <h4 className="font-medium" data-testid={`pending-employee-${request.id}`}>
+                                    Employee Name: {getUserName(request.userId)}
+                                  </h4>
+                                  <p className="text-sm text-muted-foreground capitalize" data-testid={`pending-type-${request.id}`}>
+                                    {request.type} Leave
+                                  </p>
+                                  <p className="text-sm text-muted-foreground" data-testid={`pending-dates-${request.id}`}>
+                                    {formatDate(request.startDate)} - {formatDate(request.endDate)} ({request.days} days)
+                                  </p>
+                                  {request.reason && (
+                                    <p className="text-sm text-muted-foreground mt-1" data-testid={`pending-reason-${request.id}`}>
+                                      Reason: {request.reason}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex space-x-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleApprove(request.id)}
+                                  disabled={approveLeaveRequestMutation.isPending}
+                                  data-testid={`button-approve-${request.id}`}
+                                >
+                                  <Check className="w-4 h-4 mr-1" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => handleReject(request.id)}
+                                  disabled={approveLeaveRequestMutation.isPending}
+                                  data-testid={`button-reject-${request.id}`}
+                                >
+                                  <X className="w-4 h-4 mr-1" />
+                                  Reject
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8" data-testid="no-pending">
+                          <Clock className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground">No pending approvals</p>
+                          <p className="text-sm text-muted-foreground">All leave requests have been processed</p>
+                        </div>
+                      );
+                    })()
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
         
         {/* 🟢 New Rejection Pop-up Dialog */}

@@ -312,7 +312,7 @@ export default function TeamManagement() {
                                   size="sm" 
                                   className="flex-1" 
                                   data-testid={`button-edit-${member.id}`}
-                                  onClick={() => handleEditMember(member)}
+                                //   onClick={() => handleEditMember(member)}
                                 >
                                   Edit
                                 </Button>

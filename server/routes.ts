@@ -345,23 +345,40 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.patch("/api/schedules/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // Debug: Log that the route was hit
+    console.log(`[DEBUG] PATCH /api/schedules/${req.params.id} hit`);
+
+    if (!req.isAuthenticated()) {
+        console.log("[DEBUG] User not authenticated");
+        return res.sendStatus(401);
+    }
 
     const user = req.user!;
+    console.log(`[DEBUG] User Role: ${user.role}, User ID: ${user.id}`);
+
     if (user.role !== 'manager' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
+        console.log("[DEBUG] Access denied: Insufficient permissions");
+        return res.status(403).json({ message: "Access denied" });
     }
 
     try {
-      const schedule = await storage.updateSchedule(req.params.id, req.body);
-      if (!schedule) {
-        return res.status(404).json({ message: "Schedule not found" });
-      }
-      res.json(schedule);
+        // Debug: Log the payload being sent to the database
+        console.log("[DEBUG] Request Body (Updates):", JSON.stringify(req.body, null, 2));
+
+        const schedule = await storage.updateSchedule(req.params.id, req.body);
+
+        if (!schedule) {
+            console.log(`[DEBUG] Schedule with ID ${req.params.id} not found in DB`);
+            return res.status(404).json({ message: "Schedule not found" });
+        }
+
+        console.log("[DEBUG] Schedule updated successfully:", schedule);
+        res.json(schedule);
     } catch (error) {
-      res.status(400).json({ message: "Failed to update schedule" });
+        // Debug: Log the full error object
+        res.status(400).json({ message: (error.message) });
     }
-  });
+});
 
   app.delete("/api/schedules/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -800,6 +817,215 @@ export function registerRoutes(app: Express): Server {
       res.json(updatedData);
     } catch (error) {
       res.status(400).json({ message: "Invalid update data" });
+    }
+  });
+
+  // Attendance routes
+  app.post("/api/attendance/clock-in", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const user = req.user!;
+    try {
+      // Check if already clocked in today
+      const todayAttendance = await storage.getTodayAttendance(user.id);
+      if (todayAttendance && !todayAttendance.timeOut) {
+        return res.status(400).json({ message: "Already clocked in today" });
+      }
+
+      const { notes } = req.body;
+      const attendance = await storage.clockIn(user.id, new Date(), notes);
+
+      await storage.createActivity({
+        userId: user.id,
+        type: "clock_in",
+        entityType: "attendance",
+        entityId: attendance.id,
+        details: { action: "clock_in", userName: `${user.firstName} ${user.lastName}` },
+      });
+
+      res.json(attendance);
+    } catch (error) {
+      console.error("Clock in error:", error);
+      res.status(500).json({ message: "Failed to clock in" });
+    }
+  });
+
+  app.post("/api/attendance/clock-out", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const user = req.user!;
+    try {
+      const todayAttendance = await storage.getTodayAttendance(user.id);
+      if (!todayAttendance) {
+        return res.status(400).json({ message: "No active clock-in found" });
+      }
+
+      if (todayAttendance.timeOut) {
+        return res.status(400).json({ message: "Already clocked out" });
+      }
+
+      // Check if there's an active break
+      const activeBreak = await storage.getActiveBreak(user.id);
+      if (activeBreak) {
+        return res.status(400).json({ message: "Please end your break before clocking out" });
+      }
+
+      const attendance = await storage.clockOut(todayAttendance.id);
+
+      await storage.createActivity({
+        userId: user.id,
+        type: "clock_out",
+        entityType: "attendance",
+        entityId: todayAttendance.id,
+        details: { action: "clock_out", userName: `${user.firstName} ${user.lastName}` },
+      });
+
+      res.json(attendance);
+    } catch (error) {
+      console.error("Clock out error:", error);
+      res.status(500).json({ message: "Failed to clock out" });
+    }
+  });
+
+  app.post("/api/attendance/break-start", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const user = req.user!;
+    try {
+      const todayAttendance = await storage.getTodayAttendance(user.id);
+      if (!todayAttendance || todayAttendance.timeOut) {
+        return res.status(400).json({ message: "Must be clocked in to take a break" });
+      }
+
+      // Check if already on break
+      const activeBreak = await storage.getActiveBreak(user.id);
+      if (activeBreak) {
+        return res.status(400).json({ message: "Already on break" });
+      }
+
+      const { breakType, notes } = req.body;
+      const breakRecord = await storage.startBreak(
+        todayAttendance.id,
+        user.id,
+        breakType || "regular",
+        notes
+      );
+
+      await storage.createActivity({
+        userId: user.id,
+        type: "break_start",
+        entityType: "break",
+        entityId: breakRecord.id,
+        details: { action: "break_start", breakType: breakType || 'regular', userName: `${user.firstName} ${user.lastName}` },
+      });
+
+      res.json(breakRecord);
+    } catch (error) {
+      console.error("Break start error:", error);
+      res.status(500).json({ message: "Failed to start break" });
+    }
+  });
+
+  app.post("/api/attendance/break-end", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const user = req.user!;
+    try {
+      const activeBreak = await storage.getActiveBreak(user.id);
+      if (!activeBreak) {
+        return res.status(400).json({ message: "No active break found" });
+      }
+
+      const breakRecord = await storage.endBreak(activeBreak.id);
+
+      await storage.createActivity({
+        userId: user.id,
+        type: "break_end",
+        entityType: "break",
+        entityId: activeBreak.id,
+        details: { action: "break_end", userName: `${user.firstName} ${user.lastName}` },
+      });
+
+      res.json(breakRecord);
+    } catch (error) {
+      console.error("Break end error:", error);
+      res.status(500).json({ message: "Failed to end break" });
+    }
+  });
+
+  app.get("/api/attendance/today", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const user = req.user!;
+    try {
+      const todayAttendance = await storage.getTodayAttendance(user.id);
+      const activeBreak = await storage.getActiveBreak(user.id);
+
+      let breaks = [];
+      if (todayAttendance) {
+        breaks = await storage.getBreaksByAttendance(todayAttendance.id);
+      }
+
+      res.json({
+        attendance: todayAttendance || null,
+        activeBreak: activeBreak || null,
+        breaks,
+      });
+    } catch (error) {
+      console.error("Get today attendance error:", error);
+      res.status(500).json({ message: "Failed to get attendance" });
+    }
+  });
+
+  app.get("/api/attendance", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const user = req.user!;
+    try {
+      const { startDate, endDate } = req.query;
+      const start = startDate ? new Date(startDate as string) : undefined;
+      const end = endDate ? new Date(endDate as string) : undefined;
+
+      const attendanceRecords = await storage.getAttendanceByUser(user.id, start, end);
+      res.json(attendanceRecords);
+    } catch (error) {
+      console.error("Get attendance error:", error);
+      res.status(500).json({ message: "Failed to get attendance records" });
+    }
+  });
+
+  app.get("/api/attendance/all", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const user = req.user!;
+    if (user.role !== 'manager' && user.role !== 'hr' && user.role !== 'admin') {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    try {
+      const { startDate, endDate } = req.query;
+      const start = startDate ? new Date(startDate as string) : undefined;
+      const end = endDate ? new Date(endDate as string) : undefined;
+
+      const attendanceRecords = await storage.getAllAttendance(start, end);
+      res.json(attendanceRecords);
+    } catch (error) {
+      console.error("Get all attendance error:", error);
+      res.status(500).json({ message: "Failed to get attendance records" });
     }
   });
 

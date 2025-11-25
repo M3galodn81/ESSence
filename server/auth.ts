@@ -88,3 +88,4 @@ export function setupAuth(app: Express) {
     res.json(req.user);
   });
 }
+

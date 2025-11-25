@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,14 +11,21 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertLaborCostDataSchema } from "@shared/schema";
 import { z } from "zod";
-import { DollarSign, TrendingUp, TrendingDown, Plus, AlertCircle, CheckCircle, Lightbulb } from "lucide-react";
+import { DollarSign, Plus, AlertCircle, CheckCircle, Lightbulb } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import type { LaborCostData } from "@shared/schema";
 
-const laborCostFormSchema = insertLaborCostDataSchema;
-type LaborCostForm = z.infer<typeof laborCostFormSchema>;
+// 1. Define a form-specific schema that accepts standard numbers (floats/decimals)
+const formSchema = z.object({
+  month: z.number().min(1).max(12),
+  year: z.number().min(2000),
+  totalSales: z.number().min(0, "Sales must be positive"),
+  totalLaborCost: z.number().min(0, "Labor cost must be positive"),
+  notes: z.string().optional(),
+});
+
+type LaborCostForm = z.infer<typeof formSchema>;
 
 export default function LaborCostAnalytics() {
   const { user } = useAuth();
@@ -36,23 +43,24 @@ export default function LaborCostAnalytics() {
   });
 
   const form = useForm<LaborCostForm>({
-    resolver: zodResolver(laborCostFormSchema),
+    resolver: zodResolver(formSchema),
     defaultValues: {
       month: new Date().getMonth() + 1,
       year: new Date().getFullYear(),
       totalSales: 0,
       totalLaborCost: 0,
-      laborCostPercentage: 0,
-      status: "",
-      performanceRating: "",
       notes: "",
     },
   });
 
   const createLaborCostMutation = useMutation({
     mutationFn: async (data: LaborCostForm) => {
-      
-      const percentage = (data.totalLaborCost / data.totalSales) * 10000; 
+      // 2. Convert standard currency to centavos (Integers) for the backend
+      const salesInCentavos = Math.round(data.totalSales * 100);
+      const laborInCentavos = Math.round(data.totalLaborCost * 100);
+
+      // Calculate percentage based on centavos
+      const percentage = (laborInCentavos / salesInCentavos) * 10000;
       
       let status = "";
       let performanceRating = "";
@@ -75,7 +83,11 @@ export default function LaborCostAnalytics() {
       }
 
       const res = await apiRequest("POST", "/api/labor-cost-data", {
-        ...data,
+        month: data.month,
+        year: data.year,
+        notes: data.notes,
+        totalSales: salesInCentavos, // Send centavos
+        totalLaborCost: laborInCentavos, // Send centavos
         laborCostPercentage: Math.round(percentage),
         status,
         performanceRating,
@@ -105,10 +117,11 @@ export default function LaborCostAnalytics() {
   };
 
   const formatCurrency = (amount: number) => {
+    // Helper to divide by 100 for display since backend data is in centavos
     return new Intl.NumberFormat('en-PH', {
       style: 'currency',
       currency: 'PHP',
-    }).format(amount );
+    }).format(amount / 100);
   };
 
   const getMonthName = (month: number) => {
@@ -135,19 +148,6 @@ export default function LaborCostAnalytics() {
     );
   };
 
-  const getRatingBadge = (rating: string) => {
-    const colors: Record<string, string> = {
-      good: "bg-gray-700 text-white",
-      warning: "bg-gray-400 text-gray-900",
-      critical: "bg-red-600 text-white",
-    };
-    return (
-      <Badge className={colors[rating] || colors.warning}>
-        ⭐ {rating.charAt(0).toUpperCase() + rating.slice(1)}
-      </Badge>
-    );
-  };
-
   const currentMonthData = laborCostData?.[0];
   const previousMonthData = laborCostData?.[1];
   
@@ -162,7 +162,6 @@ export default function LaborCostAnalytics() {
     laborPercent: data.laborCostPercentage / 100,
   })) || [];
 
-  // move this to permissions.ts
   if (user?.role !== 'manager' && user?.role !== 'hr') {
     return (
       <div className="p-6">
@@ -178,7 +177,7 @@ export default function LaborCostAnalytics() {
   return (
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        {}
+        
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Labor Cost Analytics</h1>
@@ -220,15 +219,16 @@ export default function LaborCostAnalytics() {
                   </div>
                 </div>
 
+                {/* 3. Updated Inputs: Removed "centavos" helper text */}
                 <div className="space-y-2">
                   <Label htmlFor="totalSales">Total Sales (₱)</Label>
                   <Input
                     id="totalSales"
                     type="number"
+                    step="0.01" // Allow decimals
                     {...form.register("totalSales", { valueAsNumber: true })}
-                    placeholder="e.g., 78500000 (for ₱785,000)"
+                    placeholder="e.g., 785000.00"
                   />
-                  <p className="text-xs text-muted-foreground">Enter amount in centavos (multiply by 100)</p>
                 </div>
 
                 <div className="space-y-2">
@@ -236,10 +236,10 @@ export default function LaborCostAnalytics() {
                   <Input
                     id="totalLaborCost"
                     type="number"
+                    step="0.01" // Allow decimals
                     {...form.register("totalLaborCost", { valueAsNumber: true })}
-                    placeholder="e.g., 38500000 (for ₱385,000)"
+                    placeholder="e.g., 385000.00"
                   />
-                  <p className="text-xs text-muted-foreground">Enter amount in centavos (multiply by 100)</p>
                 </div>
 
                 <div className="space-y-2">
@@ -264,7 +264,6 @@ export default function LaborCostAnalytics() {
           </Dialog>
         </div>
 
-        {}
         {currentMonthData && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card className="bg-gradient-to-br from-red-600 to-black text-white">
@@ -310,6 +309,7 @@ export default function LaborCostAnalytics() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="bg-white/10 rounded p-3">
                     <p className="text-gray-200">Total Sales</p>
+                    {/* Display helpers handles division by 100 automatically */}
                     <p className="font-bold text-lg">{formatCurrency(currentMonthData.totalSales)}</p>
                     <p className="text-xs text-gray-300">100%</p>
                   </div>
