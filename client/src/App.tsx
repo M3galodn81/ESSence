@@ -23,6 +23,7 @@ import Reports from "@/pages/reports";
 import LaborCostAnalytics from "@/pages/labor-cost-analytics";
 import UserManagement from "@/pages/user-management";
 import TimeClock from "@/pages/time-clock";
+import Attendance from "@/pages/attendances";
 import NotFound from "@/pages/not-found";
 import MainLayout from "@/components/layout/main-layout";
 
@@ -86,6 +87,11 @@ function Router() {
       <ProtectedRoute path="/time-clock" component={() => (
         <MainLayout>
           <TimeClock />
+        </MainLayout>
+      )} />
+      <ProtectedRoute path="/attendance" component={() => (
+        <MainLayout>
+          <Attendance />
         </MainLayout>
       )} />
       <ProtectedRoute path="/shift-management" component={() => (
