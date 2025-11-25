@@ -108,7 +108,7 @@ export default function LaborCostAnalytics() {
     return new Intl.NumberFormat('en-PH', {
       style: 'currency',
       currency: 'PHP',
-    }).format(amount / 100);
+    }).format(amount );
   };
 
   const getMonthName = (month: number) => {
