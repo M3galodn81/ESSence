@@ -4,9 +4,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Assuming you have an Alert component
 import { useToast } from "@/hooks/use-toast";
-import { Clock, Coffee, LogIn, LogOut, Timer } from "lucide-react";
-import { format } from "date-fns";
+import { Clock, Coffee, LogIn, LogOut, Timer, AlertCircle } from "lucide-react";
+import { format, differenceInMinutes, addMinutes, subMinutes, isWithinInterval } from "date-fns";
+
+// --- Configuration ---
+const BREAK_LIMIT_MINUTES = 60;
+const SHIFT_WINDOW_TOLERANCE = 30; // Minutes before/after shift user can act
+
+interface Schedule {
+  shiftStart: number; // Unix timestamp or ISO string for today's shift start
+  shiftEnd: number;   // Unix timestamp or ISO string for today's shift end
+}
 
 interface Attendance {
   id: string;
@@ -35,6 +45,7 @@ interface TodayAttendance {
   attendance: Attendance | null;
   activeBreak: Break | null;
   breaks: Break[];
+  schedule: Schedule | null; // Added schedule to API response
 }
 
 export default function TimeClock() {
@@ -51,21 +62,18 @@ export default function TimeClock() {
 
   const { data: todayData, isLoading } = useQuery<TodayAttendance>({
     queryKey: ["/api/attendance/today"],
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
   });
 
+  // --- Mutations (Same as before) ---
   const clockInMutation = useMutation({
     mutationFn: async (notes: string) => {
       const res = await fetch("/api/attendance/clock-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ notes }),
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to clock in");
-      }
+      if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
     },
     onSuccess: () => {
@@ -73,9 +81,7 @@ export default function TimeClock() {
       toast({ title: "Clocked In", description: "You have successfully clocked in." });
       setNotes("");
     },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
+    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
   });
 
   const clockOutMutation = useMutation({
@@ -83,21 +89,15 @@ export default function TimeClock() {
       const res = await fetch("/api/attendance/clock-out", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to clock out");
-      }
+      if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance/today"] });
       toast({ title: "Clocked Out", description: "You have successfully clocked out." });
     },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
+    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
   });
 
   const startBreakMutation = useMutation({
@@ -105,13 +105,9 @@ export default function TimeClock() {
       const res = await fetch("/api/attendance/break-start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ breakType, notes }),
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to start break");
-      }
+      if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
     },
     onSuccess: () => {
@@ -119,9 +115,7 @@ export default function TimeClock() {
       toast({ title: "Break Started", description: "Your break has started." });
       setBreakNotes("");
     },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
+    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
   });
 
   const endBreakMutation = useMutation({
@@ -129,27 +123,21 @@ export default function TimeClock() {
       const res = await fetch("/api/attendance/break-end", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to end break");
-      }
+      if (!res.ok) throw new Error((await res.json()).message);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance/today"] });
       toast({ title: "Break Ended", description: "Your break has ended." });
     },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
+    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
   });
 
-  const formatTime = (date: Date) => {
-    return format(date, "h:mm:ss a");
-  };
+  // --- Logic Helpers ---
 
+  const formatTime = (date: Date) => format(date, "h:mm:ss a");
+  
   const formatDuration = (minutes: number) => {
     const hours = Math.floor(minutes / 60);
     const mins = minutes % 60;
@@ -167,15 +155,97 @@ export default function TimeClock() {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
   }
 
-  const { attendance, activeBreak, breaks } = todayData || { attendance: null, activeBreak: null, breaks: [] };
+  const { attendance, activeBreak, breaks, schedule } = todayData || { attendance: null, activeBreak: null, breaks: [], schedule: null };
+  
+  // 1. Shift Status Logic
   const isClockedIn = attendance && !attendance.timeOut;
+  const isShiftCompleted = attendance && attendance.timeIn && attendance.timeOut;
   const isOnBreak = activeBreak !== null;
+
+  // 2. Break Limit Logic
+  const totalUsedBreak = attendance ? attendance.totalBreakMinutes : 0;
+  // If on break, add the current session duration to the total
+  const currentBreakSession = activeBreak ? differenceInMinutes(currentTime, new Date(activeBreak.breakStart)) : 0;
+  const realTimeTotalBreak = totalUsedBreak + currentBreakSession;
+  const remainingBreakMinutes = BREAK_LIMIT_MINUTES - realTimeTotalBreak;
+  const isBreakLimitReached = remainingBreakMinutes <= 0 && !isOnBreak;
+
+  // 3. Schedule Window Logic
+  let canClockIn = true;
+  let canClockOut = true;
+  let restrictionMessage = "";
+
+  if (schedule) {
+    const shiftStart = new Date(schedule.shiftStart);
+    const shiftEnd = new Date(schedule.shiftEnd);
+
+    // Clock In Window: e.g., 30 mins before start to 30 mins after start
+    // (Adjust logic if you want to allow late clock-ins)
+    const validClockInStart = subMinutes(shiftStart, SHIFT_WINDOW_TOLERANCE);
+    const validClockInEnd = addMinutes(shiftStart, SHIFT_WINDOW_TOLERANCE);
+    
+    // Clock Out Window: e.g., 30 mins before end to 30 mins after end
+    const validClockOutStart = subMinutes(shiftEnd, SHIFT_WINDOW_TOLERANCE);
+    const validClockOutEnd = addMinutes(shiftEnd, SHIFT_WINDOW_TOLERANCE);
+
+    const inClockInWindow = isWithinInterval(currentTime, { start: validClockInStart, end: validClockInEnd });
+    
+    // For clock out, we usually just want to prevent Early clock out, or prevent staying too late
+    // Here we check if they are within the tolerance zone of the end time
+    const inClockOutWindow = isWithinInterval(currentTime, { start: validClockOutStart, end: validClockOutEnd });
+
+    // Can only clock in if within window AND hasn't worked today
+    if (!isClockedIn && !isShiftCompleted) {
+      if (!inClockInWindow) {
+        canClockIn = false;
+        // Simple check to see if too early or too late
+        if (currentTime < validClockInStart) restrictionMessage = `You can only clock in starting ${format(validClockInStart, 'h:mm a')}`;
+        else restrictionMessage = "You have missed your clock-in window.";
+      }
+    }
+
+    // Can only clock out if within window
+    if (isClockedIn) {
+      if (!inClockOutWindow) {
+        // Allow clock out if it's AFTER the window (overtime), but block if BEFORE
+        if (currentTime < validClockOutStart) {
+          canClockOut = false;
+          restrictionMessage = `You cannot clock out until ${format(validClockOutStart, 'h:mm a')}`;
+        }
+      }
+    }
+  }
+
+  // 4. Single Shift Per Day Logic
+  if (isShiftCompleted) {
+    return (
+      <div className="container mx-auto p-6 max-w-4xl text-center">
+        <Card>
+            <CardHeader>
+                <CardTitle className="text-green-600">Shift Complete</CardTitle>
+                <CardDescription>You have already completed your shift for today.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold mb-4">{format(currentTime, "h:mm:ss a")}</div>
+                <div className="flex justify-center gap-4 text-sm">
+                    <div>Time In: <span className="font-bold">{format(new Date(attendance!.timeIn), "h:mm a")}</span></div>
+                    <div>Time Out: <span className="font-bold">{format(new Date(attendance!.timeOut!), "h:mm a")}</span></div>
+                </div>
+            </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2">Time Clock</h1>
-        <p className="text-muted-foreground">Track your work hours and breaks</p>
+        <p className="text-muted-foreground">
+            {schedule 
+                ? `Scheduled Shift: ${format(new Date(schedule.shiftStart), "h:mm a")} - ${format(new Date(schedule.shiftEnd), "h:mm a")}` 
+                : "No schedule found"}
+        </p>
       </div>
 
       {/* Current Time Display */}
@@ -187,6 +257,15 @@ export default function TimeClock() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Logic Restriction Alerts */}
+      {restrictionMessage && (
+         <Alert variant="destructive" className="mb-6">
+           <AlertCircle className="h-4 w-4" />
+           <AlertTitle>Action Restricted</AlertTitle>
+           <AlertDescription>{restrictionMessage}</AlertDescription>
+         </Alert>
+      )}
 
       {/* Status Card */}
       <Card className="mb-6">
@@ -217,12 +296,15 @@ export default function TimeClock() {
                   <span className="font-bold">{calculateElapsedTime(attendance.timeIn)}</span>
                 </div>
 
-                {attendance.totalBreakMinutes > 0 && (
-                  <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-                    <span className="font-medium">Total Break Time:</span>
-                    <span className="font-bold">{formatDuration(attendance.totalBreakMinutes)}</span>
+                <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                  <div className="flex flex-col">
+                      <span className="font-medium">Break Time Used:</span>
+                      <span className="text-xs text-muted-foreground">Limit: {BREAK_LIMIT_MINUTES} mins</span>
                   </div>
-                )}
+                  <div className={`font-bold ${remainingBreakMinutes < 10 ? 'text-red-600' : ''}`}>
+                    {formatDuration(realTimeTotalBreak)}
+                  </div>
+                </div>
 
                 {isOnBreak && activeBreak && (
                   <div className="flex items-center justify-between p-4 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
@@ -254,7 +336,7 @@ export default function TimeClock() {
               />
               <Button
                 onClick={() => clockInMutation.mutate(notes)}
-                disabled={clockInMutation.isPending}
+                disabled={clockInMutation.isPending || !canClockIn}
                 className="w-full"
                 size="lg"
               >
@@ -277,18 +359,18 @@ export default function TimeClock() {
                 />
                 <Button
                   onClick={() => startBreakMutation.mutate({ breakType: "regular", notes: breakNotes })}
-                  disabled={startBreakMutation.isPending}
+                  disabled={startBreakMutation.isPending || isBreakLimitReached}
                   className="w-full"
                   variant="outline"
                 >
                   <Coffee className="mr-2 h-4 w-4" />
-                  Start Break
+                  {isBreakLimitReached ? "Break Limit Reached" : "Start Break"}
                 </Button>
               </div>
               <div className="flex items-end">
                 <Button
                   onClick={() => clockOutMutation.mutate()}
-                  disabled={clockOutMutation.isPending}
+                  disabled={clockOutMutation.isPending || !canClockOut}
                   className="w-full"
                   size="lg"
                   variant="destructive"
@@ -314,7 +396,7 @@ export default function TimeClock() {
         </CardContent>
       </Card>
 
-      {/* Today's Breaks */}
+      {/* Today's Breaks (Existing Code) */}
       {breaks && breaks.length > 0 && (
         <Card>
           <CardHeader>
@@ -344,4 +426,3 @@ export default function TimeClock() {
     </div>
   );
 }
-

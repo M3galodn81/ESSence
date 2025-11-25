@@ -32,6 +32,7 @@ const navigationItems = [
   { path: "/", label: "Dashboard", icon: Home, roles: ["employee", "manager", "admin", "payroll_officer"] },
   { path: "/announcements", label: "Announcements", icon: Megaphone, roles: ["employee", "manager", "admin", "payroll_officer"] },
   { path: "/time-clock", label: "Time Clock", icon: Timer, roles: ["employee"] },
+  { path: "/attendance", label: "Attendance", icon: Timer, roles: ["employee"] },
   { path: "/leave-management", label: "Leave Management", icon: Calendar, roles: ["employee", "manager", "admin"] },
   { path: "/payslips", label: "Payslips", icon: FileText, roles: ["employee"] },
   { path: "/salary-computation", label: "Salary Calculator", icon: DollarSign, roles: ["employee"] },
