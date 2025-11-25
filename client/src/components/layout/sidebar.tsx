@@ -42,9 +42,8 @@ const managementItems = [
   { path: "/user-management", label: "User Management", icon: UserPlus, roles: ["manager", "admin"] },
   { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
   { path: "/shift-management", label: "Shift Management", icon: Calendar, roles: ["manager", "admin"] },
-  // ✅ Added 'admin' and ensured 'payroll_officer' is present
-  { path: "/payslip-generator", label: "Payslip Generator", icon: DollarSign, roles: ["admin", "payroll_officer"] },
-  { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager", "admin"] },
+  { path: "/payslip-generator", label: "Payslip Generator", icon: DollarSign, roles: ["payroll_officer"] },
+  { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager"] },
 ];
 
 export default function Sidebar({ className }: SidebarProps) {
@@ -61,8 +60,6 @@ export default function Sidebar({ className }: SidebarProps) {
     setIsMobileOpen(false);
   };
 
-  // ✅ Updated Check: Explicitly allow payroll_officer to see the Management section
-  // independent of what the helper function returns.
   const canAccessManagement = canAccessManagementTab(user) || user?.role === "payroll_officer";
 
   const isActive = (path: string) => {
