@@ -155,11 +155,11 @@ export default function ShiftManagement() {
       });
     },
   });
-
-  const updateShiftMutation = useMutation({
+const updateShiftMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<ShiftForm> }) => {
       const updates: any = {};
       
+      // 1. Handle basic string updates
       if (data.shiftType) {
         updates.type = data.shiftType;
         updates.title = `${data.shiftType.charAt(0).toUpperCase() + data.shiftType.slice(1)} Shift`;
@@ -167,24 +167,43 @@ export default function ShiftManagement() {
       if (data.shiftRole) updates.shiftRole = data.shiftRole;
       if (data.location) updates.location = data.location;
       
+      // 2. Handle Date and Time reconstruction
+      // We rely on data.date being present (from the form state) to reconstruct full timestamps
       if (data.date) {
         const shiftDate = new Date(data.date);
-        updates.date = shiftDate.getTime();
+        
+        // Safety check: Ensure date is valid before calling getTime
+        if (!isNaN(shiftDate.getTime())) {
+             updates.date = shiftDate.getTime();
+        }
 
-        // 🟢 Fix: Robust Update Logic
+        // Construct Start Time Timestamp
         if (data.startTime) {
             const startDateTime = new Date(`${data.date}T${data.startTime}`);
-            updates.startTime = startDateTime.getTime();
+            if (!isNaN(startDateTime.getTime())) {
+                updates.startTime = startDateTime.getTime();
+            }
         }
+
+        // Construct End Time Timestamp
         if (data.endTime) {
             const endDateTime = new Date(`${data.date}T${data.endTime}`);
-             // Handle crossover for updates if both times are present or inferred
-             // Simplified: if we are updating both, check crossover.
-             // If updating only one, logic might be complex, but assuming form sends both on edit usually.
-             if (data.startTime && data.endTime < data.startTime) {
-                 endDateTime.setDate(endDateTime.getDate() + 1);
-             }
-            updates.endTime = endDateTime.getTime();
+            
+            // Handle overnight logic (e.g., 10 PM to 4 AM)
+            // We compare against start time to see if we crossed midnight
+            if (data.startTime) {
+                const startDateTime = new Date(`${data.date}T${data.startTime}`);
+                
+                // If End Time is "earlier" than Start Time (e.g., 04:00 < 22:00), 
+                // it implies the shift ends the next day.
+                if (endDateTime < startDateTime && data.shiftType !== 'off') {
+                    endDateTime.setDate(endDateTime.getDate() + 1);
+                }
+            }
+
+            if (!isNaN(endDateTime.getTime())) {
+                updates.endTime = endDateTime.getTime();
+            }
         }
       }
 

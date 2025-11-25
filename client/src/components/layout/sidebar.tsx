@@ -18,7 +18,8 @@ import {
   X,
   AlertTriangle,
   DollarSign,
-  UserPlus
+  UserPlus,
+  Timer
 } from "lucide-react";
 import { useState } from "react";
 import { canAccessManagementTab } from "@/lib/permissions";
@@ -30,6 +31,7 @@ interface SidebarProps {
 const navigationItems = [
   { path: "/", label: "Dashboard", icon: Home, roles: ["employee", "manager", "admin", "payroll_officer"] },
   { path: "/announcements", label: "Announcements", icon: Megaphone, roles: ["employee", "manager", "admin", "payroll_officer"] },
+  { path: "/time-clock", label: "Time Clock", icon: Timer, roles: ["employee"] },
   { path: "/leave-management", label: "Leave Management", icon: Calendar, roles: ["employee", "manager", "admin"] },
   { path: "/payslips", label: "Payslips", icon: FileText, roles: ["employee"] },
   { path: "/salary-computation", label: "Salary Calculator", icon: DollarSign, roles: ["employee"] },
@@ -42,7 +44,8 @@ const managementItems = [
   { path: "/user-management", label: "User Management", icon: UserPlus, roles: ["manager", "admin"] },
   { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
   { path: "/shift-management", label: "Shift Management", icon: Calendar, roles: ["manager", "admin"] },
-  { path: "/payslip-generator", label: "Payslip Generator", icon: DollarSign, roles: ["payroll_officer"] },
+  // { path: "/payslip-generator", label: "Payslip Generator", icon: DollarSign, roles: ["payroll_officer"] },
+    { path: "/payroll-management", label: "Payslip Generator", icon: DollarSign, roles: ["payroll_officer"] },
   { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager"] },
 ];
 
@@ -60,6 +63,8 @@ export default function Sidebar({ className }: SidebarProps) {
     setIsMobileOpen(false);
   };
 
+  // ✅ Updated Check: Explicitly allow payroll_officer to see the Management section
+  // independent of what the helper function returns.
   const canAccessManagement = canAccessManagementTab(user) || user?.role === "payroll_officer";
 
   const isActive = (path: string) => {

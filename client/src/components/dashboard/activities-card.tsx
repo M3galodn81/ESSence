@@ -71,6 +71,14 @@ export default function ActivitiesCard({ activities, isLoading: activitiesLoadin
         return "updated profile information";
       case "report_created":
         return "created a new report";
+      case "clock_in":
+        return "clocked in";
+      case "clock_out":
+        return "clocked out";
+      case "break_start":
+        return "started their break";
+      case "break_end":
+        return "ended their break";
       default:
         return type;
     }

@@ -23,6 +23,7 @@ export default function SalaryComputation() {
 
   const HOURLY_RATE = 58.75;
   const OVERTIME_RATE = 1.25;
+  const NIGHT_DIFFERENTIAL_RATE = 1.25;
   const OVERTIME_PER_HOUR = Number(
     (HOURLY_RATE * OVERTIME_RATE).toFixed(2)
   );

@@ -172,14 +172,40 @@ export const laborCostData = sqliteTable("labor_cost_data", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
   month: integer("month").notNull(),
   year: integer("year").notNull(),
-  totalSales: integer("total_sales").notNull(), 
-  totalLaborCost: integer("total_labor_cost").notNull(), 
-  laborCostPercentage: integer("labor_cost_percentage").notNull(), 
-  status: text("status"), 
-  performanceRating: text("performance_rating"), 
+  totalSales: integer("total_sales").notNull(),
+  totalLaborCost: integer("total_labor_cost").notNull(),
+  laborCostPercentage: integer("labor_cost_percentage").notNull(),
+  status: text("status"),
+  performanceRating: text("performance_rating"),
   notes: text("notes"),
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: 'timestamp_ms' }).$onUpdateFn(() => new Date()),
+});
+
+export const attendance = sqliteTable("attendance", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text("user_id").notNull().references(() => users.id),
+  date: integer("date", { mode: 'timestamp_ms' }).notNull(),
+  timeIn: integer("time_in", { mode: 'timestamp_ms' }).notNull(),
+  timeOut: integer("time_out", { mode: 'timestamp_ms' }),
+  status: text("status").default("clocked_in"), // clocked_in, clocked_out, on_break
+  totalBreakMinutes: integer("total_break_minutes").default(0),
+  totalWorkMinutes: integer("total_work_minutes"),
+  notes: text("notes"),
+  createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: 'timestamp_ms' }).$onUpdateFn(() => new Date()),
+});
+
+export const breaks = sqliteTable("breaks", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  attendanceId: text("attendance_id").notNull().references(() => attendance.id),
+  userId: text("user_id").notNull().references(() => users.id),
+  breakStart: integer("break_start", { mode: 'timestamp_ms' }).notNull(),
+  breakEnd: integer("break_end", { mode: 'timestamp_ms' }),
+  breakMinutes: integer("break_minutes"),
+  breakType: text("break_type").default("regular"), // regular, lunch, emergency
+  notes: text("notes"),
+  createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -269,6 +295,21 @@ export const insertLaborCostDataSchema = createInsertSchema(laborCostData).omit(
   updatedAt: true,
 });
 
+export const insertAttendanceSchema = createInsertSchema(attendance).omit({
+  id: true,
+  status: true,
+  totalBreakMinutes: true,
+  totalWorkMinutes: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertBreakSchema = createInsertSchema(breaks).omit({
+  id: true,
+  breakMinutes: true,
+  createdAt: true,
+});
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
@@ -301,3 +342,9 @@ export type InsertReport = z.infer<typeof insertReportSchema>;
 
 export type LaborCostData = typeof laborCostData.$inferSelect;
 export type InsertLaborCostData = z.infer<typeof insertLaborCostDataSchema>;
+
+export type Attendance = typeof attendance.$inferSelect;
+export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
+
+export type Break = typeof breaks.$inferSelect;
+export type InsertBreak = z.infer<typeof insertBreakSchema>;

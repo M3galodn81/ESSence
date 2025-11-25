@@ -15,6 +15,20 @@
       "when": 1761455151133,
       "tag": "0001_fine_liz_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1763890249534,
+      "tag": "0002_complex_taskmaster",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1763891299151,
+      "tag": "0003_white_psylocke",
+      "breakpoints": true
     }
   ]
 }
