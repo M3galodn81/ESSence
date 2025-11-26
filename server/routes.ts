@@ -1012,7 +1012,7 @@ export function registerRoutes(app: Express): Server {
     }
 
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'hr' && user.role !== 'admin') {
+    if (user.role !== 'manager' && user.role !== 'payroll_officer' && user.role !== 'admin') {
       return res.status(403).json({ message: "Access denied" });
     }
 

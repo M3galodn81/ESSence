@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Search, Edit2, Check, X, Loader2, RefreshCw } from 'lucide-react';
+import { computeSSS, computePhilHealth, computePagIbig } from '@/lib/helper';
 
 // --- Constants ---
 const HOURLY_RATE = 58.75;
@@ -46,10 +47,16 @@ export default function PayrollManagement() {
     }
   });
 
+  // Calculate Date Range for API
+  const startDate = new Date(selectedPeriod.year, selectedPeriod.month - 1, 1).toISOString();
+  // Get last day of the month
+  const endDate = new Date(selectedPeriod.year, selectedPeriod.month, 0, 23, 59, 59).toISOString();
+
   const { data: attendanceData, isLoading: isLoadingAttendance } = useQuery({
-    queryKey: ["/api/attendance/period", selectedPeriod.month, selectedPeriod.year],
+    queryKey: ["/api/attendance/all", startDate, endDate],
     queryFn: async () => { 
-        const res = await fetch(`/api/attendance/period?month=${selectedPeriod.month}&year=${selectedPeriod.year}`);
+        // Use the existing /all endpoint with date range
+        const res = await fetch(`/api/attendance/all?startDate=${startDate}&endDate=${endDate}`);
         if (!res.ok) throw new Error("Failed");
         return res.json();
     } 
@@ -58,24 +65,19 @@ export default function PayrollManagement() {
   // --- Core Calculation Logic ---
   
   // Helper: Calculate intersection of work hours with Night Shift (10PM - 6AM)
-  const getNightDiffHours = (timeInMs: number, timeOutMs: number) => {
-    let start = new Date(timeInMs);
-    let end = new Date(timeOutMs);
+  const getNightDiffHours = (timeIn: string | number, timeOut: string | number) => {
+    let start = new Date(timeIn);
+    let end = new Date(timeOut);
     let ndHours = 0;
 
     // We loop hour by hour to check for 10PM-6AM
-    // This is a simplified approach robust enough for typical shifts
     let current = new Date(start);
-    // Align to next hour start
     current.setMinutes(0, 0, 0); 
     if (current.getTime() < start.getTime()) current.setHours(current.getHours() + 1);
 
     while (current.getTime() < end.getTime()) {
         const h = current.getHours();
-        // Night diff is 22:00 (10PM) to 6:00 (6AM)
         if (h >= 22 || h < 6) {
-            // Check if this full hour is within the work period
-            // (For precision, you'd calculate exact minutes, but hourly blocks are standard for basic payroll)
             ndHours += 1;
         }
         current.setHours(current.getHours() + 1);
@@ -93,7 +95,6 @@ export default function PayrollManagement() {
     let totalNDHours = 0;
 
     userRecords.forEach((record: any) => {
-        // Only count if they have clocked out
         if (record.timeOut && record.totalWorkMinutes) {
             const workMinutes = record.totalWorkMinutes;
             
@@ -105,7 +106,6 @@ export default function PayrollManagement() {
                 totalRegMinutes += workMinutes;
             }
 
-            // Calculate Night Diff based on timestamps
             totalNDHours += getNightDiffHours(record.timeIn, record.timeOut);
         }
     });
@@ -117,16 +117,17 @@ export default function PayrollManagement() {
     };
   };
 
-  // --- Financial Formulas ---
-  const computePagIbig = (gross: number) => (gross * 0.02) > 100 ? 100 : gross * 0.02;
-  const computePhilHealth = (gross: number) => (gross * 0.05) / 2;
-  const computeSSS = (gross: number) => (gross * 0.045); 
-  const computeTax = (gross: number) => {
-    if (gross <= 20833) return 0;
-    if (gross <= 33332) return (gross - 20833) * 0.15;
-    if (gross <= 66666) return 1875 + (gross - 33332) * 0.2;
-    return 8541 + (gross - 66666) * 0.25;
+  // --- Financial Formulas (Updated to PH Standards) ---
+    
+  const computeTax = (taxableIncome: number) => {
+    if (taxableIncome <= 20833) return 0;
+    if (taxableIncome <= 33332) return (taxableIncome - 20833) * 0.15; // 15% excess over 20,833 (2023 rates)
+    if (taxableIncome <= 66666) return 1875 + (taxableIncome - 33332) * 0.20;
+    if (taxableIncome <= 166666) return 8541.67 + (taxableIncome - 66666) * 0.25;
+    if (taxableIncome <= 666666) return 33541.67 + (taxableIncome - 166666) * 0.30;
+    return 183541.67 + (taxableIncome - 666666) * 0.35;
   };
+
   const calculateGrossPay = (basic: number, allowancesObj: any) => parseFloat((basic || 0).toString()) + Object.values(allowancesObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
   const calculateTotalDeductions = (deductionsObj: any) => Object.values(deductionsObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
   const calculateNetPay = (gross: number, totalDeductions: number) => gross - totalDeductions;
@@ -153,7 +154,6 @@ export default function PayrollManagement() {
   const handleEdit = (employee: any) => {
     setEditingId(employee.id);
     
-    // 1. Process Real Attendance Data
     const { regularHours, overtimeHours, nightDiffHours } = processAttendanceForUser(employee.id, attendanceData);
 
     setEditForm({
@@ -176,7 +176,7 @@ export default function PayrollManagement() {
       userId: employeeId,
       month: selectedPeriod.month,
       year: selectedPeriod.year,
-      basicSalary: Math.round(editForm.basicSalary * 100), // Convert to cents for DB
+      basicSalary: Math.round(editForm.basicSalary * 100),
       allowances: {
         overtime: Math.round(editForm.allowances.overtime * 100),
         nightDiff: Math.round(editForm.allowances.nightDiff * 100),
@@ -195,7 +195,9 @@ export default function PayrollManagement() {
     });
   };
 
-  // --- Effects (Auto-Calculate Money when Hours Change) ---
+  // --- Effects ---
+  
+  // 1. Calculate Income
   useEffect(() => {
     if (editingId) {
       const rate = editForm.hourlyRate;
@@ -215,17 +217,30 @@ export default function PayrollManagement() {
     }
   }, [editForm.regularHours, editForm.overtimeHours, editForm.nightDiffHours, editingId]);
 
+  // 2. Calculate Deductions (Dependent on Basic and Gross)
   useEffect(() => {
     if (editingId) {
       const gross = calculateGrossPay(editForm.basicSalary, editForm.allowances);
+      const basic = editForm.basicSalary;
+
+      // Compute Gov Contributions based on BASIC
+      const sss = computeSSS(basic);
+      const philHealth = computePhilHealth(basic);
+      const pagIbig = computePagIbig(basic);
+
+      // Compute Tax based on Taxable Income (Gross - Gov Deductions)
+      const totalGovDeductions = sss + philHealth + pagIbig;
+      const taxableIncome = Math.max(0, gross - totalGovDeductions);
+      const tax = computeTax(taxableIncome);
+
       setEditForm(prev => ({
         ...prev,
         deductions: {
           ...prev.deductions,
-          tax: Math.round(computeTax(gross) * 100) / 100,
-          sss: Math.round(computeSSS(gross) * 100) / 100,
-          philHealth: Math.round(computePhilHealth(gross) * 100) / 100,
-          pagIbig: Math.round(computePagIbig(gross) * 100) / 100,
+          tax: Math.round(tax * 100) / 100,
+          sss: Math.round(sss * 100) / 100,
+          philHealth: Math.round(philHealth * 100) / 100,
+          pagIbig: Math.round(pagIbig * 100) / 100,
         }
       }));
     }
@@ -234,7 +249,7 @@ export default function PayrollManagement() {
   // --- Render ---
   const processedEmployees = useMemo(() => {
     if (!teamMembers) return [];
-    const onlyEmployees = teamMembers.filter((m: any) => m.role === 'employee');
+    const onlyEmployees = teamMembers.filter((m: any) => m.role === 'employee' ); 
     return onlyEmployees.map((emp: any) => {
       const slip = existingPayslips?.find((p: any) => p.userId === emp.id);
       return { ...emp, payslipStatus: slip ? 'generated' : 'pending', lastPay: slip };
@@ -274,6 +289,30 @@ export default function PayrollManagement() {
                 {filteredEmployees.map((employee: any) => {
                   const isEditing = editingId === employee.id;
                   
+                  // Calculate View Mode Data
+                  const computed = processAttendanceForUser(employee.id, attendanceData || []);
+                  const viewBasic = computed.regularHours * HOURLY_RATE;
+                  const viewOT = computed.overtimeHours * (HOURLY_RATE * OT_MULTIPLIER);
+                  const viewND = computed.nightDiffHours * (HOURLY_RATE * ND_MULTIPLIER);
+                  const viewGross = viewBasic + viewOT + viewND;
+                  
+                  // View Mode Deductions
+                  const vSSS = computeSSS(viewBasic);
+                  const vPH = computePhilHealth(viewBasic);
+                  const vHDMF = computePagIbig(viewBasic);
+                  const vTaxable = Math.max(0, viewGross - (vSSS + vPH + vHDMF));
+                  const vTax = computeTax(vTaxable);
+
+                  const viewDeductions = {
+                      tax: vTax,
+                      sss: vSSS,
+                      philHealth: vPH,
+                      pagIbig: vHDMF,
+                      others: 0
+                  };
+                  const viewTotalDeductions = calculateTotalDeductions(viewDeductions);
+                  const viewNet = calculateNetPay(viewGross, viewTotalDeductions);
+                  
                   return (
                     <tr key={employee.id} className="hover:bg-gray-50">
                       <td className="px-4 py-4 align-top">
@@ -298,9 +337,11 @@ export default function PayrollManagement() {
                                 </div>
                             </div>
                         ) : (
-                             // View Mode: Show calculated summary if attendance exists, else --
-                             <div className="text-xs text-gray-500 italic mt-2">
-                                {attendanceData && attendanceData.length > 0 ? "Ready to Calc" : "No Data"}
+                             <div className="flex flex-col gap-1 items-center text-xs">
+                                <div title="Regular Hours">Reg: {computed.regularHours}</div>
+                                {computed.overtimeHours > 0 && <div className="text-orange-600" title="Overtime">OT: {computed.overtimeHours}</div>}
+                                {computed.nightDiffHours > 0 && <div className="text-indigo-600" title="Night Diff">ND: {computed.nightDiffHours}</div>}
+                                {(!attendanceData || attendanceData.length === 0) && <span className="text-gray-400 italic">--</span>}
                              </div>
                         )}
                       </td>
@@ -317,7 +358,14 @@ export default function PayrollManagement() {
                                     <input type="number" value={editForm.allowances.bonuses} onChange={e => setEditForm({...editForm, allowances: {...editForm.allowances, bonuses: parseFloat(e.target.value) || 0}})} className="w-16 text-right border rounded p-0.5 text-xs" />
                                 </div>
                             </div>
-                        ) : "-"}
+                        ) : (
+                            <div className="flex flex-col gap-1 items-end">
+                                <div className="text-sm font-bold">₱{viewBasic.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                <div className="text-[10px] text-gray-400 mb-1">Basic</div>
+                                {(viewOT > 0) && <div className="text-xs text-orange-600">+₱{viewOT.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px]">(OT)</span></div>}
+                                {(viewND > 0) && <div className="text-xs text-indigo-600">+₱{viewND.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px]">(ND)</span></div>}
+                            </div>
+                        )}
                       </td>
                       
                       <td className="px-4 py-4 align-top">
@@ -337,14 +385,28 @@ export default function PayrollManagement() {
                                     </div>
                                 </div>
                              </div>
-                        ) : "-"}
+                        ) : (
+                             <div className="flex flex-col w-full">
+                                <div className="text-right font-bold text-red-600 mb-2 border-b pb-1">
+                                    -₱{viewTotalDeductions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                                <div className="space-y-1 opacity-75">
+                                    <div className="flex justify-between text-xs text-gray-600"><span>Tax:</span><span>{viewDeductions.tax.toFixed(2)}</span></div>
+                                    <div className="flex justify-between text-xs text-gray-600"><span>SSS:</span><span>{viewDeductions.sss.toFixed(2)}</span></div>
+                                    <div className="flex justify-between text-xs text-gray-600"><span>PhilHealth:</span><span>{viewDeductions.philHealth.toFixed(2)}</span></div>
+                                    <div className="flex justify-between text-xs text-gray-600"><span>Pag-IBIG:</span><span>{viewDeductions.pagIbig.toFixed(2)}</span></div>
+                                </div>
+                             </div>
+                        )}
                       </td>
                       
                       <td className="px-4 py-4 text-right font-bold text-green-600 text-lg align-top">
                         {isEditing ? (
                             calculateNetPay(calculateGrossPay(editForm.basicSalary, editForm.allowances), calculateTotalDeductions(editForm.deductions))
                             .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                        ) : "--"}
+                        ) : (
+                            viewNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                        )}
                       </td>
 
                       <td className="px-4 py-4 text-center align-top">
