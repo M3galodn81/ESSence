@@ -2,8 +2,25 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Edit2, Check, X, Loader2, RefreshCw } from 'lucide-react';
+import { Search, Edit2, Check, X, Loader2, RefreshCw, CalendarDays } from 'lucide-react';
 import { computeSSS, computePhilHealth, computePagIbig } from '@/lib/helper';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // --- Constants ---
 const HOURLY_RATE = 58.75;
@@ -18,11 +35,14 @@ export default function PayrollManagement() {
   // --- State ---
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState({ 
-    month: 11, // November (matching your seed data)
-    year: 2025 
+    month: 11, // November
+    year: 2025,
+    half: 1 // 1 = 1st Half (1-15), 2 = 2nd Half (16-End)
   });
   
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+
   const [editForm, setEditForm] = useState({
     regularHours: 0,
     overtimeHours: 0,
@@ -30,7 +50,7 @@ export default function PayrollManagement() {
     hourlyRate: HOURLY_RATE,      
     basicSalary: 0,
     allowances: { overtime: 0, nightDiff: 0, otherAllowances: 0, bonuses: 0 },
-    deductions: { tax: 0, sss: 0, philHealth: 0, pagIbig: 0, others: 0 }
+    deductions: { sss: 0, philHealth: 0, pagIbig: 0, others: 0 }
   });
 
   // --- Real API Data Fetching ---
@@ -39,7 +59,8 @@ export default function PayrollManagement() {
   });
 
   const { data: existingPayslips } = useQuery({
-    queryKey: ["/api/payslips", selectedPeriod.month, selectedPeriod.year],
+    // Include half in query key if you update backend filtering, otherwise we filter locally below
+    queryKey: ["/api/payslips", selectedPeriod.month, selectedPeriod.year], 
     queryFn: async () => {
        const res = await fetch(`/api/payslips?month=${selectedPeriod.month}&year=${selectedPeriod.year}`);
        if (!res.ok) throw new Error("Failed");
@@ -47,15 +68,31 @@ export default function PayrollManagement() {
     }
   });
 
-  // Calculate Date Range for API
-  const startDate = new Date(selectedPeriod.year, selectedPeriod.month - 1, 1).toISOString();
-  // Get last day of the month
-  const endDate = new Date(selectedPeriod.year, selectedPeriod.month, 0, 23, 59, 59).toISOString();
+  // --- Date Range Calculation Logic ---
+  const { startDate, endDate } = useMemo(() => {
+    const year = selectedPeriod.year;
+    const monthIndex = selectedPeriod.month - 1; 
+    let start, end;
+
+    if (selectedPeriod.half === 1) {
+        // 1st Half: 1st to 15th
+        start = new Date(year, monthIndex, 1);
+        end = new Date(year, monthIndex, 15, 23, 59, 59);
+    } else {
+        // 2nd Half: 16th to Last Day of Month
+        start = new Date(year, monthIndex, 16);
+        end = new Date(year, monthIndex + 1, 0, 23, 59, 59);
+    }
+
+    return { 
+        startDate: start.toISOString(), 
+        endDate: end.toISOString() 
+    };
+  }, [selectedPeriod]);
 
   const { data: attendanceData, isLoading: isLoadingAttendance } = useQuery({
     queryKey: ["/api/attendance/all", startDate, endDate],
     queryFn: async () => { 
-        // Use the existing /all endpoint with date range
         const res = await fetch(`/api/attendance/all?startDate=${startDate}&endDate=${endDate}`);
         if (!res.ok) throw new Error("Failed");
         return res.json();
@@ -63,14 +100,11 @@ export default function PayrollManagement() {
   });
 
   // --- Core Calculation Logic ---
-  
-  // Helper: Calculate intersection of work hours with Night Shift (10PM - 6AM)
   const getNightDiffHours = (timeIn: string | number, timeOut: string | number) => {
     let start = new Date(timeIn);
     let end = new Date(timeOut);
     let ndHours = 0;
 
-    // We loop hour by hour to check for 10PM-6AM
     let current = new Date(start);
     current.setMinutes(0, 0, 0); 
     if (current.getTime() < start.getTime()) current.setHours(current.getHours() + 1);
@@ -98,7 +132,6 @@ export default function PayrollManagement() {
         if (record.timeOut && record.totalWorkMinutes) {
             const workMinutes = record.totalWorkMinutes;
             
-            // Standard Shift is 8 hours (480 minutes)
             if (workMinutes > 480) {
                 totalRegMinutes += 480;
                 totalOTMinutes += (workMinutes - 480);
@@ -117,17 +150,7 @@ export default function PayrollManagement() {
     };
   };
 
-  // --- Financial Formulas (Updated to PH Standards) ---
-    
-  const computeTax = (taxableIncome: number) => {
-    if (taxableIncome <= 20833) return 0;
-    if (taxableIncome <= 33332) return (taxableIncome - 20833) * 0.15; // 15% excess over 20,833 (2023 rates)
-    if (taxableIncome <= 66666) return 1875 + (taxableIncome - 33332) * 0.20;
-    if (taxableIncome <= 166666) return 8541.67 + (taxableIncome - 66666) * 0.25;
-    if (taxableIncome <= 666666) return 33541.67 + (taxableIncome - 166666) * 0.30;
-    return 183541.67 + (taxableIncome - 666666) * 0.35;
-  };
-
+  // --- Financial Formulas ---
   const calculateGrossPay = (basic: number, allowancesObj: any) => parseFloat((basic || 0).toString()) + Object.values(allowancesObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
   const calculateTotalDeductions = (deductionsObj: any) => Object.values(deductionsObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
   const calculateNetPay = (gross: number, totalDeductions: number) => gross - totalDeductions;
@@ -144,9 +167,10 @@ export default function PayrollManagement() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Success", description: "Payslip saved to database." });
+      toast({ title: "Success", description: "Payslip generated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
       setEditingId(null);
+      setIsConfirmOpen(false);
     }
   });
 
@@ -163,19 +187,25 @@ export default function PayrollManagement() {
       hourlyRate: HOURLY_RATE,
       basicSalary: 0, 
       allowances: { overtime: 0, nightDiff: 0, otherAllowances: 0, bonuses: 0 },
-      deductions: { tax: 0, sss: 0, philHealth: 0, pagIbig: 0, others: 0 }
+      deductions: { sss: 0, philHealth: 0, pagIbig: 0, others: 0 }
     });
   };
 
-  const handleSave = async (employeeId: string) => {
+  const handleInitiateSave = () => {
+    setIsConfirmOpen(true);
+  };
+
+  const handleConfirmSave = async () => {
+    if (!editingId) return;
+
     const grossPay = calculateGrossPay(editForm.basicSalary, editForm.allowances);
-    const totalDeductions = calculateTotalDeductions(editForm.deductions);
-    const netPay = calculateNetPay(grossPay, totalDeductions);
+    const netPay = calculateNetPay(grossPay, calculateTotalDeductions(editForm.deductions));
 
     createPayslipMutation.mutate({
-      userId: employeeId,
+      userId: editingId,
       month: selectedPeriod.month,
       year: selectedPeriod.year,
+      period: selectedPeriod.half, // Added Period/Half to DB insert
       basicSalary: Math.round(editForm.basicSalary * 100),
       allowances: {
         overtime: Math.round(editForm.allowances.overtime * 100),
@@ -184,7 +214,7 @@ export default function PayrollManagement() {
         bonuses: Math.round(editForm.allowances.bonuses * 100),
       },
       deductions: {
-        tax: Math.round(editForm.deductions.tax * 100),
+        tax: 0,
         sss: Math.round(editForm.deductions.sss * 100),
         philHealth: Math.round(editForm.deductions.philHealth * 100),
         pagIbig: Math.round(editForm.deductions.pagIbig * 100),
@@ -196,8 +226,6 @@ export default function PayrollManagement() {
   };
 
   // --- Effects ---
-  
-  // 1. Calculate Income
   useEffect(() => {
     if (editingId) {
       const rate = editForm.hourlyRate;
@@ -217,27 +245,17 @@ export default function PayrollManagement() {
     }
   }, [editForm.regularHours, editForm.overtimeHours, editForm.nightDiffHours, editingId]);
 
-  // 2. Calculate Deductions (Dependent on Basic and Gross)
   useEffect(() => {
     if (editingId) {
-      const gross = calculateGrossPay(editForm.basicSalary, editForm.allowances);
       const basic = editForm.basicSalary;
-
-      // Compute Gov Contributions based on BASIC
       const sss = computeSSS(basic);
       const philHealth = computePhilHealth(basic);
       const pagIbig = computePagIbig(basic);
-
-      // Compute Tax based on Taxable Income (Gross - Gov Deductions)
-      const totalGovDeductions = sss + philHealth + pagIbig;
-      const taxableIncome = Math.max(0, gross - totalGovDeductions);
-      const tax = computeTax(taxableIncome);
 
       setEditForm(prev => ({
         ...prev,
         deductions: {
           ...prev.deductions,
-          tax: Math.round(tax * 100) / 100,
           sss: Math.round(sss * 100) / 100,
           philHealth: Math.round(philHealth * 100) / 100,
           pagIbig: Math.round(pagIbig * 100) / 100,
@@ -246,15 +264,34 @@ export default function PayrollManagement() {
     }
   }, [editForm.basicSalary, editForm.allowances]);
 
-  // --- Render ---
+  const editingEmployeeName = useMemo(() => {
+    if (!editingId || !teamMembers) return "";
+    const emp = teamMembers.find((m: any) => m.id === editingId);
+    return emp ? `${emp.firstName} ${emp.lastName}` : "Employee";
+  }, [editingId, teamMembers]);
+
+  const currentNetPay = useMemo(() => {
+    const gross = calculateGrossPay(editForm.basicSalary, editForm.allowances);
+    const deduc = calculateTotalDeductions(editForm.deductions);
+    return calculateNetPay(gross, deduc);
+  }, [editForm]);
+
+  // --- Render & Processing ---
   const processedEmployees = useMemo(() => {
     if (!teamMembers) return [];
     const onlyEmployees = teamMembers.filter((m: any) => m.role === 'employee' ); 
+    
     return onlyEmployees.map((emp: any) => {
-      const slip = existingPayslips?.find((p: any) => p.userId === emp.id);
+      // Filter existing payslips by BOTH month AND period (half)
+      const slip = existingPayslips?.find((p: any) => 
+        p.userId === emp.id && 
+        p.month === selectedPeriod.month && 
+        p.year === selectedPeriod.year &&
+        (p.period === selectedPeriod.half || (!p.period && selectedPeriod.half === 1)) // Fallback for old records
+      );
       return { ...emp, payslipStatus: slip ? 'generated' : 'pending', lastPay: slip };
     });
-  }, [teamMembers, existingPayslips]);
+  }, [teamMembers, existingPayslips, selectedPeriod]);
 
   const filteredEmployees = processedEmployees.filter((emp: any) =>
     `${emp.firstName} ${emp.lastName}`.toLowerCase().includes(searchTerm.toLowerCase())
@@ -268,7 +305,26 @@ export default function PayrollManagement() {
         <div className="mb-6 flex justify-between items-end">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Payroll Management</h1>
-              <p className="text-gray-600">Period: {selectedPeriod.month}/{selectedPeriod.year}</p>
+              <div className="flex items-center gap-2 text-gray-600">
+                <CalendarDays className="w-4 h-4" />
+                <span>Period: {selectedPeriod.month}/{selectedPeriod.year}</span>
+                
+                <div className="ml-4 flex items-center gap-2">
+                    <span className="text-sm font-medium">Cutoff:</span>
+                    <Select 
+                        value={selectedPeriod.half.toString()} 
+                        onValueChange={(val) => setSelectedPeriod(prev => ({ ...prev, half: parseInt(val) }))}
+                    >
+                        <SelectTrigger className="w-[180px] h-8">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="1">1st Half (1-15)</SelectItem>
+                            <SelectItem value="2">2nd Half (16-End)</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+              </div>
             </div>
         </div>
 
@@ -289,22 +345,18 @@ export default function PayrollManagement() {
                 {filteredEmployees.map((employee: any) => {
                   const isEditing = editingId === employee.id;
                   
-                  // Calculate View Mode Data
                   const computed = processAttendanceForUser(employee.id, attendanceData || []);
                   const viewBasic = computed.regularHours * HOURLY_RATE;
                   const viewOT = computed.overtimeHours * (HOURLY_RATE * OT_MULTIPLIER);
                   const viewND = computed.nightDiffHours * (HOURLY_RATE * ND_MULTIPLIER);
                   const viewGross = viewBasic + viewOT + viewND;
                   
-                  // View Mode Deductions
                   const vSSS = computeSSS(viewBasic);
                   const vPH = computePhilHealth(viewBasic);
                   const vHDMF = computePagIbig(viewBasic);
-                  const vTaxable = Math.max(0, viewGross - (vSSS + vPH + vHDMF));
-                  const vTax = computeTax(vTaxable);
 
                   const viewDeductions = {
-                      tax: vTax,
+                      tax: 0,
                       sss: vSSS,
                       philHealth: vPH,
                       pagIbig: vHDMF,
@@ -375,7 +427,6 @@ export default function PayrollManagement() {
                                     -₱{calculateTotalDeductions(editForm.deductions).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </div>
                                 <div className="space-y-1">
-                                    <div className="flex justify-between text-xs text-gray-600"><span>Tax:</span><span>{editForm.deductions.tax}</span></div>
                                     <div className="flex justify-between text-xs text-gray-600"><span>SSS:</span><span>{editForm.deductions.sss}</span></div>
                                     <div className="flex justify-between text-xs text-gray-600"><span>PhilHealth:</span><span>{editForm.deductions.philHealth}</span></div>
                                     <div className="flex justify-between text-xs text-gray-600"><span>Pag-IBIG:</span><span>{editForm.deductions.pagIbig}</span></div>
@@ -391,7 +442,6 @@ export default function PayrollManagement() {
                                     -₱{viewTotalDeductions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                                 <div className="space-y-1 opacity-75">
-                                    <div className="flex justify-between text-xs text-gray-600"><span>Tax:</span><span>{viewDeductions.tax.toFixed(2)}</span></div>
                                     <div className="flex justify-between text-xs text-gray-600"><span>SSS:</span><span>{viewDeductions.sss.toFixed(2)}</span></div>
                                     <div className="flex justify-between text-xs text-gray-600"><span>PhilHealth:</span><span>{viewDeductions.philHealth.toFixed(2)}</span></div>
                                     <div className="flex justify-between text-xs text-gray-600"><span>Pag-IBIG:</span><span>{viewDeductions.pagIbig.toFixed(2)}</span></div>
@@ -412,17 +462,21 @@ export default function PayrollManagement() {
                       <td className="px-4 py-4 text-center align-top">
                         {isEditing ? (
                             <div className="flex gap-2 justify-center">
-                                <button onClick={() => handleSave(employee.id)} className="bg-green-600 text-white p-2 rounded hover:bg-green-700"><Check className="w-4 h-4"/></button>
+                                <button onClick={handleInitiateSave} className="bg-green-600 text-white p-2 rounded hover:bg-green-700"><Check className="w-4 h-4"/></button>
                                 <button onClick={() => setEditingId(null)} className="bg-gray-500 text-white p-2 rounded hover:bg-gray-600"><X className="w-4 h-4"/></button>
                             </div>
                         ) : (
-                            employee.payslipStatus === 'pending' ? (
-                                <button onClick={() => handleEdit(employee)} className="text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 mx-auto border border-blue-200">
-                                    <Edit2 className="w-3 h-3" /> Calc
-                                </button>
-                            ) : (
-                                <span className="text-green-600 text-xs font-bold border border-green-200 bg-green-50 px-2 py-1 rounded-full">Done</span>
-                            )
+                            <button 
+                                onClick={() => handleEdit(employee)} 
+                                disabled={employee.payslipStatus !== 'pending'}
+                                className={`px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 mx-auto border ${
+                                    employee.payslipStatus === 'pending' 
+                                    ? "text-blue-600 hover:bg-blue-50 border-blue-200" 
+                                    : "text-gray-400 bg-gray-100 border-gray-200 cursor-not-allowed opacity-50"
+                                }`}
+                            >
+                                <Edit2 className="w-3 h-3" /> Edit
+                            </button>
                         )}
                       </td>
                     </tr>
@@ -432,6 +486,31 @@ export default function PayrollManagement() {
             </table>
           </div>
         </div>
+
+        {/* Confirmation Dialog */}
+        <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm Payslip Generation</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to generate the payslip for <strong>{editingEmployeeName}</strong>?
+                <br/><br/>
+                Period: {selectedPeriod.month}/{selectedPeriod.year} (Cutoff: {selectedPeriod.half === 1 ? '1st Half' : '2nd Half'})
+                <br/>
+                Net Pay: <strong>₱{currentNetPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                <br/>
+                <span className="text-xs text-gray-500">This action cannot be undone easily.</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmSave} className="bg-green-600 hover:bg-green-700">
+                Confirm Generate
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
       </div>
     </div>
   );

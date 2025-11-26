@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -60,6 +59,7 @@ export const payslips = sqliteTable("payslips", {
   userId: text("user_id").notNull().references(() => users.id),
   month: integer("month").notNull(),
   year: integer("year").notNull(),
+  period: integer("period").notNull().default(1), // Added: 1 for 1st Half, 2 for 2nd Half
   basicSalary: integer("basic_salary").notNull(),
   allowances: json<Record<string, any>>("allowances"),
   deductions: json<Record<string, any>>("deductions"),
