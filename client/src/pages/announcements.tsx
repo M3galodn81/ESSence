@@ -197,9 +197,9 @@ export default function Announcements() {
 
   const filteredAnnouncements = announcements?.filter((announcement: Announcement) => {
     const typeMatch = filterType === "all" || announcement.type === filterType;
-    const statusMatch = filterStatus === "all" || 
-      (filterStatus === "active" && announcement.isActive) ||
-      (filterStatus === "inactive" && !announcement.isActive);
+    const statusMatch = (filterStatus === "active" && announcement.isActive) ||
+      (filterStatus === "inactive" && !announcement.isActive) || 
+      filterStatus === "all";
     
     return typeMatch && statusMatch;
   }) || [];
@@ -557,12 +557,12 @@ export default function Announcements() {
                     : "Try adjusting your filters to see more results"
                   }
                 </p>
-                {announcements?.length === 0 && (
+                {/* {announcements?.length === 0 && (
                   <Button onClick={() => setIsDialogOpen(true)} data-testid="button-create-first">
                     <Plus className="w-4 h-4 mr-2" />
                     Create Your First Announcement
                   </Button>
-                )}
+                )} */}
               </div>
             )}
           </CardContent>
