@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +15,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Calendar, Clock, ChevronLeft, ChevronRight, Plus, Edit, Trash2, Copy, Users, CalendarDays } from "lucide-react";
 import type { Schedule, User } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
 
 const shiftFormSchema = z.object({
   userId: z.string().min(1, "Employee is required"),
@@ -92,7 +92,6 @@ export default function ShiftManagement() {
       let startTime = data.startTime;
       let endTime = data.endTime;
       
-      // Default times if not provided based on shift type
       if (!startTime || !endTime) {
         switch (data.shiftType) {
           case "morning":
@@ -114,12 +113,9 @@ export default function ShiftManagement() {
         }
       }
 
-      // 🟢 Fix: Robust Date Construction
-      // Combine date and time strings directly for local time construction
       const startDateTime = new Date(`${data.date}T${startTime}`);
       const endDateTime = new Date(`${data.date}T${endTime}`);
       
-      // Handle night shifts crossing midnight (if end time is earlier than start time)
       if (endDateTime < startDateTime && data.shiftType !== 'off') {
         endDateTime.setDate(endDateTime.getDate() + 1);
       }
@@ -155,11 +151,11 @@ export default function ShiftManagement() {
       });
     },
   });
-const updateShiftMutation = useMutation({
+
+  const updateShiftMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<ShiftForm> }) => {
       const updates: any = {};
       
-      // 1. Handle basic string updates
       if (data.shiftType) {
         updates.type = data.shiftType;
         updates.title = `${data.shiftType.charAt(0).toUpperCase() + data.shiftType.slice(1)} Shift`;
@@ -167,17 +163,14 @@ const updateShiftMutation = useMutation({
       if (data.shiftRole) updates.shiftRole = data.shiftRole;
       if (data.location) updates.location = data.location;
       
-      // 2. Handle Date and Time reconstruction
-      // We rely on data.date being present (from the form state) to reconstruct full timestamps
+      // Reconstruct Dates
       if (data.date) {
         const shiftDate = new Date(data.date);
         
-        // Safety check: Ensure date is valid before calling getTime
         if (!isNaN(shiftDate.getTime())) {
              updates.date = shiftDate.getTime();
         }
 
-        // Construct Start Time Timestamp
         if (data.startTime) {
             const startDateTime = new Date(`${data.date}T${data.startTime}`);
             if (!isNaN(startDateTime.getTime())) {
@@ -185,17 +178,12 @@ const updateShiftMutation = useMutation({
             }
         }
 
-        // Construct End Time Timestamp
         if (data.endTime) {
             const endDateTime = new Date(`${data.date}T${data.endTime}`);
             
-            // Handle overnight logic (e.g., 10 PM to 4 AM)
-            // We compare against start time to see if we crossed midnight
+            // Handle overnight logic
             if (data.startTime) {
                 const startDateTime = new Date(`${data.date}T${data.startTime}`);
-                
-                // If End Time is "earlier" than Start Time (e.g., 04:00 < 22:00), 
-                // it implies the shift ends the next day.
                 if (endDateTime < startDateTime && data.shiftType !== 'off') {
                     endDateTime.setDate(endDateTime.getDate() + 1);
                 }
@@ -287,12 +275,9 @@ const updateShiftMutation = useMutation({
 
   const handleEdit = (schedule: Schedule) => {
     setSelectedSchedule(schedule);
-    // 🟢 Fix: Extract string formats safely for inputs
     const scheduleDate = new Date(schedule.date);
-    // Use ISO string part for date input (YYYY-MM-DD)
     const dateString = scheduleDate.toISOString().split('T')[0];
 
-    // Use locale string with en-GB to force 24h format (HH:MM) for time inputs
     const start = new Date(schedule.startTime);
     const startString = start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
@@ -341,16 +326,12 @@ const updateShiftMutation = useMutation({
     return days;
   };
 
-  // 🟢 Fix: Robust Date Comparison
   const getSchedulesForDate = (date: Date, userId?: string) => {
     if (!allSchedules) return [];
-    
-    // Use locale date string to align with what the user sees in the column header
     const targetDateString = date.toLocaleDateString('en-CA'); // YYYY-MM-DD format
     
     return allSchedules.filter((schedule: Schedule) => {
       const scheduleDate = new Date(schedule.date);
-      // API returns ISO dates, we take the YYYY-MM-DD part
       const scheduleDateStr = scheduleDate.toISOString().split('T')[0];
       
       const dateMatch = scheduleDateStr === targetDateString;
