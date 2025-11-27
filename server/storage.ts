@@ -126,6 +126,7 @@ export interface IStorage {
 
   createPayslip(payslip: Omit<Payslip, 'id' | 'generatedAt'>): Promise<Payslip>;
   getPayslipsByUser(userId: string): Promise<Payslip[]>;
+  getAllPayslips(userId: string): Promise<Payslip[]>;
   getPayslipById(id: string): Promise<Payslip | undefined>;
 
   createSchedule(schedule: InsertSchedule): Promise<Schedule>;
@@ -299,6 +300,11 @@ export class DbStorage implements IStorage {
   async createPayslip(payslip: Omit<Payslip, 'id' | 'generatedAt'>): Promise<Payslip> {
     const result = await db.insert(payslips).values(payslip).returning();
     return result[0];
+  }
+
+  async getAllPayslips(): Promise<Payslip[]> {
+    return await db.select().from(payslips)
+      .orderBy(desc(payslips.generatedAt));
   }
 
   async getPayslipsByUser(userId: string): Promise<Payslip[]> {

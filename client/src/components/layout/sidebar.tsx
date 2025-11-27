@@ -45,7 +45,7 @@ const managementItems = [
   { path: "/user-management", label: "User Management", icon: UserPlus, roles: ["manager", "admin"] },
   { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
   { path: "/shift-management", label: "Shift Management", icon: Calendar, roles: ["manager", "admin"] },
-  // { path: "/payslip-generator", label: "Payslip Generator", icon: DollarSign, roles: ["payroll_officer"] },
+  { path: "/payslip-history", label: "Payslip History", icon: DollarSign, roles: ["payroll_officer"] },
     { path: "/payroll-management", label: "Payslip Generator", icon: DollarSign, roles: ["payroll_officer"] },
   { path: "/labor-cost-analytics", label: "Labor Cost Analytics", icon: DollarSign, roles: ["manager"] },
 ];
