@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Edit2, Check, X, Loader2, RefreshCw, CalendarDays } from 'lucide-react';
+import { Search, Edit2, Check, X, Loader2, RefreshCw, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { computeSSS, computePhilHealth, computePagIbig } from '@/lib/helper';
 import {
   AlertDialog,
@@ -21,11 +21,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 
 // --- Constants ---
 const HOURLY_RATE = 58.75;
 const OT_MULTIPLIER = 1.25;
-const ND_MULTIPLIER = 1.25;
+const ND_MULTIPLIER = 0.1;
+
+// Helper for consistent rounding
+const round2 = (num: number) => Math.round(num * 100) / 100;
 
 export default function PayrollManagement() {
   const { user } = useAuth();
@@ -33,10 +37,11 @@ export default function PayrollManagement() {
   const queryClient = useQueryClient();
 
   // --- State ---
+  const currentYear = new Date().getFullYear();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState({ 
-    month: 11, // November
-    year: 2025,
+    month: new Date().getMonth() + 1, 
+    year: currentYear,
     half: 1 // 1 = 1st Half (1-15), 2 = 2nd Half (16-End)
   });
   
@@ -50,7 +55,7 @@ export default function PayrollManagement() {
     hourlyRate: HOURLY_RATE,      
     basicSalary: 0,
     allowances: { overtime: 0, nightDiff: 0, otherAllowances: 0, bonuses: 0 },
-    deductions: { sss: 0, philHealth: 0, pagIbig: 0, others: 0 }
+    deductions: { tax: 0, sss: 0, philHealth: 0, pagIbig: 0, others: 0 }
   });
 
   // --- Real API Data Fetching ---
@@ -59,8 +64,7 @@ export default function PayrollManagement() {
   });
 
   const { data: existingPayslips } = useQuery({
-    // Include half in query key if you update backend filtering, otherwise we filter locally below
-    queryKey: ["/api/payslips", selectedPeriod.month, selectedPeriod.year], 
+    queryKey: ["/api/payslips", selectedPeriod.month, selectedPeriod.year],
     queryFn: async () => {
        const res = await fetch(`/api/payslips?month=${selectedPeriod.month}&year=${selectedPeriod.year}`);
        if (!res.ok) throw new Error("Failed");
@@ -153,13 +157,14 @@ export default function PayrollManagement() {
   // --- Financial Formulas ---
   const calculateGrossPay = (basic: number, allowancesObj: any) => parseFloat((basic || 0).toString()) + Object.values(allowancesObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
   const calculateTotalDeductions = (deductionsObj: any) => Object.values(deductionsObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
-  const calculateNetPay = (gross: number, totalDeductions: number) => gross - totalDeductions;
+  const calculateNetPay = (gross: number, totalDeductions: number) => Math.max(0, gross - totalDeductions);
 
   // --- Mutations ---
-  const createPayslipMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await fetch("/api/payslips", {
-        method: "POST",
+  // Replaced with a flexible save function in handler
+  const savePayslipMutation = useMutation({
+    mutationFn: async ({ url, method, data }: { url: string, method: string, data: any }) => {
+      const res = await fetch(url, {
+        method: method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data)
       });
@@ -167,7 +172,7 @@ export default function PayrollManagement() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Success", description: "Payslip generated successfully." });
+      toast({ title: "Success", description: "Payslip processed successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
       setEditingId(null);
       setIsConfirmOpen(false);
@@ -177,18 +182,59 @@ export default function PayrollManagement() {
   // --- Handlers ---
   const handleEdit = (employee: any) => {
     setEditingId(employee.id);
-    
-    const { regularHours, overtimeHours, nightDiffHours } = processAttendanceForUser(employee.id, attendanceData);
 
-    setEditForm({
-      regularHours,
-      overtimeHours,
-      nightDiffHours,
-      hourlyRate: HOURLY_RATE,
-      basicSalary: 0, 
-      allowances: { overtime: 0, nightDiff: 0, otherAllowances: 0, bonuses: 0 },
-      deductions: { sss: 0, philHealth: 0, pagIbig: 0, others: 0 }
-    });
+    // 1. Try to find EXISTING Payslip for this period
+    const existingSlip = existingPayslips?.find((p: any) => 
+        p.userId === employee.id && 
+        p.month === selectedPeriod.month && 
+        p.year === selectedPeriod.year &&
+        (p.period === selectedPeriod.half || (!p.period && selectedPeriod.half === 1))
+    );
+
+    if (existingSlip) {
+        // Load data from existing payslip
+        const basic = existingSlip.basicSalary / 100;
+        const allowances = existingSlip.allowances || {};
+        const deductions = existingSlip.deductions || {};
+
+        const regHours = basic / HOURLY_RATE;
+        const otHours = (allowances.overtime / 100) / (HOURLY_RATE * OT_MULTIPLIER);
+        const ndHours = (allowances.nightDiff / 100) / (HOURLY_RATE * ND_MULTIPLIER);
+
+        setEditForm({
+            regularHours: regHours, 
+            overtimeHours: otHours,
+            nightDiffHours: ndHours,
+            hourlyRate: HOURLY_RATE,
+            basicSalary: basic,
+            allowances: {
+                overtime: (allowances.overtime || 0) / 100,
+                nightDiff: (allowances.nightDiff || 0) / 100,
+                otherAllowances: (allowances.otherAllowances || allowances.allowances || 0) / 100,
+                bonuses: (allowances.bonuses || 0) / 100
+            },
+            deductions: {
+                tax: (deductions.tax || 0) / 100,
+                sss: (deductions.sss || 0) / 100,
+                philHealth: (deductions.philHealth || 0) / 100,
+                pagIbig: (deductions.pagIbig || 0) / 100,
+                others: (deductions.others || 0) / 100
+            }
+        });
+    } else {
+        // 2. Default Calculation from Attendance (New Payslip)
+        const { regularHours, overtimeHours, nightDiffHours } = processAttendanceForUser(employee.id, attendanceData);
+
+        setEditForm({
+            regularHours,
+            overtimeHours,
+            nightDiffHours,
+            hourlyRate: HOURLY_RATE,
+            basicSalary: 0, 
+            allowances: { overtime: 0, nightDiff: 0, otherAllowances: 0, bonuses: 0 },
+            deductions: { tax: 0, sss: 0, philHealth: 0, pagIbig: 0, others: 0 }
+        });
+    }
   };
 
   const handleInitiateSave = () => {
@@ -201,11 +247,11 @@ export default function PayrollManagement() {
     const grossPay = calculateGrossPay(editForm.basicSalary, editForm.allowances);
     const netPay = calculateNetPay(grossPay, calculateTotalDeductions(editForm.deductions));
 
-    createPayslipMutation.mutate({
+    const payload = {
       userId: editingId,
       month: selectedPeriod.month,
       year: selectedPeriod.year,
-      period: selectedPeriod.half, // Added Period/Half to DB insert
+      period: selectedPeriod.half, 
       basicSalary: Math.round(editForm.basicSalary * 100),
       allowances: {
         overtime: Math.round(editForm.allowances.overtime * 100),
@@ -222,7 +268,21 @@ export default function PayrollManagement() {
       },
       grossPay: Math.round(grossPay * 100),
       netPay: Math.round(netPay * 100)
-    });
+    };
+
+    // Check if exists to determine PUT vs POST
+    const existingSlip = existingPayslips?.find((p: any) => 
+        p.userId === editingId && 
+        p.month === selectedPeriod.month && 
+        p.year === selectedPeriod.year &&
+        (p.period === selectedPeriod.half || (!p.period && selectedPeriod.half === 1))
+    );
+
+    if (existingSlip) {
+        savePayslipMutation.mutate({ url: `/api/payslips/${existingSlip.id}`, method: "PATCH", data: payload });
+    } else {
+        savePayslipMutation.mutate({ url: "/api/payslips", method: "POST", data: payload });
+    }
   };
 
   // --- Effects ---
@@ -235,11 +295,11 @@ export default function PayrollManagement() {
 
       setEditForm(prev => ({
         ...prev,
-        basicSalary: Math.round(basicPay * 100) / 100,
+        basicSalary: round2(basicPay),
         allowances: {
           ...prev.allowances,
-          overtime: Math.round(otPay * 100) / 100,
-          nightDiff: Math.round(ndPay * 100) / 100,
+          overtime: round2(otPay),
+          nightDiff: round2(ndPay),
         }
       }));
     }
@@ -247,23 +307,46 @@ export default function PayrollManagement() {
 
   useEffect(() => {
     if (editingId) {
-      const basic = editForm.basicSalary;
-      const sss = computeSSS(basic);
-      const philHealth = computePhilHealth(basic);
-      const pagIbig = computePagIbig(basic);
+      const currentGross = calculateGrossPay(editForm.basicSalary, editForm.allowances);
+      
+      let calculationBase = currentGross; 
+      let previousDeductions = { sss: 0, philHealth: 0, pagIbig: 0 };
+
+      if (selectedPeriod.half === 2 && existingPayslips) {
+         const slip1 = existingPayslips.find((p: any) => p.userId === editingId && p.period === 1);
+         if (slip1) {
+            calculationBase = currentGross + (slip1.grossPay / 100);
+            if (slip1.deductions) {
+                previousDeductions = {
+                    sss: (slip1.deductions.sss || 0) / 100,
+                    philHealth: (slip1.deductions.philHealth || 0) / 100,
+                    pagIbig: (slip1.deductions.pagIbig || 0) / 100
+                };
+            }
+         }
+      }
+
+      const totalSSS = computeSSS(calculationBase);
+      const totalPH = computePhilHealth(calculationBase);
+      const totalHDMF = computePagIbig(calculationBase);
+
+      const sssDue = Math.max(0, totalSSS - previousDeductions.sss);
+      const phDue = Math.max(0, totalPH - previousDeductions.philHealth);
+      const hdmfDue = Math.max(0, totalHDMF - previousDeductions.pagIbig);
 
       setEditForm(prev => ({
         ...prev,
         deductions: {
           ...prev.deductions,
-          sss: Math.round(sss * 100) / 100,
-          philHealth: Math.round(philHealth * 100) / 100,
-          pagIbig: Math.round(pagIbig * 100) / 100,
+          sss: round2(sssDue),
+          philHealth: round2(phDue),
+          pagIbig: round2(hdmfDue),
         }
       }));
     }
-  }, [editForm.basicSalary, editForm.allowances]);
+  }, [editForm.basicSalary, editForm.allowances, selectedPeriod.half, editingId, existingPayslips]);
 
+  // --- Render ---
   const editingEmployeeName = useMemo(() => {
     if (!editingId || !teamMembers) return "";
     const emp = teamMembers.find((m: any) => m.id === editingId);
@@ -276,18 +359,16 @@ export default function PayrollManagement() {
     return calculateNetPay(gross, deduc);
   }, [editForm]);
 
-  // --- Render & Processing ---
   const processedEmployees = useMemo(() => {
     if (!teamMembers) return [];
     const onlyEmployees = teamMembers.filter((m: any) => m.role === 'employee' ); 
     
     return onlyEmployees.map((emp: any) => {
-      // Filter existing payslips by BOTH month AND period (half)
       const slip = existingPayslips?.find((p: any) => 
         p.userId === emp.id && 
         p.month === selectedPeriod.month && 
         p.year === selectedPeriod.year &&
-        (p.period === selectedPeriod.half || (!p.period && selectedPeriod.half === 1)) // Fallback for old records
+        (p.period === selectedPeriod.half || (!p.period && selectedPeriod.half === 1))
       );
       return { ...emp, payslipStatus: slip ? 'generated' : 'pending', lastPay: slip };
     });
@@ -302,12 +383,44 @@ export default function PayrollManagement() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
+        {/* ... Header ... */}
         <div className="mb-6 flex justify-between items-end">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Payroll Management</h1>
-              <div className="flex items-center gap-2 text-gray-600">
+              <div className="flex items-center gap-2 text-gray-600 flex-wrap">
                 <CalendarDays className="w-4 h-4" />
-                <span>Period: {selectedPeriod.month}/{selectedPeriod.year}</span>
+                
+                <div className="flex items-center gap-2">
+                    <Select 
+                        value={selectedPeriod.month.toString()} 
+                        onValueChange={(val) => setSelectedPeriod(prev => ({ ...prev, month: parseInt(val) }))}
+                    >
+                        <SelectTrigger className="w-[120px] h-8 bg-white">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {Array.from({ length: 12 }, (_, i) => (
+                                <SelectItem key={i + 1} value={(i + 1).toString()}>
+                                    {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Select 
+                        value={selectedPeriod.year.toString()} 
+                        onValueChange={(val) => setSelectedPeriod(prev => ({ ...prev, year: parseInt(val) }))}
+                    >
+                        <SelectTrigger className="w-[100px] h-8 bg-white">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {[currentYear - 1, currentYear, currentYear + 1].map((yr) => (
+                                <SelectItem key={yr} value={yr.toString()}>{yr}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
                 
                 <div className="ml-4 flex items-center gap-2">
                     <span className="text-sm font-medium">Cutoff:</span>
@@ -315,7 +428,7 @@ export default function PayrollManagement() {
                         value={selectedPeriod.half.toString()} 
                         onValueChange={(val) => setSelectedPeriod(prev => ({ ...prev, half: parseInt(val) }))}
                     >
-                        <SelectTrigger className="w-[180px] h-8">
+                        <SelectTrigger className="w-[180px] h-8 bg-white">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -345,23 +458,63 @@ export default function PayrollManagement() {
                 {filteredEmployees.map((employee: any) => {
                   const isEditing = editingId === employee.id;
                   
-                  const computed = processAttendanceForUser(employee.id, attendanceData || []);
-                  const viewBasic = computed.regularHours * HOURLY_RATE;
-                  const viewOT = computed.overtimeHours * (HOURLY_RATE * OT_MULTIPLIER);
-                  const viewND = computed.nightDiffHours * (HOURLY_RATE * ND_MULTIPLIER);
-                  const viewGross = viewBasic + viewOT + viewND;
-                  
-                  const vSSS = computeSSS(viewBasic);
-                  const vPH = computePhilHealth(viewBasic);
-                  const vHDMF = computePagIbig(viewBasic);
+                  // View Mode Data Calculation
+                  let computed = processAttendanceForUser(employee.id, attendanceData || []);
+                  let viewBasic = round2(computed.regularHours * HOURLY_RATE);
+                  let viewOT = round2(computed.overtimeHours * (HOURLY_RATE * OT_MULTIPLIER));
+                  let viewND = round2(computed.nightDiffHours * (HOURLY_RATE * ND_MULTIPLIER));
+                  let viewBonuses = 0;
+                  let viewOtherAllowances = 0;
+                  let viewOtherDeductions = 0;
 
-                  const viewDeductions = {
+                  if (employee.lastPay) {
+                      const slip = employee.lastPay;
+                      viewBasic = slip.basicSalary / 100;
+                      viewOT = (slip.allowances.overtime || 0) / 100;
+                      viewND = (slip.allowances.nightDiff || 0) / 100;
+                      viewBonuses = (slip.allowances.bonuses || 0) / 100;
+                      viewOtherAllowances = (slip.allowances.otherAllowances || slip.allowances.allowances || 0) / 100;
+                      viewOtherDeductions = (slip.deductions.others || 0) / 100;
+                  }
+
+                  const viewGross = round2(viewBasic + viewOT + viewND + viewBonuses + viewOtherAllowances);
+                  
+                  // View Mode Deductions Logic (Replicates Effect Logic)
+                  let viewCalcBase = viewGross;
+                  let prevDeduc = { sss: 0, philHealth: 0, pagIbig: 0 };
+                  
+                  if (selectedPeriod.half === 2 && existingPayslips) {
+                     const slip1 = existingPayslips.find((p: any) => p.userId === employee.id && p.period === 1);
+                     if (slip1) {
+                        viewCalcBase += (slip1.grossPay / 100);
+                        if (slip1.deductions) {
+                            prevDeduc = {
+                                sss: (slip1.deductions.sss || 0) / 100,
+                                philHealth: (slip1.deductions.philHealth || 0) / 100,
+                                pagIbig: (slip1.deductions.pagIbig || 0) / 100
+                            };
+                        }
+                     }
+                  }
+
+                  const vSSS = Math.max(0, round2(computeSSS(viewCalcBase) - prevDeduc.sss));
+                  const vPH = Math.max(0, round2(computePhilHealth(viewCalcBase) - prevDeduc.philHealth));
+                  const vHDMF = Math.max(0, round2(computePagIbig(viewCalcBase) - prevDeduc.pagIbig));
+
+                  const viewDeductions = employee.lastPay ? {
+                      tax: 0,
+                      sss: (employee.lastPay.deductions.sss || 0) / 100,
+                      philHealth: (employee.lastPay.deductions.philHealth || 0) / 100,
+                      pagIbig: (employee.lastPay.deductions.pagIbig || 0) / 100,
+                      others: viewOtherDeductions
+                  } : {
                       tax: 0,
                       sss: vSSS,
                       philHealth: vPH,
                       pagIbig: vHDMF,
                       others: 0
                   };
+
                   const viewTotalDeductions = calculateTotalDeductions(viewDeductions);
                   const viewNet = calculateNetPay(viewGross, viewTotalDeductions);
                   
@@ -377,23 +530,23 @@ export default function PayrollManagement() {
                             <div className="flex flex-col gap-2 items-center">
                                 <div className="flex items-center gap-2 text-xs" title="Regular Hours">
                                     <span className="w-8 text-right text-gray-500">Reg:</span>
-                                    <input type="number" value={editForm.regularHours} onChange={e => setEditForm({...editForm, regularHours: parseFloat(e.target.value) || 0})} className="w-16 text-right border rounded p-1" />
+                                    <input type="number" value={editForm.regularHours} onChange={e => setEditForm({...editForm, regularHours: Math.max(0, parseFloat(e.target.value) || 0)})} className="w-16 text-right border rounded p-1" />
                                 </div>
                                 <div className="flex items-center gap-2 text-xs" title="Overtime Hours">
                                     <span className="w-8 text-right text-orange-600">OT:</span>
-                                    <input type="number" value={editForm.overtimeHours} onChange={e => setEditForm({...editForm, overtimeHours: parseFloat(e.target.value) || 0})} className="w-16 text-right border border-orange-200 bg-orange-50 rounded p-1" />
+                                    <input type="number" value={editForm.overtimeHours} onChange={e => setEditForm({...editForm, overtimeHours: Math.max(0, parseFloat(e.target.value) || 0)})} className="w-16 text-right border border-orange-200 bg-orange-50 rounded p-1" />
                                 </div>
                                 <div className="flex items-center gap-2 text-xs" title="Night Differential Hours">
                                     <span className="w-8 text-right text-indigo-600">ND:</span>
-                                    <input type="number" value={editForm.nightDiffHours} onChange={e => setEditForm({...editForm, nightDiffHours: parseFloat(e.target.value) || 0})} className="w-16 text-right border border-indigo-200 bg-indigo-50 rounded p-1" />
+                                    <input type="number" value={editForm.nightDiffHours} onChange={e => setEditForm({...editForm, nightDiffHours: Math.max(0, parseFloat(e.target.value) || 0)})} className="w-16 text-right border border-indigo-200 bg-indigo-50 rounded p-1" />
                                 </div>
                             </div>
                         ) : (
                              <div className="flex flex-col gap-1 items-center text-xs">
-                                <div title="Regular Hours">Reg: {computed.regularHours}</div>
-                                {computed.overtimeHours > 0 && <div className="text-orange-600" title="Overtime">OT: {computed.overtimeHours}</div>}
-                                {computed.nightDiffHours > 0 && <div className="text-indigo-600" title="Night Diff">ND: {computed.nightDiffHours}</div>}
-                                {(!attendanceData || attendanceData.length === 0) && <span className="text-gray-400 italic">--</span>}
+                                <div title="Regular Hours">Reg: {employee.lastPay ? "-" : computed.regularHours}</div>
+                                {(!employee.lastPay && computed.overtimeHours > 0) && <div className="text-orange-600" title="Overtime">OT: {computed.overtimeHours}</div>}
+                                {(!employee.lastPay && computed.nightDiffHours > 0) && <div className="text-indigo-600" title="Night Diff">ND: {computed.nightDiffHours}</div>}
+                                {employee.lastPay && <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Generated</span>}
                              </div>
                         )}
                       </td>
@@ -401,13 +554,17 @@ export default function PayrollManagement() {
                       <td className="px-4 py-4 text-right align-top">
                         {isEditing ? (
                             <div className="flex flex-col gap-1 items-end">
-                                <div className="text-sm font-bold">₱{editForm.basicSalary.toLocaleString()}</div>
+                                <div className="text-sm font-bold">₱{editForm.basicSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                 <div className="text-[10px] text-gray-400 mb-1">Basic</div>
-                                {(editForm.allowances.overtime > 0) && <div className="text-xs text-orange-600">+₱{editForm.allowances.overtime} <span className="text-[10px]">(OT)</span></div>}
-                                {(editForm.allowances.nightDiff > 0) && <div className="text-xs text-indigo-600">+₱{editForm.allowances.nightDiff} <span className="text-[10px]">(ND)</span></div>}
+                                {(editForm.allowances.overtime > 0) && <div className="text-xs text-orange-600">+₱{editForm.allowances.overtime.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[10px]">(OT)</span></div>}
+                                {(editForm.allowances.nightDiff > 0) && <div className="text-xs text-indigo-600">+₱{editForm.allowances.nightDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[10px]">(ND)</span></div>}
                                 <div className="flex items-center gap-2 mt-1 pt-1 border-t w-full justify-end">
                                     <span className="text-[10px] text-gray-500">Bonus:</span>
-                                    <input type="number" value={editForm.allowances.bonuses} onChange={e => setEditForm({...editForm, allowances: {...editForm.allowances, bonuses: parseFloat(e.target.value) || 0}})} className="w-16 text-right border rounded p-0.5 text-xs" />
+                                    <input type="number" value={editForm.allowances.bonuses} onChange={e => setEditForm({...editForm, allowances: {...editForm.allowances, bonuses: Math.max(0, parseFloat(e.target.value) || 0)}})} className="w-16 text-right border rounded p-0.5 text-xs" />
+                                </div>
+                                <div className="flex items-center gap-2 mt-1 w-full justify-end">
+                                    <span className="text-[10px] text-gray-500">Allow:</span>
+                                    <input type="number" value={editForm.allowances.otherAllowances} onChange={e => setEditForm({...editForm, allowances: {...editForm.allowances, otherAllowances: Math.max(0, parseFloat(e.target.value) || 0)}})} className="w-16 text-right border rounded p-0.5 text-xs" />
                                 </div>
                             </div>
                         ) : (
@@ -416,6 +573,8 @@ export default function PayrollManagement() {
                                 <div className="text-[10px] text-gray-400 mb-1">Basic</div>
                                 {(viewOT > 0) && <div className="text-xs text-orange-600">+₱{viewOT.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px]">(OT)</span></div>}
                                 {(viewND > 0) && <div className="text-xs text-indigo-600">+₱{viewND.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px]">(ND)</span></div>}
+                                {(viewBonuses > 0) && <div className="text-xs text-green-600">+₱{viewBonuses.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px]">(Bonus)</span></div>}
+                                {(viewOtherAllowances > 0) && <div className="text-xs text-green-600">+₱{viewOtherAllowances.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-[10px]">(Allow)</span></div>}
                             </div>
                         )}
                       </td>
@@ -424,15 +583,15 @@ export default function PayrollManagement() {
                         {isEditing ? (
                              <div className="flex flex-col w-full">
                                 <div className="text-right font-bold text-red-600 mb-2 border-b pb-1">
-                                    -₱{calculateTotalDeductions(editForm.deductions).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    -₱{calculateTotalDeductions(editForm.deductions).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                                 <div className="space-y-1">
-                                    <div className="flex justify-between text-xs text-gray-600"><span>SSS:</span><span>{editForm.deductions.sss}</span></div>
-                                    <div className="flex justify-between text-xs text-gray-600"><span>PhilHealth:</span><span>{editForm.deductions.philHealth}</span></div>
-                                    <div className="flex justify-between text-xs text-gray-600"><span>Pag-IBIG:</span><span>{editForm.deductions.pagIbig}</span></div>
+                                    <div className="flex justify-between text-xs text-gray-600"><span>SSS:</span><span>{editForm.deductions.sss.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                                    <div className="flex justify-between text-xs text-gray-600"><span>PhilHealth:</span><span>{editForm.deductions.philHealth.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                                    <div className="flex justify-between text-xs text-gray-600"><span>Pag-IBIG:</span><span>{editForm.deductions.pagIbig.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
                                     <div className="flex justify-between items-center text-xs text-gray-600 pt-1 mt-1 border-t border-dashed">
                                         <span>Other:</span>
-                                        <input type="number" value={editForm.deductions.others} onChange={e => setEditForm({...editForm, deductions: {...editForm.deductions, others: parseFloat(e.target.value) || 0}})} className="w-16 text-right border border-red-200 bg-red-50 rounded p-0.5 text-xs" />
+                                        <input type="number" value={editForm.deductions.others} onChange={e => setEditForm({...editForm, deductions: {...editForm.deductions, others: Math.max(0, parseFloat(e.target.value) || 0)}})} className="w-16 text-right border border-red-200 bg-red-50 rounded p-0.5 text-xs" />
                                     </div>
                                 </div>
                              </div>
@@ -445,6 +604,7 @@ export default function PayrollManagement() {
                                     <div className="flex justify-between text-xs text-gray-600"><span>SSS:</span><span>{viewDeductions.sss.toFixed(2)}</span></div>
                                     <div className="flex justify-between text-xs text-gray-600"><span>PhilHealth:</span><span>{viewDeductions.philHealth.toFixed(2)}</span></div>
                                     <div className="flex justify-between text-xs text-gray-600"><span>Pag-IBIG:</span><span>{viewDeductions.pagIbig.toFixed(2)}</span></div>
+                                    {(viewDeductions.others > 0) && <div className="flex justify-between text-xs text-red-600 border-t border-dashed mt-1 pt-1"><span>Other:</span><span>{viewDeductions.others.toFixed(2)}</span></div>}
                                 </div>
                              </div>
                         )}
@@ -468,14 +628,13 @@ export default function PayrollManagement() {
                         ) : (
                             <button 
                                 onClick={() => handleEdit(employee)} 
-                                disabled={employee.payslipStatus !== 'pending'}
                                 className={`px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 mx-auto border ${
-                                    employee.payslipStatus === 'pending' 
+                                    employee.payslipStatus === 'generated' 
                                     ? "text-blue-600 hover:bg-blue-50 border-blue-200" 
-                                    : "text-gray-400 bg-gray-100 border-gray-200 cursor-not-allowed opacity-50"
+                                    : "text-blue-600 hover:bg-blue-50 border-blue-200" 
                                 }`}
                             >
-                                <Edit2 className="w-3 h-3" /> Edit
+                                <Edit2 className="w-3 h-3" /> {employee.payslipStatus === 'generated' ? 'Update' : 'Edit'}
                             </button>
                         )}
                       </td>
@@ -491,9 +650,9 @@ export default function PayrollManagement() {
         <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Confirm Payslip Generation</AlertDialogTitle>
+              <AlertDialogTitle>Confirm Payslip {existingPayslips?.some((p:any) => p.userId === editingId) ? 'Update' : 'Generation'}</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to generate the payslip for <strong>{editingEmployeeName}</strong>?
+                Are you sure you want to {existingPayslips?.some((p:any) => p.userId === editingId) ? 'update' : 'generate'} the payslip for <strong>{editingEmployeeName}</strong>?
                 <br/><br/>
                 Period: {selectedPeriod.month}/{selectedPeriod.year} (Cutoff: {selectedPeriod.half === 1 ? '1st Half' : '2nd Half'})
                 <br/>
@@ -505,7 +664,7 @@ export default function PayrollManagement() {
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction onClick={handleConfirmSave} className="bg-green-600 hover:bg-green-700">
-                Confirm Generate
+                Confirm
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

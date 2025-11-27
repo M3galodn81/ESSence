@@ -263,6 +263,13 @@ export function registerRoutes(app: Express): Server {
     res.json(payslips);
   });
 
+  app.get("/api/payslips/all", async (req, res) => {
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+
+  const payslips = await storage.getAllPayslips();
+  res.json(payslips);
+});
+
   app.post("/api/payslips", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
 

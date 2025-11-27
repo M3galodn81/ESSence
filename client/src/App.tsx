@@ -12,7 +12,6 @@ import Profile from "@/pages/profile";
 import LeaveManagement from "@/pages/leave-management";
 import PayslipsEnhanced from "@/pages/payslips-enhanced";
 import PayslipMobile from "@/pages/payslip-mobile";
-import PayslipGenerator from "./pages/payslip-generator";
 import PayslipManagement from "./pages/payslip-management";
 import SalaryComputation from "@/pages/salary-computation";
 import Schedules from "@/pages/schedules";
@@ -26,6 +25,7 @@ import TimeClock from "@/pages/time-clock";
 import Attendance from "@/pages/attendances";
 import NotFound from "@/pages/not-found";
 import MainLayout from "@/components/layout/main-layout";
+import PayslipHistory from "@/pages/payslip-history";
 
 function Router() {
   const { needsSetup, isLoading } = useAuth();
@@ -69,11 +69,12 @@ function Router() {
       <ProtectedRoute path="/payslip-mobile" component={() => (
         <PayslipMobile />
       )} />
-      <ProtectedRoute path="/payslip-generator" component={() => (
+      <ProtectedRoute path="/payslip-history" component={() => (
         <MainLayout>
-          <PayslipGenerator />
+          <PayslipHistory />
         </MainLayout>
       )} />
+      
       <ProtectedRoute path="/salary-computation" component={() => (
         <MainLayout>
           <SalaryComputation />

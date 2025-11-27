@@ -5,8 +5,8 @@ import { addDays, setHours, setMinutes, format, addMinutes } from "date-fns";
 import { user_id } from "./seed";
 
 const USER_ID = user_id;
-const START_DATE = new Date("2025-11-01");
-const END_DATE = new Date("2025-11-25");
+const START_DATE = new Date("2025-10-01");
+const END_DATE = new Date("2025-10-31");
 
 // Helper to get random integer between min and max (inclusive)
 function getRandomInt(min: number, max: number) {
@@ -15,7 +15,7 @@ function getRandomInt(min: number, max: number) {
 
 async function seed() {
   console.log("------------------------------------------------");
-  console.log("Seeding Attendance: Random 8-10h Work + Random Break");
+  console.log("Seeding Attendance (October 2025): Random 8-10h Work + Random Break");
   console.log("User:", USER_ID);
   console.log("------------------------------------------------");
 
@@ -26,7 +26,7 @@ async function seed() {
   let currentDate = START_DATE;
 
   while (currentDate <= END_DATE) {
-    // Skip Weekends
+    // Skip Weekends (0 = Sunday, 6 = Saturday)
     if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
       const dateStr = format(currentDate, "yyyy-MM-dd");
 
