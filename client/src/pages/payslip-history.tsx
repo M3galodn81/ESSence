@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -15,8 +15,16 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Pencil, Trash2, Eye, FileText } from "lucide-react";
+import { Loader2, Pencil, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import type { Payslip } from "@shared/schema";
+import { computeSSS, computePhilHealth, computePagIbig, computeTax } from "@/lib/helper";
+
+// --- Constants ---
+const HOURLY_RATE = 58.75;
+const OT_MULTIPLIER = 1.25;
+const ND_MULTIPLIER = 0.1; // 10% for Night Diff
+
+const round2 = (num: number) => Math.round(num * 100) / 100;
 
 export default function PayslipHistory() {
   const { user } = useAuth();
@@ -26,7 +34,27 @@ export default function PayslipHistory() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
-  const [editData, setEditData] = useState<any>({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  // State for the edit form
+  const [editForm, setEditForm] = useState({
+    regularHours: 0,
+    overtimeHours: 0,
+    nightDiffHours: 0,
+    bonuses: 0,
+    otherAllowances: 0,
+    otherDeductions: 0,
+    // Calculated values held in state for display/saving
+    basicSalary: 0,
+    overtimePay: 0,
+    nightDiffPay: 0,
+    grossPay: 0,
+    sss: 0,
+    philHealth: 0,
+    pagIbig: 0,
+    tax: 0,
+    netPay: 0
+  });
 
   // Fetch ALL payslips (Admin/Payroll Officer)
   const { data: payslips, isLoading } = useQuery({
@@ -71,28 +99,124 @@ export default function PayslipHistory() {
     }
   });
 
+  // --- Auto-Calculation Effect ---
+  useEffect(() => {
+    if (!isEditOpen) return;
+
+    // 1. Calculate Earnings
+    const basicSalary = round2(editForm.regularHours * HOURLY_RATE);
+    const overtimePay = round2(editForm.overtimeHours * (HOURLY_RATE * OT_MULTIPLIER));
+    const nightDiffPay = round2(editForm.nightDiffHours * (HOURLY_RATE * ND_MULTIPLIER));
+    
+    const grossPay = round2(basicSalary + overtimePay + nightDiffPay + editForm.bonuses + editForm.otherAllowances);
+
+    // 2. Calculate Deductions using Helpers
+    const sss = round2(computeSSS(basicSalary)); 
+    const philHealth = round2(computePhilHealth(basicSalary)); 
+    const pagIbig = round2(computePagIbig(basicSalary)); 
+    
+    // Tax Base (Tax currently 0 in logic provided, but helper exists)
+    const taxableIncome = Math.max(0, grossPay - (sss + philHealth + pagIbig));
+    // const tax = round2(computeTax(taxableIncome)); // Uncomment to enable tax
+    const tax = 0; // Tax disabled per prompt
+
+    const totalDeductions = round2(sss + philHealth + pagIbig + tax + editForm.otherDeductions);
+    const netPay = Math.max(0, round2(grossPay - totalDeductions));
+
+    setEditForm(prev => ({
+      ...prev,
+      basicSalary,
+      overtimePay,
+      nightDiffPay,
+      grossPay,
+      sss,
+      philHealth,
+      pagIbig,
+      tax,
+      netPay
+    }));
+  }, [
+    editForm.regularHours, 
+    editForm.overtimeHours, 
+    editForm.nightDiffHours, 
+    editForm.bonuses, 
+    editForm.otherAllowances, 
+    editForm.otherDeductions,
+    isEditOpen
+  ]);
+
+  // --- Grouping Logic ---
+  const groupedPayslips = useMemo(() => {
+    if (!payslips) return [];
+
+    const groups: Record<string, any> = {};
+
+    payslips.forEach((slip: Payslip) => {
+        // Group Key: UserID + Month + Year
+        const key = `${slip.userId}-${slip.month}-${slip.year}`;
+        if (!groups[key]) {
+            groups[key] = {
+                id: key,
+                userId: slip.userId,
+                month: slip.month,
+                year: slip.year,
+                slips: [],
+                totalGross: 0,
+                totalNet: 0,
+                totalDeductions: 0
+            };
+        }
+        groups[key].slips.push(slip);
+        groups[key].totalGross += slip.grossPay;
+        groups[key].totalNet += slip.netPay;
+        // Total Deductions = Sum(Gross - Net)
+        groups[key].totalDeductions += (slip.grossPay - slip.netPay);
+    });
+
+    // Sort groups by date (newest first)
+    return Object.values(groups).sort((a: any, b: any) => {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.month - a.month;
+    });
+  }, [payslips]);
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   // --- Handlers ---
   const handleEdit = (payslip: any) => {
     setSelectedPayslip(payslip);
     
-    // Extract allowances safely
     const allowances = payslip.allowances || {};
     const deductions = payslip.deductions || {};
 
-    // Initialize form with existing values
-    setEditData({
-        basicSalary: payslip.basicSalary / 100,
-        // Allowances
-        overtime: (allowances.overtime || 0) / 100,
-        nightDiff: (allowances.nightDiff || 0) / 100,
+    const basicVal = payslip.basicSalary / 100;
+    const otVal = (allowances.overtime || 0) / 100;
+    const ndVal = (allowances.nightDiff || 0) / 100;
+
+    // Reverse Calculate Hours
+    const regularHours = basicVal / HOURLY_RATE;
+    const overtimeHours = otVal / (HOURLY_RATE * OT_MULTIPLIER);
+    const nightDiffHours = ndVal / (HOURLY_RATE * ND_MULTIPLIER);
+
+    setEditForm({
+        regularHours: round2(regularHours),
+        overtimeHours: round2(overtimeHours),
+        nightDiffHours: round2(nightDiffHours),
         bonuses: (allowances.bonuses || 0) / 100,
-        otherAllowances: (allowances.otherAllowances || allowances.allowances || 0) / 100, // Handle both naming conventions
-        // Deductions
+        otherAllowances: (allowances.otherAllowances || allowances.allowances || 0) / 100,
+        otherDeductions: (deductions.others || 0) / 100,
+        // Initial display values
+        basicSalary: basicVal,
+        overtimePay: otVal,
+        nightDiffPay: ndVal,
+        grossPay: payslip.grossPay / 100,
         sss: (deductions.sss || 0) / 100,
         philHealth: (deductions.philHealth || 0) / 100,
         pagIbig: (deductions.pagIbig || 0) / 100,
-        otherDeductions: (deductions.others || 0) / 100,
         tax: (deductions.tax || 0) / 100,
+        netPay: payslip.netPay / 100
     });
     setIsEditOpen(true);
   };
@@ -100,37 +224,28 @@ export default function PayslipHistory() {
   const handleSaveEdit = () => {
     if(!selectedPayslip) return;
     
-    // Reconstruct JSON structure for DB (convert back to cents)
     const payload = {
-        basicSalary: Math.round(editData.basicSalary * 100),
+        basicSalary: Math.round(editForm.basicSalary * 100),
         allowances: {
             ...(selectedPayslip.allowances as object),
-            overtime: Math.round(editData.overtime * 100),
-            nightDiff: Math.round(editData.nightDiff * 100),
-            bonuses: Math.round(editData.bonuses * 100),
-            otherAllowances: Math.round(editData.otherAllowances * 100),
+            overtime: Math.round(editForm.overtimePay * 100),
+            nightDiff: Math.round(editForm.nightDiffPay * 100),
+            bonuses: Math.round(editForm.bonuses * 100),
+            otherAllowances: Math.round(editForm.otherAllowances * 100),
         },
         deductions: {
             ...(selectedPayslip.deductions as object),
-            sss: Math.round(editData.sss * 100),
-            philHealth: Math.round(editData.philHealth * 100),
-            pagIbig: Math.round(editData.pagIbig * 100),
-            others: Math.round(editData.otherDeductions * 100),
-            tax: Math.round(editData.tax * 100),
-        }
+            sss: Math.round(editForm.sss * 100),
+            philHealth: Math.round(editForm.philHealth * 100),
+            pagIbig: Math.round(editForm.pagIbig * 100),
+            tax: Math.round(editForm.tax * 100),
+            others: Math.round(editForm.otherDeductions * 100),
+        },
+        grossPay: Math.round(editForm.grossPay * 100),
+        netPay: Math.round(editForm.netPay * 100)
     };
-
-    // Recalculate Net/Gross
-    const totalAllowances = Object.values(payload.allowances).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-    const gross = payload.basicSalary + totalAllowances;
     
-    const totalDeductions = Object.values(payload.deductions).reduce((a: number, b: any) => a + (typeof b === 'number' ? b : 0), 0);
-    const net = Math.max(0, gross - totalDeductions);
-    
-    updatePayslipMutation.mutate({ 
-        id: selectedPayslip.id, 
-        data: { ...payload, grossPay: gross, netPay: net } 
-    });
+    updatePayslipMutation.mutate({ id: selectedPayslip.id, data: payload });
   };
 
   const handleDelete = (payslip: Payslip) => {
@@ -154,46 +269,63 @@ export default function PayslipHistory() {
 
       <Card>
         <CardHeader>
-            <CardTitle>All Payslips</CardTitle>
+            <CardTitle>Monthly Payroll Summary</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[50px]"></TableHead>
                 <TableHead>Employee</TableHead>
-                <TableHead>Period</TableHead>
-                <TableHead className="text-right">Gross Pay</TableHead>
-                <TableHead className="text-right">Net Pay</TableHead>
-                <TableHead className="text-center">Actions</TableHead>
+                <TableHead>Month</TableHead>
+                <TableHead className="text-right">Total Gross</TableHead>
+                <TableHead className="text-right text-red-600">Total Deductions</TableHead>
+                <TableHead className="text-right text-green-600">Total Net Pay</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {payslips?.map((slip: any) => (
-                <TableRow key={slip.id}>
-                  <TableCell className="font-medium">{getEmployeeName(slip.userId)}</TableCell>
-                  <TableCell>
-                    {slip.month}/{slip.year} 
-                    <span className="ml-2 text-xs text-muted-foreground">
-                        ({slip.period === 1 ? '1st' : '2nd'} Half)
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right">₱{(slip.grossPay / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                  <TableCell className="text-right font-bold text-green-600">₱{(slip.netPay / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                  <TableCell className="text-center">
-                    <div className="flex justify-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(slip)}>
-                            <Pencil className="w-4 h-4 text-blue-500" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(slip)}>
-                            <Trash2 className="w-4 h-4 text-red-500" />
-                        </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
+              {groupedPayslips.map((group: any) => (
+                <React.Fragment key={group.id}>
+                    {/* Group Header Row */}
+                    <TableRow className="bg-muted/50 hover:bg-muted/70 cursor-pointer transition-colors" onClick={() => toggleGroup(group.id)}>
+                        <TableCell className="text-center">
+                            {expandedGroups[group.id] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </TableCell>
+                        <TableCell className="font-semibold">{getEmployeeName(group.userId)}</TableCell>
+                        <TableCell className="font-medium">{group.month}/{group.year}</TableCell>
+                        <TableCell className="text-right font-medium">₱{(group.totalGross / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right font-medium text-red-600">-₱{(group.totalDeductions / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell className="text-right font-bold text-green-700">₱{(group.totalNet / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                    </TableRow>
+                    
+                    {/* Detailed Rows (Collapsible) */}
+                    {expandedGroups[group.id] && group.slips.map((slip: Payslip) => (
+                         <TableRow key={slip.id} className="bg-white hover:bg-gray-50">
+                             <TableCell></TableCell>
+                             <TableCell className="pl-10 text-gray-500 text-sm border-l-4 border-l-transparent hover:border-l-primary/20">
+                                {slip.period === 1 ? '1st Half (1-15)' : '2nd Half (16-End)'}
+                             </TableCell>
+                             <TableCell className="text-gray-500 text-sm"></TableCell>
+                             <TableCell className="text-right text-gray-600 text-sm">₱{(slip.grossPay / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                             <TableCell className="text-right text-red-400 text-sm">-₱{((slip.grossPay - slip.netPay) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                             <TableCell className="text-right text-green-600 font-medium text-sm">₱{(slip.netPay / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                             <TableCell className="text-center">
+                                <div className="flex justify-end gap-2">
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 hover:text-blue-600" onClick={(e) => { e.stopPropagation(); handleEdit(slip); }}>
+                                        <Pencil className="w-3 h-3" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 hover:text-red-600" onClick={(e) => { e.stopPropagation(); handleDelete(slip); }}>
+                                        <Trash2 className="w-3 h-3" />
+                                    </Button>
+                                </div>
+                             </TableCell>
+                         </TableRow>
+                    ))}
+                </React.Fragment>
               ))}
-              {(!payslips || payslips.length === 0) && (
+              {(!groupedPayslips || groupedPayslips.length === 0) && (
                 <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No payslips found.</TableCell>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No payslips found.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -203,63 +335,102 @@ export default function PayslipHistory() {
 
       {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl">
             <DialogHeader>
                 <DialogTitle>Edit Payslip Details</DialogTitle>
-                <DialogDescription>Manually adjust values. Gross and Net Pay will be recalculated automatically upon save.</DialogDescription>
+                <DialogDescription>
+                    Adjust hours and other amounts. Tax and Government contributions are auto-calculated.
+                </DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
-                <div className="space-y-4">
-                    <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wider">Earnings</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <Label>Basic Salary</Label>
-                            <Input type="number" value={editData.basicSalary} onChange={e => setEditData({...editData, basicSalary: parseFloat(e.target.value) || 0})} />
+                
+                <div className="grid grid-cols-2 gap-6">
+                    {/* Left Column: Inputs */}
+                    <div className="space-y-4">
+                        <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wider border-b pb-1">Hours & Adjustments</h3>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <Label className="text-xs text-muted-foreground">Reg Hours</Label>
+                                <Input type="number" value={editForm.regularHours} onChange={e => setEditForm({...editForm, regularHours: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                            </div>
+                            <div>
+                                <Label className="text-xs text-muted-foreground">OT Hours</Label>
+                                <Input type="number" value={editForm.overtimeHours} onChange={e => setEditForm({...editForm, overtimeHours: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                            </div>
+                            <div>
+                                <Label className="text-xs text-muted-foreground">ND Hours</Label>
+                                <Input type="number" value={editForm.nightDiffHours} onChange={e => setEditForm({...editForm, nightDiffHours: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                            </div>
+                            <div>
+                                <Label className="text-xs text-muted-foreground">Bonuses</Label>
+                                <Input type="number" value={editForm.bonuses} onChange={e => setEditForm({...editForm, bonuses: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                            </div>
+                            <div className="col-span-2">
+                                <Label className="text-xs text-muted-foreground">Other Allowances</Label>
+                                <Input type="number" value={editForm.otherAllowances} onChange={e => setEditForm({...editForm, otherAllowances: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                            </div>
+                            <div className="col-span-2">
+                                <Label className="text-xs text-muted-foreground">Other Deductions</Label>
+                                <Input type="number" value={editForm.otherDeductions} onChange={e => setEditForm({...editForm, otherDeductions: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                            </div>
                         </div>
-                        <div>
-                            <Label>Overtime</Label>
-                            <Input type="number" value={editData.overtime} onChange={e => setEditData({...editData, overtime: parseFloat(e.target.value) || 0})} />
-                        </div>
-                        <div>
-                            <Label>Night Diff</Label>
-                            <Input type="number" value={editData.nightDiff} onChange={e => setEditData({...editData, nightDiff: parseFloat(e.target.value) || 0})} />
-                        </div>
-                        <div>
-                            <Label>Bonuses</Label>
-                            <Input type="number" value={editData.bonuses} onChange={e => setEditData({...editData, bonuses: parseFloat(e.target.value) || 0})} />
-                        </div>
-                        <div>
-                            <Label>Other Allowances</Label>
-                            <Input type="number" value={editData.otherAllowances} onChange={e => setEditData({...editData, otherAllowances: parseFloat(e.target.value) || 0})} />
-                        </div>
+                    </div>
+
+                    {/* Right Column: Computed Values */}
+                    <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
+                         <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wider border-b pb-1">Calculated Summary</h3>
+                         
+                         <div className="space-y-2 text-sm">
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Basic Salary:</span>
+                                <span className="font-medium">₱{editForm.basicSalary.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Overtime Pay:</span>
+                                <span className="font-medium">₱{editForm.overtimePay.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-600">Night Diff:</span>
+                                <span className="font-medium">₱{editForm.nightDiffPay.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t font-bold">
+                                <span>Gross Pay:</span>
+                                <span>₱{editForm.grossPay.toLocaleString()}</span>
+                            </div>
+
+                            <div className="pt-2 space-y-1">
+                                <div className="flex justify-between text-xs text-red-600">
+                                    <span>SSS:</span>
+                                    <span>-{editForm.sss.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between text-xs text-red-600">
+                                    <span>PhilHealth:</span>
+                                    <span>-{editForm.philHealth.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between text-xs text-red-600">
+                                    <span>Pag-IBIG:</span>
+                                    <span>-{editForm.pagIbig.toLocaleString()}</span>
+                                </div>
+                                {/* Tax Removed as per instruction */}
+                                {/* <div className="flex justify-between text-xs text-red-600">
+                                    <span>Tax:</span>
+                                    <span>-{editForm.tax.toLocaleString()}</span>
+                                </div> */}
+                                <div className="flex justify-between text-xs text-red-600">
+                                    <span>Other Ded:</span>
+                                    <span>-{editForm.otherDeductions.toLocaleString()}</span>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-between pt-4 border-t text-lg font-bold text-green-700">
+                                <span>Net Pay:</span>
+                                <span>₱{editForm.netPay.toLocaleString()}</span>
+                            </div>
+                         </div>
                     </div>
                 </div>
 
-                <div className="space-y-4">
-                    <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wider">Deductions</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <Label>SSS</Label>
-                            <Input type="number" value={editData.sss} onChange={e => setEditData({...editData, sss: parseFloat(e.target.value) || 0})} />
-                        </div>
-                        <div>
-                            <Label>PhilHealth</Label>
-                            <Input type="number" value={editData.philHealth} onChange={e => setEditData({...editData, philHealth: parseFloat(e.target.value) || 0})} />
-                        </div>
-                        <div>
-                            <Label>Pag-IBIG</Label>
-                            <Input type="number" value={editData.pagIbig} onChange={e => setEditData({...editData, pagIbig: parseFloat(e.target.value) || 0})} />
-                        </div>
-                        <div>
-                            <Label>Tax</Label>
-                            <Input type="number" value={editData.tax} onChange={e => setEditData({...editData, tax: parseFloat(e.target.value) || 0})} />
-                        </div>
-                        <div>
-                            <Label>Other Deductions</Label>
-                            <Input type="number" value={editData.otherDeductions} onChange={e => setEditData({...editData, otherDeductions: parseFloat(e.target.value) || 0})} />
-                        </div>
-                    </div>
-                </div>
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>

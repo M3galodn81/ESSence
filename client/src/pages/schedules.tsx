@@ -344,7 +344,7 @@ export default function Schedules() {
               </div>
             </CardContent>
           </Card>
-
+{/* 
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground">Quick Info</CardTitle>
@@ -365,7 +365,7 @@ export default function Schedules() {
                 </div>
               </div>
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
       </div>
     </div>

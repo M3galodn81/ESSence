@@ -9,10 +9,13 @@ import {
   insertScheduleSchema,
   insertScheduleApiSchema,
   insertReportSchema,
-  insertLaborCostDataSchema
+  insertLaborCostDataSchema,
+  payslips
 } from "@shared/schema";
 import { z } from "zod";
 import { ZodError } from "zod";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -297,6 +300,42 @@ export function registerRoutes(app: Express): Server {
     res.json(payslip);
   });
 
+  app.patch("/api/payslips/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user!;
+    if (user.role !== 'payroll_officer' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
+
+    try {
+      const updated = await db.update(payslips)
+        .set(req.body)
+        .where(eq(payslips.id, req.params.id))
+        .returning();
+      
+      if (!updated.length) return res.status(404).json({ message: "Payslip not found" });
+      res.json(updated[0]);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Delete Payslip
+  app.delete("/api/payslips/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user!;
+    if (user.role !== 'payroll_officer' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
+
+    try {
+      const deleted = await db.delete(payslips)
+        .where(eq(payslips.id, req.params.id))
+        .returning();
+      
+      if (!deleted.length) return res.status(404).json({ message: "Payslip not found" });
+      res.json(deleted[0]);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+  
   app.get("/api/schedules", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
