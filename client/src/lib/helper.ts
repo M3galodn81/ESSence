@@ -36,12 +36,10 @@ export const computeSSS = (grossSalary: number) => {
 export const computePagIbig = (basic: number) => {
     const rate = basic <= 1500 ? 0.01 : 0.02;
     
-    // Maximum contribution is 200, which implies a max salary base of 10,000
     const capped = Math.min(basic, 10000);
     return capped * rate;
   };
 
-  // PhilHealth: 5% (2024/2025) of Basic, shared 50/50. Floor 10k, Ceiling 100k.
 export const computePhilHealth = (basic: number) => {
     let income = basic;
     if (income < 10000) income = 10000;

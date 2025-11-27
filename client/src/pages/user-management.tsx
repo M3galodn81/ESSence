@@ -945,9 +945,9 @@ export default function UserManagement() {
 
             {/* Row 2: Maximum Limits */}
             <h5 className="font-medium mt-4">Maximum Limit (Annual Entitlement)</h5>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
                 <div>
-                    <Label htmlFor="annualLeaveBalanceLimit">Annual Leave Limit</Label>
+                    <Label htmlFor="annualLeaveBalanceLimit">Service Incentive Leave Limit</Label>
                     <Input
                         id="annualLeaveBalanceLimit"
                         type="number"
@@ -957,7 +957,7 @@ export default function UserManagement() {
                     />
                 </div>
                 <div>
-                    <Label htmlFor="sickLeaveBalanceLimit">Sick Leave Limit</Label>
+                    <Label htmlFor="sickLeaveBalanceLimit">Additional Leave Limit</Label>
                     <Input
                         id="sickLeaveBalanceLimit"
                         type="number"
@@ -966,7 +966,7 @@ export default function UserManagement() {
                         placeholder="Max Limit"
                     />
                 </div>
-                <div>
+{/*                 <div>
                     <Label htmlFor="serviceIncentiveLeaveBalanceLimit">Service Incentive Leave Limit</Label>
                     <Input
                         id="serviceIncentiveLeaveBalanceLimit"
@@ -975,7 +975,7 @@ export default function UserManagement() {
                         {...editForm.register("serviceIncentiveLeaveBalanceLimit")}
                         placeholder="Max Limit"
                     />
-                </div>
+                </div> */}
             </div>
 
             {editForm.watch("role") === "employee" && (

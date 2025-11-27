@@ -5,8 +5,8 @@ import { addDays, setHours, setMinutes, format, addMinutes } from "date-fns";
 import { user_id } from "./seed";
 
 const USER_ID = user_id;
-const START_DATE = new Date("2025-10-01");
-const END_DATE = new Date("2025-10-31");
+const START_DATE = new Date("2025-11-01");
+const END_DATE = new Date("2025-11-25");
 
 // Helper to get random integer between min and max (inclusive)
 function getRandomInt(min: number, max: number) {
