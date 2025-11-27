@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Pencil, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import type { Payslip } from "@shared/schema";
-import { computeSSS, computePhilHealth, computePagIbig, computeTax } from "@/lib/helper";
+import { computeSSS, computePhilHealth, computePagIbig } from "@/lib/helper";
 
 // --- Constants ---
 const HOURLY_RATE = 58.75;
@@ -56,7 +56,7 @@ export default function PayslipHistory() {
     netPay: 0
   });
 
-  // Fetch ALL payslips (Admin/Payroll Officer)
+  // Fetch ALL payslips (Admin/Payroll Officer/Manager)
   const { data: payslips, isLoading } = useQuery({
     queryKey: ["/api/payslips", { all: true }],
     queryFn: async () => {
@@ -110,15 +110,43 @@ export default function PayslipHistory() {
     
     const grossPay = round2(basicSalary + overtimePay + nightDiffPay + editForm.bonuses + editForm.otherAllowances);
 
-    // 2. Calculate Deductions using Helpers
-    const sss = round2(computeSSS(basicSalary)); 
-    const philHealth = round2(computePhilHealth(basicSalary)); 
-    const pagIbig = round2(computePagIbig(basicSalary)); 
+    // 2. Calculate Deductions (Consolidated Monthly Basis logic)
+    let calculationBase = grossPay; 
+    let previousDeductions = { sss: 0, philHealth: 0, pagIbig: 0 };
+
+    // If editing a 2nd Half payslip, find the 1st Half to calculate differentials
+    if (selectedPayslip && selectedPayslip.period === 2 && payslips) {
+        const slip1 = payslips.find((p: any) => 
+            p.userId === selectedPayslip.userId && 
+            p.month === selectedPayslip.month && 
+            p.year === selectedPayslip.year &&
+            p.period === 1
+        );
+
+        if (slip1) {
+            calculationBase = grossPay + (slip1.grossPay / 100);
+            if (slip1.deductions) {
+                const d = slip1.deductions as any;
+                previousDeductions = {
+                    sss: (d.sss || 0) / 100,
+                    philHealth: (d.philHealth || 0) / 100,
+                    pagIbig: (d.pagIbig || 0) / 100
+                };
+            }
+        }
+    }
+
+    // Compute Gov Contributions based on TOTAL MONTHLY GROSS
+    const totalSSS = computeSSS(calculationBase);
+    const totalPH = computePhilHealth(calculationBase);
+    const totalHDMF = computePagIbig(calculationBase);
+
+    // Deduct what was already paid in 1st half
+    const sss = Math.max(0, round2(totalSSS - previousDeductions.sss));
+    const philHealth = Math.max(0, round2(totalPH - previousDeductions.philHealth));
+    const pagIbig = Math.max(0, round2(totalHDMF - previousDeductions.pagIbig));
     
-    // Tax Base (Tax currently 0 in logic provided, but helper exists)
-    const taxableIncome = Math.max(0, grossPay - (sss + philHealth + pagIbig));
-    // const tax = round2(computeTax(taxableIncome)); // Uncomment to enable tax
-    const tax = 0; // Tax disabled per prompt
+    const tax = 0; // Tax disabled
 
     const totalDeductions = round2(sss + philHealth + pagIbig + tax + editForm.otherDeductions);
     const netPay = Math.max(0, round2(grossPay - totalDeductions));
@@ -142,47 +170,10 @@ export default function PayslipHistory() {
     editForm.bonuses, 
     editForm.otherAllowances, 
     editForm.otherDeductions,
-    isEditOpen
+    isEditOpen,
+    selectedPayslip, // Added dependency to ensure period check works
+    payslips // Added dependency to find 1st half
   ]);
-
-  // --- Grouping Logic ---
-  const groupedPayslips = useMemo(() => {
-    if (!payslips) return [];
-
-    const groups: Record<string, any> = {};
-
-    payslips.forEach((slip: Payslip) => {
-        // Group Key: UserID + Month + Year
-        const key = `${slip.userId}-${slip.month}-${slip.year}`;
-        if (!groups[key]) {
-            groups[key] = {
-                id: key,
-                userId: slip.userId,
-                month: slip.month,
-                year: slip.year,
-                slips: [],
-                totalGross: 0,
-                totalNet: 0,
-                totalDeductions: 0
-            };
-        }
-        groups[key].slips.push(slip);
-        groups[key].totalGross += slip.grossPay;
-        groups[key].totalNet += slip.netPay;
-        // Total Deductions = Sum(Gross - Net)
-        groups[key].totalDeductions += (slip.grossPay - slip.netPay);
-    });
-
-    // Sort groups by date (newest first)
-    return Object.values(groups).sort((a: any, b: any) => {
-        if (a.year !== b.year) return b.year - a.year;
-        return b.month - a.month;
-    });
-  }, [payslips]);
-
-  const toggleGroup = (key: string) => {
-    setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
-  };
 
   // --- Handlers ---
   const handleEdit = (payslip: any) => {
@@ -254,8 +245,45 @@ export default function PayslipHistory() {
   };
 
   const getEmployeeName = (id: string) => {
+    if (user && user.id === id) return `${user.firstName} ${user.lastName} (You)`;
     const emp = teamMembers?.find((m: any) => m.id === id);
     return emp ? `${emp.firstName} ${emp.lastName}` : id;
+  };
+
+  // --- Grouping Logic ---
+  const groupedPayslips = useMemo(() => {
+    if (!payslips) return [];
+
+    const groups: Record<string, any> = {};
+
+    payslips.forEach((slip: Payslip) => {
+        const key = `${slip.userId}-${slip.month}-${slip.year}`;
+        if (!groups[key]) {
+            groups[key] = {
+                id: key,
+                userId: slip.userId,
+                month: slip.month,
+                year: slip.year,
+                slips: [],
+                totalGross: 0,
+                totalNet: 0,
+                totalDeductions: 0
+            };
+        }
+        groups[key].slips.push(slip);
+        groups[key].totalGross += slip.grossPay;
+        groups[key].totalNet += slip.netPay;
+        groups[key].totalDeductions += (slip.grossPay - slip.netPay);
+    });
+
+    return Object.values(groups).sort((a: any, b: any) => {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.month - a.month;
+    });
+  }, [payslips]);
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   if(isLoading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin" /></div>;
@@ -343,12 +371,10 @@ export default function PayslipHistory() {
                 </DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
-                
                 <div className="grid grid-cols-2 gap-6">
                     {/* Left Column: Inputs */}
                     <div className="space-y-4">
                         <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wider border-b pb-1">Hours & Adjustments</h3>
-                        
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <Label className="text-xs text-muted-foreground">Reg Hours</Label>
@@ -380,57 +406,26 @@ export default function PayslipHistory() {
                     {/* Right Column: Computed Values */}
                     <div className="space-y-4 bg-gray-50 p-4 rounded-lg">
                          <h3 className="font-medium text-sm text-gray-500 uppercase tracking-wider border-b pb-1">Calculated Summary</h3>
-                         
                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Basic Salary:</span>
-                                <span className="font-medium">₱{editForm.basicSalary.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Overtime Pay:</span>
-                                <span className="font-medium">₱{editForm.overtimePay.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Night Diff:</span>
-                                <span className="font-medium">₱{editForm.nightDiffPay.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between pt-2 border-t font-bold">
-                                <span>Gross Pay:</span>
-                                <span>₱{editForm.grossPay.toLocaleString()}</span>
-                            </div>
+                            <div className="flex justify-between"><span className="text-gray-600">Basic Salary:</span><span className="font-medium">₱{editForm.basicSalary.toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-600">Overtime Pay:</span><span className="font-medium">₱{editForm.overtimePay.toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-600">Night Diff:</span><span className="font-medium">₱{editForm.nightDiffPay.toLocaleString()}</span></div>
+                            <div className="flex justify-between pt-2 border-t font-bold"><span>Gross Pay:</span><span>₱{editForm.grossPay.toLocaleString()}</span></div>
 
                             <div className="pt-2 space-y-1">
-                                <div className="flex justify-between text-xs text-red-600">
-                                    <span>SSS:</span>
-                                    <span>-{editForm.sss.toLocaleString()}</span>
-                                </div>
-                                <div className="flex justify-between text-xs text-red-600">
-                                    <span>PhilHealth:</span>
-                                    <span>-{editForm.philHealth.toLocaleString()}</span>
-                                </div>
-                                <div className="flex justify-between text-xs text-red-600">
-                                    <span>Pag-IBIG:</span>
-                                    <span>-{editForm.pagIbig.toLocaleString()}</span>
-                                </div>
-                                {/* Tax Removed as per instruction */}
-                                {/* <div className="flex justify-between text-xs text-red-600">
-                                    <span>Tax:</span>
-                                    <span>-{editForm.tax.toLocaleString()}</span>
-                                </div> */}
-                                <div className="flex justify-between text-xs text-red-600">
-                                    <span>Other Ded:</span>
-                                    <span>-{editForm.otherDeductions.toLocaleString()}</span>
-                                </div>
+                                <div className="flex justify-between text-xs text-red-600"><span>SSS:</span><span>-{editForm.sss.toLocaleString()}</span></div>
+                                <div className="flex justify-between text-xs text-red-600"><span>PhilHealth:</span><span>-{editForm.philHealth.toLocaleString()}</span></div>
+                                <div className="flex justify-between text-xs text-red-600"><span>Pag-IBIG:</span><span>-{editForm.pagIbig.toLocaleString()}</span></div>
+                                {/* <div className="flex justify-between text-xs text-red-600"><span>Tax:</span><span>-{editForm.tax.toLocaleString()}</span></div> */}
+                                <div className="flex justify-between text-xs text-red-600"><span>Other Ded:</span><span>-{editForm.otherDeductions.toLocaleString()}</span></div>
                             </div>
 
                             <div className="flex justify-between pt-4 border-t text-lg font-bold text-green-700">
-                                <span>Net Pay:</span>
-                                <span>₱{editForm.netPay.toLocaleString()}</span>
+                                <span>Net Pay:</span><span>₱{editForm.netPay.toLocaleString()}</span>
                             </div>
                          </div>
                     </div>
                 </div>
-
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
