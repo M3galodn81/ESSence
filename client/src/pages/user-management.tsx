@@ -439,6 +439,20 @@ export default function UserManagement() {
     return <Badge className={colors[role] || "bg-gray-100"}>{role.replace(/_/g, " ").toUpperCase()}</Badge>;
   };
 
+  const canModifyUser = (targetUser: any) => {
+    // 1. Admin can modify anyone except themselves (delete check handles self-delete)
+    if (user?.role === "admin") return true;
+
+    // 2. Manager checks
+    if (user?.role === "manager") {
+      // Manager can modify themselves
+      if (user.id === targetUser.id) return true;
+      // Manager can modify their direct reports (employees only)
+      if (targetUser.role === 'employee' && targetUser.managerId === user.id) return true;
+    }
+    return false;
+  };
+
   //move this to permissions.ts
   if (user?.role !== "admin" && user?.role !== "manager") {
     return (
@@ -682,76 +696,76 @@ export default function UserManagement() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {usersLoading ? (
-              <p className="text-center text-muted-foreground py-8">Loading users...</p>
-            ) : users.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                No users found
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {users.map((u: any) => (
-                  <div
-                    key={u.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
-                  >
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                        <Shield className="w-5 h-5 text-gray-600" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium">
-                          {u.firstName} {u.lastName}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {u.email} • @{u.username}
-                        </p>
-                        {u.position && (
-                          <p className="text-sm text-muted-foreground">
-                            {u.position} {u.department && `• ${u.department}`}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {getRoleBadge(u.role)}
-                      {user?.role === "admin" && (
-                        <div className="flex gap-1 ml-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleEdit(u)}
-                            title="Edit User"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleChangePassword(u)}
-                            title="Change Password"
-                          >
-                            <Key className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleDelete(u)}
-                            title="Delete User"
-                            disabled={u.id === user.id}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </CardContent>
+          <div className="space-y-4">
+            {usersLoading ? (
+              <p className="text-center text-muted-foreground py-8">Loading users...</p>
+            ) : users.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">
+                No users found
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {users.map((u: any) => (
+                  <div
+                    key={u.id}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
+                  >
+                    <div className="flex items-center gap-4 flex-1">
+                      <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                        <Shield className="w-5 h-5 text-gray-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium">
+                          {u.firstName} {u.lastName}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {u.email} • @{u.username}
+                        </p>
+                        {u.position && (
+                          <p className="text-sm text-muted-foreground">
+                            {u.position} {u.department && `• ${u.department}`}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {getRoleBadge(u.role)}
+                      {(user?.role === "admin" || canModifyUser(u)) && (
+                        <div className="flex gap-1 ml-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEdit(u)}
+                            title="Edit User"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleChangePassword(u)}
+                            title="Change Password"
+                          >
+                            <Key className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDelete(u)}
+                            title="Delete User"
+                            disabled={u.id === user.id || !user?.role === "admin"}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
       </Card>
 
       {/* Edit User Dialog */}

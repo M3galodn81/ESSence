@@ -284,10 +284,10 @@ export default function LeaveManagement() {
                       <SelectValue placeholder="Select leave type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="annual">Annual Leave</SelectItem>
-                      <SelectItem value="sick">Sick Leave</SelectItem>
-                      <SelectItem value="personal">Personal Leave</SelectItem>
-                      <SelectItem value="emergency">Emergency Leave</SelectItem>
+                      <SelectItem value="annual">Service Incentive Leave</SelectItem>
+                      <SelectItem value="sick">Additional Leave Benefit </SelectItem>
+{/*                       <SelectItem value="personal">Personal Leave</SelectItem>
+                      <SelectItem value="emergency">Emergency Leave</SelectItem> */}
                     </SelectContent>
                   </Select>
                 </div>
@@ -364,7 +364,7 @@ export default function LeaveManagement() {
             <Card>
                 <CardContent className="p-6">
                     <div className="flex items-center justify-between space-y-0 pb-2">
-                        <p className="text-sm font-medium text-muted-foreground">Annual Leave</p>
+                        <p className="text-sm font-medium text-muted-foreground">Service Incentive Leave</p>
                         <Calendar className="h-4 w-4 text-primary" />
                     </div>
                     <div className="flex items-baseline space-x-1">
@@ -383,7 +383,7 @@ export default function LeaveManagement() {
             <Card>
                 <CardContent className="p-6">
                     <div className="flex items-center justify-between space-y-0 pb-2">
-                        <p className="text-sm font-medium text-muted-foreground">Sick Leave</p>
+                        <p className="text-sm font-medium text-muted-foreground">Additional Leave Benefit </p>
                         <Activity className="h-4 w-4 text-red-500" />
                     </div>
                     <div className="flex items-baseline space-x-1">
@@ -399,7 +399,7 @@ export default function LeaveManagement() {
                 </CardContent>
             </Card>
 
-            <Card>
+            {/* <Card>
                 <CardContent className="p-6">
                     <div className="flex items-center justify-between space-y-0 pb-2">
                         <p className="text-sm font-medium text-muted-foreground">Service Incentive</p>
@@ -416,7 +416,7 @@ export default function LeaveManagement() {
                         />
                     </div>
                 </CardContent>
-            </Card>
+            </Card> */}
         </div>
 
         <Tabs defaultValue="my-requests" className="space-y-6">
