@@ -42,9 +42,6 @@ const navigationItems = [
   { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "admin", "payroll_officer"] },
 ];
 
-// Helper to ensure icon types match if strict
-function layersIconWrapper(Icon: any) { return Icon; }
-
 const managementItems = [
   { path: "/user-management", label: "User Management", icon: UserPlus, roles: ["manager", "admin"] },
   { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
@@ -55,9 +52,14 @@ const managementItems = [
 const payrollItems = [
   { path: "/payslip-history", label: "Payslip History", icon: FileText, roles: ["payroll_officer"] },
   { path: "/payroll-management", label: "Payroll Generator", icon: PhilippinePeso, roles: ["payroll_officer"] },
-  { path: "/admin-attendance", label: "Employee Attendance", icon: FileText, roles: ["payroll_officer"] },
-  { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, roles: ["payroll_officer"] },
+  // { path: "/admin-attendance", label: "Employee Attendance", icon: FileText, roles: ["payroll_officer"] },
+  // { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, roles: ["payroll_officer"] },
 ];
+
+// Helper to ensure icon types match if strict
+function layersIconWrapper(Icon: any) { return Icon; }
+
+
 
 export default function Sidebar({ className }: SidebarProps) {
   const { user, logoutMutation } = useAuth();

@@ -8,14 +8,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Calendar, Clock, ChevronLeft, ChevronRight, Plus, Edit, Trash2, Copy, Users, CalendarDays } from "lucide-react";
+import { Calendar, Clock, ChevronLeft, ChevronRight, Plus, Edit, Trash2, Copy, Users, CalendarDays, Filter } from "lucide-react";
 import type { Schedule, User } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { Loader2 } from "lucide-react";
 
 const shiftFormSchema = z.object({
   userId: z.string().min(1, "Employee is required"),
@@ -43,10 +44,10 @@ export default function ShiftManagement() {
   // move this to permissions.ts
   if (user?.role !== 'manager' && user?.role !== 'admin') {
     return (
-      <div className="p-6">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-center text-muted-foreground">Access denied. Manager or Admin role required.</p>
+      <div className="p-8 flex justify-center items-center h-screen bg-slate-50">
+        <Card className="w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200 shadow-xl">
+          <CardContent className="py-12 text-center text-slate-500">
+            Access denied. Manager or Admin role required.
           </CardContent>
         </Card>
       </div>
@@ -166,32 +167,22 @@ export default function ShiftManagement() {
       // Reconstruct Dates
       if (data.date) {
         const shiftDate = new Date(data.date);
-        
-        if (!isNaN(shiftDate.getTime())) {
-             updates.date = shiftDate.getTime();
-        }
+        if (!isNaN(shiftDate.getTime())) updates.date = shiftDate.getTime();
 
         if (data.startTime) {
             const startDateTime = new Date(`${data.date}T${data.startTime}`);
-            if (!isNaN(startDateTime.getTime())) {
-                updates.startTime = startDateTime.getTime();
-            }
+            if (!isNaN(startDateTime.getTime())) updates.startTime = startDateTime.getTime();
         }
 
         if (data.endTime) {
             const endDateTime = new Date(`${data.date}T${data.endTime}`);
-            
-            // Handle overnight logic
             if (data.startTime) {
                 const startDateTime = new Date(`${data.date}T${data.startTime}`);
                 if (endDateTime < startDateTime && data.shiftType !== 'off') {
                     endDateTime.setDate(endDateTime.getDate() + 1);
                 }
             }
-
-            if (!isNaN(endDateTime.getTime())) {
-                updates.endTime = endDateTime.getTime();
-            }
+            if (!isNaN(endDateTime.getTime())) updates.endTime = endDateTime.getTime();
         }
       }
 
@@ -199,20 +190,13 @@ export default function ShiftManagement() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({
-        title: "Shift updated",
-        description: "The shift has been updated successfully.",
-      });
+      toast({ title: "Shift updated", description: "The shift has been updated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] });
       setIsEditDialogOpen(false);
       setSelectedSchedule(null);
     },
     onError: (error: Error) => {
-      toast({
-        title: "Failed to update shift",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Failed to update shift", description: error.message, variant: "destructive" });
     },
   });
 
@@ -222,20 +206,13 @@ export default function ShiftManagement() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({
-        title: "Shift deleted",
-        description: "The shift has been removed successfully.",
-      });
+      toast({ title: "Shift deleted", description: "The shift has been removed successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] });
       setIsDeleteDialogOpen(false);
       setSelectedSchedule(null);
     },
     onError: (error: Error) => {
-      toast({
-        title: "Failed to delete shift",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Failed to delete shift", description: error.message, variant: "destructive" });
     },
   });
 
@@ -248,18 +225,11 @@ export default function ShiftManagement() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({
-        title: "Schedule copied",
-        description: "Previous week's schedule has been copied successfully.",
-      });
+      toast({ title: "Schedule copied", description: "Previous week's schedule has been copied successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Failed to copy schedule",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Failed to copy schedule", description: error.message, variant: "destructive" });
     },
   });
 
@@ -316,19 +286,17 @@ export default function ShiftManagement() {
   const getDaysOfWeek = () => {
     const days = [];
     const start = new Date(weekStart);
-    
     for (let i = 0; i < 7; i++) {
       const day = new Date(start);
       day.setDate(start.getDate() + i);
       days.push(day);
     }
-    
     return days;
   };
 
   const getSchedulesForDate = (date: Date, userId?: string) => {
     if (!allSchedules) return [];
-    const targetDateString = date.toLocaleDateString('en-CA'); // YYYY-MM-DD format
+    const targetDateString = date.toLocaleDateString('en-CA');
     
     return allSchedules.filter((schedule: Schedule) => {
       const scheduleDate = new Date(schedule.date);
@@ -346,51 +314,26 @@ export default function ShiftManagement() {
   };
 
   const getShiftBadge = (shiftType: string) => {
-    switch (shiftType) {
-      case 'morning':
-        return <Badge className="bg-red-600 text-white">Morning</Badge>;
-      case 'afternoon':
-        return <Badge className="bg-gray-700 text-white">Afternoon</Badge>;
-      case 'night':
-        return <Badge className="bg-black text-white">Night</Badge>;
-      case 'off':
-        return <Badge variant="outline" className="text-gray-500 border-gray-300">Day Off</Badge>;
-      default:
-        return <Badge variant="secondary">{shiftType}</Badge>;
-    }
+    const styles = {
+        morning: "bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
+        afternoon: "bg-amber-100 text-amber-700 hover:bg-amber-200",
+        night: "bg-indigo-100 text-indigo-700 hover:bg-indigo-200",
+        off: "bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200"
+    };
+    const style = styles[shiftType as keyof typeof styles] || styles.morning;
+    return <Badge className={`${style} border-0 shadow-none font-medium uppercase tracking-wide text-[10px]`}>{shiftType}</Badge>;
   };
 
   const getRoleBadge = (role: string) => {
-    const roleColors: Record<string, string> = {
-      cashier: "bg-red-100 text-red-900 border border-red-300",
-      bar: "bg-gray-800 text-white",
-      server: "bg-gray-200 text-gray-900",
-      kitchen: "bg-red-600 text-white",
-    };
-    return (
-      <Badge className={roleColors[role] || "bg-gray-100 text-gray-800"}>
-        {role.charAt(0).toUpperCase() + role.slice(1)}
-      </Badge>
-    );
+    return <span className="text-[10px] text-slate-500 font-medium capitalize">{role}</span>;
   };
 
   const formatDateHeader = (date: Date) => {
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    });
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
   const formatWeekRange = () => {
-    return `${weekStart.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric' 
-    })} - ${weekEnd.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      year: 'numeric'
-    })}`;
+    return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
   const isToday = (date: Date) => {
@@ -399,102 +342,65 @@ export default function ShiftManagement() {
   };
 
   return (
-    <div className="p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Shift Management</h1>
-            <p className="text-muted-foreground">Assign and manage employee work schedules</p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              onClick={() => copyPreviousWeekMutation.mutate()}
-              disabled={copyPreviousWeekMutation.isPending}
-            >
-              <Copy className="w-4 h-4 mr-2" />
-              Copy Previous Week
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+      
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Shift Management</h1>
+          <p className="text-slate-500 mt-1 text-sm">Assign and manage employee work schedules</p>
+        </div>
+        <div className="flex items-center space-x-3">
+            <Button variant="outline" className="bg-white/60 backdrop-blur-sm border-slate-200 text-slate-700 hover:bg-white hover:text-slate-900 shadow-sm rounded-full" onClick={() => copyPreviousWeekMutation.mutate()} disabled={copyPreviousWeekMutation.isPending}>
+                <Copy className="w-4 h-4 mr-2" /> Copy Previous Week
             </Button>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
-                <Button>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Assign Shift
+                <Button className="bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/20 rounded-full px-6">
+                  <Plus className="w-4 h-4 mr-2" /> Assign Shift
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-lg rounded-2xl">
                 <DialogHeader>
                   <DialogTitle>Assign New Shift</DialogTitle>
                   <DialogDescription>Create a new shift assignment for an employee</DialogDescription>
                 </DialogHeader>
-                <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4">
-                  <div>
-                    <Label htmlFor="userId">Employee *</Label>
-                    <Select
-                      onValueChange={(value) => createForm.setValue("userId", value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select employee" />
-                      </SelectTrigger>
-                      <SelectContent>
+                <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4 mt-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="userId">Employee</Label>
+                    <Select onValueChange={(value) => createForm.setValue("userId", value)}>
+                      <SelectTrigger className="rounded-xl border-slate-200"><SelectValue placeholder="Select employee" /></SelectTrigger>
+                      <SelectContent className="rounded-xl">
                         {teamMembers?.map((member: User) => (
-                          <SelectItem key={member.id} value={member.id}>
-                            {member.firstName} {member.lastName} - {member.position || "No position"}
-                          </SelectItem>
+                          <SelectItem key={member.id} value={member.id}>{member.firstName} {member.lastName}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    {createForm.formState.errors.userId && (
-                      <p className="text-sm text-destructive mt-1">
-                        {createForm.formState.errors.userId.message}
-                      </p>
-                    )}
+                    {createForm.formState.errors.userId && <p className="text-xs text-red-500">{createForm.formState.errors.userId.message}</p>}
                   </div>
-
-                  <div>
-                    <Label htmlFor="date">Date *</Label>
-                    <Input
-                      id="date"
-                      type="date"
-                      {...createForm.register("date")}
-                    />
-                    {createForm.formState.errors.date && (
-                      <p className="text-sm text-destructive mt-1">
-                        {createForm.formState.errors.date.message}
-                      </p>
-                    )}
+                  <div className="space-y-2">
+                    <Label htmlFor="date">Date</Label>
+                    <Input id="date" type="date" className="rounded-xl border-slate-200" {...createForm.register("date")} />
+                    {createForm.formState.errors.date && <p className="text-xs text-red-500">{createForm.formState.errors.date.message}</p>}
                   </div>
-
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="shiftType">Shift Type *</Label>
-                      <Select
-                        onValueChange={(value) => createForm.setValue("shiftType", value as any)}
-                        defaultValue="morning"
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="morning">Morning (8AM-4PM)</SelectItem>
-                          <SelectItem value="afternoon">Afternoon (4PM-12AM)</SelectItem>
-                          <SelectItem value="night">Night (12AM-8AM)</SelectItem>
+                    <div className="space-y-2">
+                      <Label htmlFor="shiftType">Shift Type</Label>
+                      <Select onValueChange={(value) => createForm.setValue("shiftType", value as any)} defaultValue="morning">
+                        <SelectTrigger className="rounded-xl border-slate-200"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="morning">Morning</SelectItem>
+                          <SelectItem value="afternoon">Afternoon</SelectItem>
+                          <SelectItem value="night">Night</SelectItem>
                           <SelectItem value="off">Day Off</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
-
-                    <div>
+                    <div className="space-y-2">
                       <Label htmlFor="shiftRole">Role</Label>
-                      <Select
-                        onValueChange={(value) => createForm.setValue("shiftRole", value as any)}
-                        defaultValue="server"
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
+                      <Select onValueChange={(value) => createForm.setValue("shiftRole", value as any)} defaultValue="server">
+                        <SelectTrigger className="rounded-xl border-slate-200"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
                           <SelectItem value="cashier">Cashier</SelectItem>
                           <SelectItem value="bar">Bar</SelectItem>
                           <SelectItem value="server">Server</SelectItem>
@@ -503,338 +409,197 @@ export default function ShiftManagement() {
                       </Select>
                     </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
+                    <div className="space-y-2">
                       <Label htmlFor="startTime">Start Time</Label>
-                      <Input
-                        id="startTime"
-                        type="time"
-                        {...createForm.register("startTime")}
-                      />
+                      <Input id="startTime" type="time" className="rounded-xl border-slate-200" {...createForm.register("startTime")} />
                     </div>
-                    <div>
+                    <div className="space-y-2">
                       <Label htmlFor="endTime">End Time</Label>
-                      <Input
-                        id="endTime"
-                        type="time"
-                        {...createForm.register("endTime")}
-                      />
+                      <Input id="endTime" type="time" className="rounded-xl border-slate-200" {...createForm.register("endTime")} />
                     </div>
                   </div>
-
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="location">Location</Label>
-                    <Input
-                      id="location"
-                      {...createForm.register("location")}
-                      placeholder="e.g., Main Branch"
-                    />
+                    <Input id="location" {...createForm.register("location")} placeholder="e.g., Main Branch" className="rounded-xl border-slate-200" />
                   </div>
-
-                  <div className="flex gap-2 justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsCreateDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={createShiftMutation.isPending}>
-                      {createShiftMutation.isPending ? "Creating..." : "Create Shift"}
-                    </Button>
-                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)} className="rounded-full">Cancel</Button>
+                    <Button type="submit" disabled={createShiftMutation.isPending} className="rounded-full bg-slate-900">{createShiftMutation.isPending ? "Creating..." : "Create Shift"}</Button>
+                  </DialogFooter>
                 </form>
               </DialogContent>
             </Dialog>
-          </div>
         </div>
+      </div>
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <Users className="w-4 h-4 text-muted-foreground" />
-                  <Label>Filter by Employee:</Label>
-                  <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
-                    <SelectTrigger className="w-[200px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Employees</SelectItem>
-                      {teamMembers?.map((member: User) => (
-                        <SelectItem key={member.id} value={member.id}>
-                          {member.firstName} {member.lastName}
-                        </SelectItem>
-                      ))}
+      {/* Filters Bar */}
+      <div className="flex flex-col sm:flex-row items-center gap-4 bg-white/80 backdrop-blur-md p-2 rounded-2xl border border-slate-200/60 shadow-sm">
+         <div className="flex items-center gap-3 px-3 w-full">
+            <Users className="w-4 h-4 text-slate-400" />
+            <div className="flex-1">
+                <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+                    <SelectTrigger className="w-full border-none bg-transparent shadow-none text-sm font-medium px-0 focus:ring-0"><SelectValue /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                    <SelectItem value="all">All Employees</SelectItem>
+                    {teamMembers?.map((member: User) => (
+                        <SelectItem key={member.id} value={member.id}>{member.firstName} {member.lastName}</SelectItem>
+                    ))}
                     </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentDate(new Date())}
-                >
-                  <CalendarDays className="w-4 h-4 mr-2" />
-                  This Week
-                </Button>
-              </div>
+                </Select>
             </div>
-          </CardContent>
-        </Card>
+         </div>
+         <div className="h-8 w-px bg-slate-200 hidden sm:block" />
+         <Button variant="ghost" onClick={() => setCurrentDate(new Date())} className="rounded-xl hover:bg-slate-100 text-slate-600 w-full sm:w-auto">
+            <CalendarDays className="w-4 h-4 mr-2" /> This Week
+         </Button>
+      </div>
 
-        {/* Schedule Grid */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center">
-                  <Calendar className="w-5 h-5 mr-2" />
-                  {formatWeekRange()}
-                </CardTitle>
-                <CardDescription>
-                  {selectedEmployee === "all"
-                    ? "All employees' schedules for this week"
-                    : `${getEmployeeName(selectedEmployee)}'s schedule for this week`}
-                </CardDescription>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigateWeek('prev')}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigateWeek('next')}
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
+      {/* Schedule Grid */}
+      <Card className="bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden">
+        <CardHeader className="px-6 py-4 border-b border-slate-100 bg-white/50">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center text-lg font-bold text-slate-800">
+                <Calendar className="w-5 h-5 mr-2 text-slate-500" />
+                {formatWeekRange()}
+              </CardTitle>
             </div>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">Loading schedules...</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-7 gap-4">
-                {getDaysOfWeek().map((day, index) => {
-                  const daySchedules = getSchedulesForDate(day, selectedEmployee);
-                  const todayClass = isToday(day) ? 'ring-2 ring-primary' : '';
+            <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg">
+              <Button variant="ghost" size="sm" onClick={() => navigateWeek('prev')} className="h-8 w-8 p-0 rounded-md hover:bg-white hover:shadow-sm"><ChevronLeft className="w-4 h-4 text-slate-600" /></Button>
+              <Button variant="ghost" size="sm" onClick={() => navigateWeek('next')} className="h-8 w-8 p-0 rounded-md hover:bg-white hover:shadow-sm"><ChevronRight className="w-4 h-4 text-slate-600" /></Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6">
+          {isLoading ? (
+             <div className="text-center py-12 text-slate-400">Loading schedules...</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-7 gap-4">
+              {getDaysOfWeek().map((day, index) => {
+                const daySchedules = getSchedulesForDate(day, selectedEmployee);
+                const isCurrentDay = isToday(day);
 
-                  return (
-                    <div
-                      key={index}
-                      className={`p-4 rounded-lg border transition-all ${todayClass}`}
-                    >
-                      <div className="text-center mb-3">
-                        <h3 className={`font-medium ${isToday(day) ? 'text-primary' : ''}`}>
-                          {formatDateHeader(day)}
-                        </h3>
-                        {isToday(day) && (
-                          <p className="text-xs text-primary font-medium">Today</p>
-                        )}
-                      </div>
+                return (
+                  <div key={index} className={`flex flex-col gap-3 p-3 rounded-2xl border min-h-[180px] transition-all ${isCurrentDay ? 'bg-blue-50/50 border-blue-100' : 'bg-white/60 border-slate-100 hover:border-slate-200'}`}>
+                    <div className="text-center pb-2 border-b border-slate-100/50">
+                      <h3 className={`text-sm font-bold ${isCurrentDay ? 'text-blue-600' : 'text-slate-700'}`}>{formatDateHeader(day)}</h3>
+                      {isCurrentDay && <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Today</span>}
+                    </div>
 
+                    <div className="flex-1 space-y-2">
                       {daySchedules.length === 0 ? (
-                        <div className="text-center py-4">
-                          <p className="text-xs text-muted-foreground">No shifts</p>
-                        </div>
+                        <div className="h-full flex items-center justify-center text-xs text-slate-400 italic py-4">No shifts</div>
                       ) : (
-                        <div className="space-y-2">
-                          {daySchedules.map((schedule: Schedule) => (
-                            <div
-                              key={schedule.id}
-                              className="p-2 bg-gray-50 rounded border space-y-2"
-                            >
-                              {selectedEmployee === "all" && (
-                                <p className="text-xs font-medium truncate">
-                                  {getEmployeeName(schedule.userId)}
-                                </p>
-                              )}
-
-                              <div className="flex flex-col items-center space-y-1">
+                        daySchedules.map((schedule: Schedule) => (
+                          <div key={schedule.id} className="p-2.5 bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow group relative">
+                            {selectedEmployee === "all" && (
+                              <p className="text-xs font-bold text-slate-800 truncate mb-1">{getEmployeeName(schedule.userId)}</p>
+                            )}
+                            
+                            <div className="flex justify-center gap-1 mb-1.5">
                                 {getShiftBadge(schedule.type)}
-                                {schedule.shiftRole && getRoleBadge(schedule.shiftRole)}
-                              </div>
-
-                              {schedule.type !== 'off' && (
-                                <div className="flex items-center justify-center text-xs text-muted-foreground">
-                                  <Clock className="w-3 h-3 mr-1" />
-                                  <span>
-                                    {new Date(schedule.startTime).toLocaleTimeString('en-US', {
-                                      hour: 'numeric',
-                                      minute: '2-digit',
-                                      hour12: true,
-                                    })}
-                                    {' - '}
-                                    {new Date(schedule.endTime).toLocaleTimeString('en-US', {
-                                      hour: 'numeric',
-                                      minute: '2-digit',
-                                      hour12: true,
-                                    })}
-                                  </span>
-                                </div>
-                              )}
-
-                              <div className="flex justify-center space-x-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 w-6 p-0"
-                                  onClick={() => handleEdit(schedule)}
-                                >
-                                  <Edit className="w-3 h-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                                  onClick={() => handleDelete(schedule)}
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
                             </div>
-                          ))}
-                        </div>
+                            <div className="flex justify-center gap-1 mb-1.5">
+                                {schedule.shiftRole && getRoleBadge(schedule.shiftRole)}
+                            </div>
+
+                            {schedule.type !== 'off' && (
+                                <div className="flex items-center gap-1 text-[10px] text-slate-500 font-medium bg-slate-50 px-1.5 py-0.5 rounded-md w-fit">
+                                    <Clock className="w-3 h-3" />
+                                    {new Date(schedule.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - 
+                                    {new Date(schedule.endTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                </div>
+                            )}
+                            
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                <Button size="icon" variant="ghost" className="h-6 w-6 rounded-md bg-slate-100 hover:bg-white hover:text-blue-600" onClick={() => handleEdit(schedule)}><Edit className="w-3 h-3" /></Button>
+                                <Button size="icon" variant="ghost" className="h-6 w-6 rounded-md bg-slate-100 hover:bg-white hover:text-red-600" onClick={() => handleDelete(schedule)}><Trash2 className="w-3 h-3" /></Button>
+                            </div>
+                          </div>
+                        ))
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-        {/* Edit Dialog */}
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent>
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-lg rounded-2xl">
             <DialogHeader>
-              <DialogTitle>Edit Shift</DialogTitle>
-              <DialogDescription>Update shift details</DialogDescription>
+                <DialogTitle>Edit Shift</DialogTitle>
             </DialogHeader>
-            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
-              <div>
-                <Label htmlFor="edit-date">Date *</Label>
-                <Input
-                  id="edit-date"
-                  type="date"
-                  {...editForm.register("date")}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-shiftType">Shift Type *</Label>
-                  <Select
-                    onValueChange={(value) => editForm.setValue("shiftType", value as any)}
-                    value={editForm.watch("shiftType")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="morning">Morning (8AM-4PM)</SelectItem>
-                      <SelectItem value="afternoon">Afternoon (4PM-12AM)</SelectItem>
-                      <SelectItem value="night">Night (12AM-8AM)</SelectItem>
-                      <SelectItem value="off">Day Off</SelectItem>
-                    </SelectContent>
-                  </Select>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4 mt-2">
+                <div className="space-y-2">
+                    <Label>Date</Label>
+                    <Input type="date" className="rounded-xl" {...editForm.register("date")} />
                 </div>
-
-                <div>
-                  <Label htmlFor="edit-shiftRole">Role</Label>
-                  <Select
-                    onValueChange={(value) => editForm.setValue("shiftRole", value as any)}
-                    value={editForm.watch("shiftRole")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cashier">Cashier</SelectItem>
-                      <SelectItem value="bar">Bar</SelectItem>
-                      <SelectItem value="server">Server</SelectItem>
-                      <SelectItem value="kitchen">Kitchen</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>Shift Type</Label>
+                        <Select onValueChange={(value) => editForm.setValue("shiftType", value as any)} value={editForm.watch("shiftType")}>
+                            <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                                <SelectItem value="morning">Morning</SelectItem>
+                                <SelectItem value="afternoon">Afternoon</SelectItem>
+                                <SelectItem value="night">Night</SelectItem>
+                                <SelectItem value="off">Day Off</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Role</Label>
+                        <Select onValueChange={(value) => editForm.setValue("shiftRole", value as any)} value={editForm.watch("shiftRole")}>
+                            <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                                <SelectItem value="cashier">Cashier</SelectItem>
+                                <SelectItem value="bar">Bar</SelectItem>
+                                <SelectItem value="server">Server</SelectItem>
+                                <SelectItem value="kitchen">Kitchen</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-startTime">Start Time</Label>
-                  <Input
-                    id="edit-startTime"
-                    type="time"
-                    {...editForm.register("startTime")}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>Start Time</Label>
+                        <Input type="time" className="rounded-xl" {...editForm.register("startTime")} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>End Time</Label>
+                        <Input type="time" className="rounded-xl" {...editForm.register("endTime")} />
+                    </div>
                 </div>
-                <div>
-                  <Label htmlFor="edit-endTime">End Time</Label>
-                  <Input
-                    id="edit-endTime"
-                    type="time"
-                    {...editForm.register("endTime")}
-                  />
+                <div className="space-y-2">
+                    <Label>Location</Label>
+                    <Input {...editForm.register("location")} className="rounded-xl" />
                 </div>
-              </div>
-
-              <div>
-                <Label htmlFor="edit-location">Location</Label>
-                <Input
-                  id="edit-location"
-                  {...editForm.register("location")}
-                  placeholder="e.g., Main Branch"
-                />
-              </div>
-
-              <div className="flex gap-2 justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsEditDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={updateShiftMutation.isPending}>
-                  {updateShiftMutation.isPending ? "Updating..." : "Update Shift"}
-                </Button>
-              </div>
+                <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} className="rounded-full">Cancel</Button>
+                    <Button type="submit" disabled={updateShiftMutation.isPending} className="rounded-full bg-slate-900">{updateShiftMutation.isPending ? "Updating..." : "Update Shift"}</Button>
+                </DialogFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+        </DialogContent>
+      </Dialog>
 
-        {/* Delete Alert Dialog */}
-        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-          <AlertDialogContent>
+      {/* Delete Alert */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent className="rounded-2xl">
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Shift</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to delete this shift assignment? This action cannot be undone.
-              </AlertDialogDescription>
+                <AlertDialogTitle>Delete Shift</AlertDialogTitle>
+                <AlertDialogDescription>Are you sure? This action cannot be undone.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={confirmDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {deleteShiftMutation.isPending ? "Deleting..." : "Delete"}
-              </AlertDialogAction>
+                <AlertDialogCancel className="rounded-full">Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDelete} className="bg-rose-600 hover:bg-rose-700 rounded-full">Delete</AlertDialogAction>
             </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

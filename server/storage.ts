@@ -6,15 +6,10 @@ import {
   Payslip,
   Schedule,
   InsertSchedule,
-  Document,
-  InsertDocument,
   Announcement,
   InsertAnnouncement,
   Activity,
   InsertActivity,
-  Training,
-  UserTraining,
-  InsertUserTraining,
   Report,
   InsertReport,
   LaborCostData,
@@ -31,11 +26,8 @@ import {
   leaveRequests,
   payslips,
   schedules,
-  documents,
   announcements,
   activities,
-  trainings,
-  userTrainings,
   reports,
   laborCostData,
   attendance,
@@ -135,11 +127,6 @@ export interface IStorage {
   updateSchedule(id: string, updates: Partial<Schedule>): Promise<Schedule | undefined>;
   deleteSchedule(id: string): Promise<boolean>;
 
-  createDocument(document: InsertDocument): Promise<Document>;
-  getDocumentsByUser(userId: string): Promise<Document[]>;
-  getDocumentById(id: string): Promise<Document | undefined>;
-  deleteDocument(id: string): Promise<boolean>;
-
   createAnnouncement(announcement: InsertAnnouncement): Promise<Announcement>;
   getAllAnnouncements(department?: string): Promise<Announcement[]>;
   getActiveAnnouncements(department?: string): Promise<Announcement[]>;
@@ -149,10 +136,6 @@ export interface IStorage {
   createActivity(activity: InsertActivity): Promise<Activity>;
   getActivitiesByUser(userId: string, limit?: number): Promise<Activity[]>;
   getAllActivities(): Promise<Activity[]>;
-
-  getAllTrainings(): Promise<Training[]>;
-  getUserTrainings(userId: string): Promise<UserTraining[]>;
-  updateUserTraining(userId: string, trainingId: string, updates: Partial<UserTraining>): Promise<UserTraining | undefined>;
 
   createReport(report: InsertReport): Promise<Report>;
   getReportsByUser(userId: string): Promise<Report[]>;
@@ -367,35 +350,6 @@ export class DbStorage implements IStorage {
     return result.changes > 0;
   }
 
-  async createDocument(document: InsertDocument): Promise<Document> {
-    const result = await db.insert(documents).values(document).returning();
-    const newDocument = result[0];
-
-    await this.createActivity({
-      userId: document.userId,
-      type: "document_uploaded",
-      description: `Document uploaded: ${document.name}`,
-      metadata: { documentId: newDocument.id, documentType: document.type },
-    });
-
-    return newDocument;
-  }
-
-  async getDocumentsByUser(userId: string): Promise<Document[]> {
-    return await db.select().from(documents)
-      .where(eq(documents.userId, userId))
-      .orderBy(desc(documents.uploadedAt));
-  }
-
-  async getDocumentById(id: string): Promise<Document | undefined> {
-    const result = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
-    return result[0];
-  }
-
-  async deleteDocument(id: string): Promise<boolean> {
-    const result = await db.delete(documents).where(eq(documents.id, id));
-    return result.changes > 0;
-  }
 
   async createAnnouncement(announcement: InsertAnnouncement): Promise<Announcement> {
     const result = await db.insert(announcements).values(announcement).returning();
@@ -461,54 +415,7 @@ export class DbStorage implements IStorage {
       .orderBy(desc(activities.createdAt));
   }
 
-  async getAllTrainings(): Promise<Training[]> {
-    return await db.select().from(trainings);
-  }
-
-  async getUserTrainings(userId: string): Promise<UserTraining[]> {
-    return await db.select().from(userTrainings).where(eq(userTrainings.userId, userId));
-  }
-
-  async updateUserTraining(userId: string, trainingId: string, updates: Partial<UserTraining>): Promise<UserTraining | undefined> {
-    const existing = await db.select().from(userTrainings)
-      .where(and(eq(userTrainings.userId, userId), eq(userTrainings.trainingId, trainingId)))
-      .limit(1);
-
-    let userTraining;
-    if (existing.length === 0) {
-      const result = await db.insert(userTrainings).values({
-        userId,
-        trainingId,
-        status: "not_started",
-        progress: 0,
-        startedAt: null,
-        completedAt: null,
-      }).returning();
-      userTraining = result[0];
-    } else {
-      userTraining = existing[0];
-    }
-
-    const result = await db.update(userTrainings)
-      .set(updates)
-      .where(and(eq(userTrainings.userId, userId), eq(userTrainings.trainingId, trainingId)))
-      .returning();
-
-    const updatedUserTraining = result[0];
-
-    if (updates.status === 'completed') {
-      const training = await db.select().from(trainings).where(eq(trainings.id, trainingId)).limit(1);
-      await this.createActivity({
-        userId,
-        type: "training_completed",
-        description: `Completed training: ${training[0]?.title || 'Unknown'}`,
-        metadata: { trainingId },
-      });
-    }
-
-    return updatedUserTraining;
-  }
-
+  
   async createReport(report: InsertReport): Promise<Report> {
     const result = await db.insert(reports).values(report).returning();
     const newReport = result[0];

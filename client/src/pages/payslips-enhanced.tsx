@@ -1,25 +1,42 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { FileText, Eye, TrendingUp, DollarSign } from "lucide-react";
+import { FileText, Eye, TrendingUp, DollarSign, Calendar, Wallet, TrendingDown, Clock } from "lucide-react";
 import type { Payslip } from "@shared/schema";
+import { BentoCard } from "@/components/custom/bento-card";
+import { Loader2 } from "lucide-react";
 
 // Constants for reverse calculation of hours (Must match PayrollManagement)
 const HOURLY_RATE = 58.75;
 const OT_RATE = HOURLY_RATE * 1.25;
-const ND_RATE = HOURLY_RATE * 1.25;
+const ND_RATE = HOURLY_RATE * 1.1; // Standard night diff is usually 10%, adjusted if your config is different
 
 export default function PayslipsEnhanced() {
   const { user } = useAuth();
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
 
-  const { data: payslips, isLoading } = useQuery({
+  const { data: payslips, isLoading } = useQuery<Payslip[]>({
     queryKey: ["/api/payslips"],
   });
+
+  // --- Stats Calculation ---
+  const stats = useMemo(() => {
+    if (!payslips || payslips.length === 0) return { totalNet: 0, totalGross: 0, latestPay: 0, totalDeductions: 0 };
+    
+    const totalNet = payslips.reduce((acc, curr) => acc + curr.netPay, 0);
+    const totalGross = payslips.reduce((acc, curr) => acc + curr.grossPay, 0);
+    const totalDeductions = totalGross - totalNet;
+    
+    // Sort by date desc to get latest
+    const sorted = [...payslips].sort((a, b) => new Date(b.generatedAt!).getTime() - new Date(a.generatedAt!).getTime());
+    const latestPay = sorted.length > 0 ? sorted[0].netPay : 0;
+
+    return { totalNet, totalGross, latestPay, totalDeductions };
+  }, [payslips]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-PH', {
@@ -29,7 +46,7 @@ export default function PayslipsEnhanced() {
   };
 
   const formatDate = (date: string | Date) => {
-    return new Date(date).toLocaleDateString();
+    return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   };
 
   const getMonthName = (month: number) => {
@@ -41,39 +58,33 @@ export default function PayslipsEnhanced() {
   };
 
   const getPeriodLabel = (payslip: Payslip) => {
-    // Use the DB field if available, otherwise fallback to date inference for old records
     if (payslip.period) {
-        return payslip.period === 1 ? "1st Half" : "2nd Half";
+        return payslip.period === 1 ? "1st Half (1-15)" : "2nd Half (16-End)";
     }
-    // Fallback for old records
     if (!payslip.generatedAt) return "Regular";
     const date = new Date(payslip.generatedAt);
     const day = date.getDate();
-    return day <= 15 ? "1st Half" : "2nd Half";
+    return day <= 15 ? "1st Half (1-15)" : "2nd Half (16-End)";
   };
 
   const getDeductionBreakdown = (payslip: Payslip) => {
     const deductions = payslip.deductions as Record<string, number> || {};
-    
     const data = Object.entries(deductions).map(([key, value]) => ({
       name: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim(),
       value: value,
     }));
-
     return data.filter(item => item.value > 0);
   };
 
   const getEarningsData = (payslip: Payslip) => {
     const allowances = payslip.allowances as Record<string, number> || {};
     
-    // Raw amounts in cents
     const basic = payslip.basicSalary || 0;
     const overtime = allowances.overtime || 0;
     const nightDiff = allowances.nightDiff || 0;
     const bonuses = allowances.bonuses || 0;
     const otherAllowances = allowances.allowances || allowances.otherAllowances || 0;
 
-    // Calculate Hours (Amount in Pesos / Rate)
     const basicHours = (basic / 100) / HOURLY_RATE;
     const overtimeHours = (overtime / 100) / OT_RATE;
     const nightDiffHours = (nightDiff / 100) / ND_RATE;
@@ -87,177 +98,172 @@ export default function PayslipsEnhanced() {
     ].filter(item => item.amount > 0);
   };
 
-  return (
-    <div className="p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Payslips & Salary Analytics</h1>
-          <p className="text-muted-foreground">View detailed salary history and income breakdown</p>
-        </div>
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-slate-400" /></div>;
 
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Salary History</h2>
-          {isLoading ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Loading payslips...</p>
-            </div>
-          ) : payslips && payslips.length > 0 ? (
-            payslips.map((payslip: Payslip) => {
+  return (
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+      
+      {/* Glass Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">My Payslips</h1>
+          <p className="text-slate-500 mt-1">View your salary history and income breakdown</p>
+        </div>
+      </div>
+
+      {/* Bento Stats */}
+      {/* <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <BentoCard 
+            title="Total Earnings (YTD)" 
+            value={formatCurrency(stats.totalNet)} 
+            icon={Wallet} 
+            variant="emerald" 
+            testIdPrefix="stat-total-earnings" 
+        />
+        <BentoCard 
+            title="Latest Payout" 
+            value={formatCurrency(stats.latestPay)} 
+            icon={Clock} 
+            variant="default" 
+            testIdPrefix="stat-latest-pay" 
+        />
+        <BentoCard 
+            title="Total Deductions" 
+            value={formatCurrency(stats.totalDeductions)} 
+            icon={TrendingDown} 
+            variant="rose" 
+            testIdPrefix="stat-deductions" 
+        />
+      </div> */}
+
+      {/* Payslip List */}
+      <div className="space-y-6">
+        <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+            <FileText className="w-5 h-5 text-slate-500" /> Recent Payslips
+        </h2>
+        
+        {payslips && payslips.length > 0 ? (
+          <div className="grid grid-cols-1 gap-6">
+            {[...payslips].sort((a, b) => new Date(b.generatedAt!).getTime() - new Date(a.generatedAt!).getTime()).map((payslip: Payslip) => {
                 const periodLabel = getPeriodLabel(payslip);
                 const earnings = getEarningsData(payslip);
                 const deductions = getDeductionBreakdown(payslip);
+                const isExpanded = selectedPayslip?.id === payslip.id;
 
                 return (
-                  <Card key={payslip.id} className="hover:shadow-md transition-shadow">
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                            <FileText className="w-6 h-6 text-primary" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-lg flex items-center gap-2">
-                              {getMonthName(payslip.month)} {payslip.year} 
-                              <Badge variant="outline" className="font-normal">
-                                {periodLabel}
-                              </Badge>
-                            </CardTitle>
-                            <CardDescription>
-                              Generated on {formatDate(payslip.generatedAt!)}
-                            </CardDescription>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-200">Paid</Badge>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setSelectedPayslip(selectedPayslip?.id === payslip.id ? null : payslip)}
-                          >
-                            <Eye className="w-4 h-4 mr-2" />
-                            {selectedPayslip?.id === payslip.id ? "Hide" : "View"} Details
-                          </Button>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-3 gap-4 mb-4">
-                        <div>
-                          <p className="text-sm text-muted-foreground">Gross Pay</p>
-                          <p className="text-lg font-semibold">{formatCurrency(payslip.grossPay)}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Deductions</p>
-                          <p className="text-lg font-semibold text-red-600">
-                            -{formatCurrency(payslip.grossPay - payslip.netPay)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Net Pay</p>
-                          <p className="text-lg font-semibold text-green-600">{formatCurrency(payslip.netPay)}</p>
-                        </div>
-                      </div>
-
-                      {selectedPayslip?.id === payslip.id && (
-                        <div className="mt-6 pt-6 border-t grid grid-cols-1 lg:grid-cols-2 gap-8">
-                          
-                          {/* Earnings Section */}
-                          <div>
-                            <h3 className="font-semibold mb-4 flex items-center gap-2">
-                                <TrendingUp className="w-4 h-4 text-green-600" />
-                                Earnings Breakdown
-                            </h3>
-                            <div className="border rounded-lg overflow-hidden">
-                                <table className="w-full text-sm">
-                                    <thead className="bg-gray-50 border-b">
-                                        <tr>
-                                            <th className="px-4 py-2 text-left font-medium text-gray-500">Earnings</th>
-                                            <th className="px-4 py-2 text-center font-medium text-gray-500">Hours</th>
-                                            <th className="px-4 py-2 text-right font-medium text-gray-500">Amount</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {earnings.map((item, idx) => (
-                                            <tr key={idx} className="hover:bg-gray-50/50">
-                                                <td className={`px-4 py-2 ${item.highlight ? 'font-medium text-gray-900' : 'text-gray-600'}`}>
-                                                    {item.label}
-                                                </td>
-                                                <td className="px-4 py-2 text-center text-gray-500">
-                                                    {item.hasHours ? Math.round(item.hours * 10) / 10 : '-'}
-                                                </td>
-                                                <td className={`px-4 py-2 text-right ${item.highlight ? 'font-medium text-green-600' : ''}`}>
-                                                    {formatCurrency(item.amount)}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        <tr className="bg-gray-50 font-semibold">
-                                            <td className="px-4 py-3">Total Gross</td>
-                                            <td className="px-4 py-3 text-center">-</td>
-                                            <td className="px-4 py-3 text-right">{formatCurrency(payslip.grossPay)}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                  <Card key={payslip.id} className={`bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm transition-all duration-300 ${isExpanded ? 'ring-2 ring-slate-200 shadow-md bg-white/80' : 'hover:bg-white/80 hover:shadow-md'}`}>
+                    <CardContent className="p-0">
+                        {/* Summary Row */}
+                        <div className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 cursor-pointer" onClick={() => setSelectedPayslip(isExpanded ? null : payslip)}>
+                            <div className="flex items-center gap-4">
+                                <div className="h-14 w-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-sm">
+                                    <span className="text-xs font-bold uppercase">{getMonthName(payslip.month).substring(0, 3)}</span>
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-800">{getMonthName(payslip.month)} {payslip.year}</h3>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <Badge variant="secondary" className="bg-slate-100 text-slate-600 hover:bg-slate-200 font-normal border border-slate-200">{periodLabel}</Badge>
+                                        <span className="text-xs text-slate-400 hidden sm:inline-block">• Generated {formatDate(payslip.generatedAt!)}</span>
+                                    </div>
+                                </div>
                             </div>
-                          </div>
 
-                          {/* Deductions Section - Table View */}
-                          <div>
-                            <h3 className="font-semibold mb-4 flex items-center gap-2">
-                                <DollarSign className="w-4 h-4 text-red-600" />
-                                Deductions Breakdown
-                            </h3>
-                            <div className="border rounded-lg overflow-hidden">
-                                <table className="w-full text-sm">
-                                    <thead className="bg-gray-50 border-b">
-                                        <tr>
-                                            <th className="px-4 py-2 text-left font-medium text-gray-500">Description</th>
-                                            <th className="px-4 py-2 text-right font-medium text-gray-500">Amount</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {deductions.length > 0 ? (
-                                            deductions.map((item, index) => (
-                                                <tr key={index} className="hover:bg-gray-50/50">
-                                                    <td className="px-4 py-2 text-gray-600">{item.name}</td>
-                                                    <td className="px-4 py-2 text-right">{formatCurrency(item.value)}</td>
-                                                </tr>
-                                            ))
-                                        ) : (
-                                            <tr>
-                                                <td colSpan={2} className="px-4 py-4 text-center text-gray-400 italic">No deductions</td>
-                                            </tr>
-                                        )}
-                                        <tr className="bg-gray-50 font-semibold text-red-600">
-                                            <td className="px-4 py-3">Total Deductions</td>
-                                            <td className="px-4 py-3 text-right">
-                                                -{formatCurrency(payslip.grossPay - payslip.netPay)}
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
+                            <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end">
+                                <div className="text-right">
+                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Net Pay</p>
+                                    <p className="text-xl font-bold text-emerald-600">{formatCurrency(payslip.netPay)}</p>
+                                </div>
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className={`rounded-full transition-transform duration-300 ${isExpanded ? 'rotate-180 bg-slate-100' : ''}`}
+                                >
+                                    <ChevronDown className="w-5 h-5 text-slate-500" />
+                                </Button>
                             </div>
-                            
-                            {/* Net Pay Highlight */}
-                            <div className="mt-6 p-4 bg-green-50 border border-green-100 rounded-lg flex justify-between items-center">
-                                <span className="font-bold text-green-800">NET PAY</span>
-                                <span className="text-xl font-bold text-green-700">{formatCurrency(payslip.netPay)}</span>
-                            </div>
-                          </div>
-
                         </div>
-                      )}
+
+                        {/* Expanded Details */}
+                        {isExpanded && (
+                            <div className="px-6 pb-6 animate-in slide-in-from-top-2 duration-200">
+                                <Separator className="mb-6 bg-slate-200/60" />
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    {/* Earnings */}
+                                    <div className="space-y-4">
+                                        <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                                            <TrendingUp className="w-4 h-4 text-blue-600" /> Earnings
+                                        </h4>
+                                        <div className="bg-slate-50/50 rounded-xl border border-slate-100 p-4 space-y-3">
+                                            {earnings.map((item, idx) => (
+                                                <div key={idx} className="flex justify-between items-center text-sm">
+                                                    <div>
+                                                        <p className="text-slate-700 font-medium">{item.label}</p>
+                                                        {item.hasHours && <p className="text-xs text-slate-400">{item.hours.toFixed(1)} hrs</p>}
+                                                    </div>
+                                                    <p className="text-slate-900 font-mono">{formatCurrency(item.amount)}</p>
+                                                </div>
+                                            ))}
+                                            <Separator className="bg-slate-200" />
+                                            <div className="flex justify-between items-center font-bold text-slate-800">
+                                                <span>Total Gross</span>
+                                                <span>{formatCurrency(payslip.grossPay)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Deductions */}
+                                    <div className="space-y-4">
+                                        <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                                            <DollarSign className="w-4 h-4 text-rose-600" /> Deductions
+                                        </h4>
+                                        <div className="bg-slate-50/50 rounded-xl border border-slate-100 p-4 space-y-3">
+                                            {deductions.length > 0 ? deductions.map((item, idx) => (
+                                                <div key={idx} className="flex justify-between items-center text-sm">
+                                                    <p className="text-slate-600">{item.name}</p>
+                                                    <p className="text-rose-600 font-mono">-{formatCurrency(item.value)}</p>
+                                                </div>
+                                            )) : <p className="text-sm text-slate-400 italic">No deductions</p>}
+                                            <Separator className="bg-slate-200" />
+                                            <div className="flex justify-between items-center font-bold text-rose-700">
+                                                <span>Total Deductions</span>
+                                                <span>-{formatCurrency(payslip.grossPay - payslip.netPay)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Net Pay Highlight */}
+                                <div className="mt-6 p-4 bg-emerald-50 border border-emerald-100 rounded-xl flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-2 bg-emerald-100 rounded-full text-emerald-600">
+                                            <Wallet className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Total Net Pay</p>
+                                            <p className="text-xs text-emerald-600">Take home pay</p>
+                                        </div>
+                                    </div>
+                                    <span className="text-2xl font-bold text-emerald-700 tracking-tight">{formatCurrency(payslip.netPay)}</span>
+                                </div>
+                            </div>
+                        )}
                     </CardContent>
                   </Card>
                 );
-            })
-          ) : (
-            <Card>
-              <CardContent className="py-8 text-center">
-                <p className="text-muted-foreground">No payslips found</p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+            })}
+          </div>
+        ) : (
+          <Card className="bg-white/40 border-dashed border-slate-200">
+            <CardContent className="py-12 text-center">
+               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FileText className="w-8 h-8 text-slate-300" />
+               </div>
+               <h3 className="text-lg font-medium text-slate-900">No Payslips Found</h3>
+               <p className="text-slate-500">Your payslip history will appear here once generated.</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

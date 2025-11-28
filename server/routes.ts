@@ -5,22 +5,33 @@ import { setupAuth, hashPassword } from "./auth";
 import {
   insertLeaveRequestSchema,
   insertAnnouncementSchema,
-    insertHolidaySchema,
-  holidays,
-  insertScheduleSchema,
   insertScheduleApiSchema,
   insertReportSchema,
   insertLaborCostDataSchema,
-  payslips
+  insertHolidaySchema,
+  payslips,
+  holidays
 } from "@shared/schema";
 import { z } from "zod";
 import { ZodError } from "zod";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { attendance, breaks, activities } from "@shared/schema";
+import { eq, and, gte, lte, isNull, desc, inArray } from "drizzle-orm";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
+  // Helper: Get Start/End of a specific date for Attendance queries
+  // FIX: Returns Date objects instead of timestamps to satisfy Drizzle types
+  const getDayRange = (dateObj: Date) => {
+    const start = new Date(dateObj);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(dateObj);
+    end.setHours(23, 59, 59, 999);
+    return { start, end }; 
+  };
+
+  // --- Setup & Admin ---
   app.get("/api/setup/check", async (req, res) => {
     try {
       const users = await storage.getAllUsers();
@@ -28,7 +39,6 @@ export function registerRoutes(app: Express): Server {
       res.json({ needsSetup: !hasAdmin });
     } catch (error) {
       console.error("Setup check error:", error);
-      
       res.json({ needsSetup: true });
     }
   });
@@ -37,10 +47,7 @@ export function registerRoutes(app: Express): Server {
     try {
       const users = await storage.getAllUsers();
       const hasAdmin = users.some(u => u.role === "admin");
-
-      if (hasAdmin) {
-        return res.status(400).send("Admin account already exists");
-      }
+      if (hasAdmin) return res.status(400).send("Admin account already exists");
 
       const adminData = {
         ...req.body,
@@ -49,7 +56,6 @@ export function registerRoutes(app: Express): Server {
         department: "Administration",
         position: "System Administrator",
       };
-
       const admin = await storage.createUser(adminData);
       res.json(admin);
     } catch (error: any) {
@@ -57,14 +63,11 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // --- User Management ---
   app.get("/api/users", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role !== 'admin' && user.role !== 'manager') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
+    if (user.role !== 'admin' && user.role !== 'manager') return res.status(403).json({ message: "Access denied" });
     try {
       const users = await storage.getAllUsers();
       res.json(users);
@@ -75,44 +78,22 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/users", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
     const requestedRole = req.body.role;
 
-    if (user.role === 'manager' && requestedRole !== 'employee') {
-      return res.status(403).send("Managers can only create employee accounts");
-    }
-    
-    if (user.role !== 'admin' && user.role !== 'manager') {
-      return res.status(403).send("Access denied");
-    }
+    if (user.role === 'manager' && requestedRole !== 'employee') return res.status(403).send("Managers can only create employee accounts");
+    if (user.role !== 'admin' && user.role !== 'manager') return res.status(403).send("Access denied");
 
     try {
-      const userData = {
-        ...req.body,
-        password: await hashPassword(req.body.password),
-      };
-
-      // Handle managerId for different roles
-      if (user.role === 'manager' && requestedRole === 'employee' && !userData.managerId) {
-        userData.managerId = user.id;
-      }
-
-      // For managers created by admin, ensure managerId is either null or empty string
+      const userData = { ...req.body, password: await hashPassword(req.body.password) };
+      if (user.role === 'manager' && requestedRole === 'employee' && !userData.managerId) userData.managerId = user.id;
       if (requestedRole === 'manager') {
-        // Managers typically don't have a manager, or they report to admin
-        // Set to null/undefined to avoid foreign key constraint issues
-        if (!userData.managerId || userData.managerId === '') {
-          delete userData.managerId;
-        } else {
-          // Validate that the managerId exists if provided
+        if (!userData.managerId || userData.managerId === '') delete userData.managerId;
+        else {
           const managerExists = await storage.getUser(userData.managerId);
-          if (!managerExists) {
-            return res.status(400).send("Invalid manager ID provided");
-          }
+          if (!managerExists) return res.status(400).send("Invalid manager ID provided");
         }
       }
-
       const newUser = await storage.createUser(userData);
       res.json(newUser);
     } catch (error: any) {
@@ -122,17 +103,10 @@ export function registerRoutes(app: Express): Server {
 
   app.patch("/api/users/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const user = req.user!;
-    if (user.role !== 'admin') {
-      return res.status(403).send("Only admins can edit users");
-    }
-
+    if (req.user!.role !== 'admin') return res.status(403).send("Only admins can edit users");
     try {
       const updatedUser = await storage.updateUser(req.params.id, req.body);
-      if (!updatedUser) {
-        return res.status(404).send("User not found");
-      }
+      if (!updatedUser) return res.status(404).send("User not found");
       res.json(updatedUser);
     } catch (error: any) {
       res.status(400).send(error.message || "Failed to update user");
@@ -141,20 +115,11 @@ export function registerRoutes(app: Express): Server {
 
   app.patch("/api/users/:id/password", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const user = req.user!;
-    if (user.role !== 'admin') {
-      return res.status(403).send("Only admins can change passwords");
-    }
-
+    if (req.user!.role !== 'admin') return res.status(403).send("Only admins can change passwords");
     try {
       const hashedPassword = await hashPassword(req.body.password);
-      const updatedUser = await storage.updateUser(req.params.id, {
-        password: hashedPassword,
-      });
-      if (!updatedUser) {
-        return res.status(404).send("User not found");
-      }
+      const updatedUser = await storage.updateUser(req.params.id, { password: hashedPassword });
+      if (!updatedUser) return res.status(404).send("User not found");
       res.json({ message: "Password updated successfully" });
     } catch (error: any) {
       res.status(400).send(error.message || "Failed to change password");
@@ -163,16 +128,9 @@ export function registerRoutes(app: Express): Server {
 
   app.delete("/api/users/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role !== 'admin') {
-      return res.status(403).send("Only admins can delete users");
-    }
-
-    if (user.id === req.params.id) {
-      return res.status(400).send("You cannot delete your own account");
-    }
-
+    if (user.role !== 'admin') return res.status(403).send("Only admins can delete users");
+    if (user.id === req.params.id) return res.status(400).send("You cannot delete your own account");
     try {
       await storage.deleteUser(req.params.id);
       res.json({ message: "User deleted successfully" });
@@ -181,6 +139,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // --- Holiday Management Routes ---
   app.get("/api/holidays", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const allHolidays = await db.select().from(holidays);
@@ -211,10 +170,9 @@ export function registerRoutes(app: Express): Server {
     res.json({ message: "Holiday deleted" });
   });
 
-
+  // --- Leave Requests ---
   app.post("/api/leave-requests", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
     try {
       const apiData = insertLeaveRequestSchema.parse({
         ...req.body,
@@ -222,114 +180,94 @@ export function registerRoutes(app: Express): Server {
         startDate: new Date(req.body.startDate),
         endDate: new Date(req.body.endDate),
       });
-
       const leaveRequest = await storage.createLeaveRequest(apiData);
       res.json(leaveRequest);
-
     } catch (error) {
-          if (error instanceof ZodError) {
-          console.error("[ZOD ERROR] Leave request validation failed:", error.errors);
-          return res.status(400).json({
-            message: "Invalid leave request data",
-            debug: error.errors,      // optional: send detailed validation errors
-          });
-        }
-
-        console.error("[SERVER ERROR] Unexpected error:", error);
-        return res.sendStatus(500);
+      if (error instanceof ZodError) return res.status(400).json({ message: "Invalid leave request data", debug: error.errors });
+      return res.sendStatus(500);
     }
   });
 
   app.get("/api/leave-requests", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
     const leaveRequests = await storage.getLeaveRequestsByUser(req.user!.id);
     res.json(leaveRequests);
   });
 
   app.get("/api/leave-requests/pending", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    const pendingRequests = await storage.getPendingLeaveRequests(
-      user.role === 'manager' ? user.id : undefined
-    );
+    if (user.role !== 'manager' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
+    const pendingRequests = await storage.getPendingLeaveRequests(user.role === 'manager' ? user.id : undefined);
     res.json(pendingRequests);
   });
 
   app.patch("/api/leave-requests/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
+    if (user.role !== 'manager' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
     try {
       const updates = z.object({
         status: z.enum(["approved", "rejected"]),
         comments: z.string().optional(),
       }).parse(req.body);
-
-      const updatedRequest = await storage.updateLeaveRequest(req.params.id, {
-        ...updates,
-        approvedBy: user.id,
-        approvedAt: new Date(),
-      });
-
-      if (!updatedRequest) {
-        return res.status(404).json({ message: "Leave request not found" });
-      }
-
+      const updatedRequest = await storage.updateLeaveRequest(req.params.id, { ...updates, approvedBy: user.id, approvedAt: new Date() });
+      if (!updatedRequest) return res.status(404).json({ message: "Leave request not found" });
       res.json(updatedRequest);
     } catch (error) {
       res.status(400).json({ message: "Invalid update data" });
     }
   });
 
+  // --- Payslips Routes ---
   app.get("/api/payslips", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user!;
+    
+    // Admin/Payroll Officer: Fetch All
+    if (req.query.all === 'true' && (user.role === 'payroll_officer' || user.role === 'admin')) {
+        try {
+            const all = await db.query.payslips.findMany();
+            return res.json(all);
+        } catch (e) {
+            console.error("Fetch all payslips error:", e);
+            return res.status(500).json({ message: "Failed to fetch all payslips" });
+        }
+    }
 
-    const payslips = await storage.getPayslipsByUser(req.user!.id);
-    res.json(payslips);
+    // Manager: Fetch Team + Self
+    if (req.query.all === 'true' && user.role === 'manager') {
+        try {
+            const team = await storage.getEmployeesForManager(user.id);
+            const ids = team.map(u => u.id);
+            ids.push(user.id); 
+            
+            const teamPayslips = await db.query.payslips.findMany({
+                where: inArray(payslips.userId, ids)
+            });
+            return res.json(teamPayslips);
+        } catch (e) {
+            console.error("Fetch manager payslips error:", e);
+            return res.status(500).json({ message: "Failed to fetch team payslips" });
+        }
+    }
+
+    // Default: By User
+    const result = await storage.getPayslipsByUser(user.id);
+    res.json(result);
   });
-
-  app.get("/api/payslips/all", async (req, res) => {
-  if (!req.isAuthenticated()) return res.sendStatus(401);
-
-  const payslips = await storage.getAllPayslips();
-  res.json(payslips);
-});
 
   app.post("/api/payslips", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const user = req.user!;
-    if (user.role !== 'payroll_officer') {
-      return res.status(403).json({ message: "Access denied" });
+    if (req.user!.role !== 'payroll_officer' && req.user!.role !== 'admin') {
+        return res.status(403).json({ message: "Access denied" });
     }
-
     try {
       const payslip = await storage.createPayslip(req.body);
       res.json(payslip);
     } catch (error: any) {
       res.status(400).json({ message: error.message || "Failed to create payslip" });
     }
-  });
-
-  app.get("/api/payslips/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const payslip = await storage.getPayslipById(req.params.id);
-    if (!payslip || payslip.userId !== req.user!.id) {
-      return res.status(404).json({ message: "Payslip not found" });
-    }
-
-    res.json(payslip);
   });
 
   app.patch("/api/payslips/:id", async (req, res) => {
@@ -350,7 +288,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Delete Payslip
   app.delete("/api/payslips/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const user = req.user!;
@@ -367,31 +304,21 @@ export function registerRoutes(app: Express): Server {
       res.status(400).json({ message: error.message });
     }
   });
-  
+
+  // --- Schedules ---
   app.get("/api/schedules", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
     const { startDate, endDate } = req.query;
-    const schedules = await storage.getSchedulesByUser(
-      req.user!.id,
-      startDate ? new Date(startDate as string) : undefined,
-      endDate ? new Date(endDate as string) : undefined
-    );
+    const schedules = await storage.getSchedulesByUser(req.user!.id, startDate ? new Date(startDate as string) : undefined, endDate ? new Date(endDate as string) : undefined);
     res.json(schedules);
   });
 
   app.post("/api/schedules", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
+    if (user.role !== 'manager' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
     try {
-      
       const apiData = insertScheduleApiSchema.parse(req.body);
-      
       const scheduleData = {
         ...apiData,
         date: new Date(apiData.date),
@@ -408,69 +335,40 @@ export function registerRoutes(app: Express): Server {
 
   app.get("/api/schedules/all", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
+    if (user.role !== 'manager' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
     const { startDate, endDate } = req.query;
-    const schedules = await storage.getAllSchedules(
-      startDate ? new Date(startDate as string) : undefined,
-      endDate ? new Date(endDate as string) : undefined
-    );
+    const schedules = await storage.getAllSchedules(startDate ? new Date(startDate as string) : undefined, endDate ? new Date(endDate as string) : undefined);
     res.json(schedules);
   });
 
   app.patch("/api/schedules/:id", async (req, res) => {
-    // Debug: Log that the route was hit
-    console.log(`[DEBUG] PATCH /api/schedules/${req.params.id} hit`);
-
-    if (!req.isAuthenticated()) {
-        console.log("[DEBUG] User not authenticated");
-        return res.sendStatus(401);
-    }
-
+    if (!req.isAuthenticated()) return res.sendStatus(401);
     const user = req.user!;
-    console.log(`[DEBUG] User Role: ${user.role}, User ID: ${user.id}`);
-
-    if (user.role !== 'manager' && user.role !== 'admin') {
-        console.log("[DEBUG] Access denied: Insufficient permissions");
-        return res.status(403).json({ message: "Access denied" });
-    }
+    if (user.role !== 'manager' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
 
     try {
-        // Debug: Log the payload being sent to the database
-        console.log("[DEBUG] Request Body (Updates):", JSON.stringify(req.body, null, 2));
+      const updates = { ...req.body };
+      if (updates.date) updates.date = new Date(updates.date);
+      if (updates.startTime) updates.startTime = new Date(updates.startTime);
+      if (updates.endTime) updates.endTime = new Date(updates.endTime);
 
-        const schedule = await storage.updateSchedule(req.params.id, req.body);
-
-        if (!schedule) {
-            console.log(`[DEBUG] Schedule with ID ${req.params.id} not found in DB`);
-            return res.status(404).json({ message: "Schedule not found" });
-        }
-
-        console.log("[DEBUG] Schedule updated successfully:", schedule);
-        res.json(schedule);
-    } catch (error) {
-        // Debug: Log the full error object
-        res.status(400).json({ message: (error.message) });
+      const schedule = await storage.updateSchedule(req.params.id, updates);
+      if (!schedule) return res.status(404).json({ message: "Schedule not found" });
+      res.json(schedule);
+    } catch (error: any) {
+      console.error("Update schedule error:", error);
+      res.status(400).json({ message: error.message });
     }
-});
+  });
 
   app.delete("/api/schedules/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
+    if (user.role !== 'manager' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
     try {
       const success = await storage.deleteSchedule(req.params.id);
-      if (!success) {
-        return res.status(404).json({ message: "Schedule not found" });
-      }
+      if (!success) return res.status(404).json({ message: "Schedule not found" });
       res.json({ message: "Schedule deleted successfully" });
     } catch (error) {
       res.status(400).json({ message: "Failed to delete schedule" });
@@ -479,34 +377,24 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/schedules/copy-week", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
+    if (user.role !== 'manager' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
     try {
       const { sourceWeekStart, targetWeekStart } = req.body;
       const sourceStart = new Date(sourceWeekStart);
       const sourceEnd = new Date(sourceStart);
       sourceEnd.setDate(sourceStart.getDate() + 6);
-
       const sourceSchedules = await storage.getAllSchedules(sourceStart, sourceEnd);
-
       const targetStart = new Date(targetWeekStart);
       const daysDiff = Math.floor((targetStart.getTime() - sourceStart.getTime()) / (1000 * 60 * 60 * 24));
-
       const newSchedules = [];
       for (const schedule of sourceSchedules) {
         const newDate = new Date(schedule.date);
         newDate.setDate(newDate.getDate() + daysDiff);
-
         const newStartTime = new Date(schedule.startTime);
         newStartTime.setDate(newStartTime.getDate() + daysDiff);
-
         const newEndTime = new Date(schedule.endTime);
         newEndTime.setDate(newEndTime.getDate() + daysDiff);
-
         const newSchedule = await storage.createSchedule({
           userId: schedule.userId,
           date: newDate,
@@ -521,34 +409,25 @@ export function registerRoutes(app: Express): Server {
         });
         newSchedules.push(newSchedule);
       }
-
       res.json({ message: `Copied ${newSchedules.length} shifts`, schedules: newSchedules });
     } catch (error: any) {
       res.status(400).json({ message: error.message || "Failed to copy schedule" });
     }
   });
 
-
+  // --- Announcements ---
   app.get("/api/announcements", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    
     const announcements = await storage.getAllAnnouncements(req.user!.department);
     res.json(announcements);
   });
 
   app.post("/api/announcements", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'hr' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
+    if (user.role !== 'manager' && user.role !== 'hr' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
     try {
-      const announcementData = insertAnnouncementSchema.parse({
-        ...req.body,
-        authorId: user.id,
-      });
+      const announcementData = insertAnnouncementSchema.parse({ ...req.body, authorId: user.id });
       const announcement = await storage.createAnnouncement(announcementData);
       res.json(announcement);
     } catch (error) {
@@ -556,158 +435,39 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  //app.patch
   app.patch("/api/announcements/:id", async (req, res) => {
-  try {
-    // Ensure user is authenticated
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    
-    // Only allow managers, HR, or admins
-    if (!["manager", "hr", "admin"].includes(user.role)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    // Validate incoming data (partial updates allowed)
-    const updateData = insertAnnouncementSchema.partial().parse(req.body);
-
-    // Update the announcement in your storage
-    const updated = await storage.updateAnnouncement(req.params.id, updateData);
-
-    if (!updated) {
-      return res.status(404).json({ message: "Announcement not found" });
-    }
-
-    // Send JSON response
-    res.json(updated);
-  } catch (err) {
-    console.error(err);
-    res.status(400).json({ message: "Invalid update data" });
-  }
-});
-
-
-
-  app.get("/api/activities", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
-    const activities = await storage.getActivitiesByUser(req.user!.id, limit);
-    res.json(activities);
-  });
-
-  app.get("/api/activities/all", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    if (req.user!.role !== 'admin') {
-      return res.status(403).json({ error: "Forbidden: Admin access only" });
-    }
-
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
-    const activities = await storage.getAllActivities(limit);
-    res.json(activities);
-  });
-
-
-  app.get("/api/trainings", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    const trainings = await storage.getAllTrainings();
-    res.json(trainings);
-  });
-
-  app.get("/api/user-trainings", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    const userTrainings = await storage.getUserTrainings(req.user!.id);
-    res.json(userTrainings);
-  });
-
-  app.patch("/api/profile", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
+    if (!["manager", "hr", "admin"].includes(user.role)) return res.status(403).json({ message: "Access denied" });
     try {
-      const allowedUpdates = z.object({
-        firstName: z.string().optional(),
-        lastName: z.string().optional(),
-        email: z.string().email().optional(),
-        phoneNumber: z.string().optional(),
-        emergencyContact: z.any().optional(),
-        address: z.any().optional(),
-      }).parse(req.body);
-
-      const updatedUser = await storage.updateUser(req.user!.id, allowedUpdates);
-      
-      if (!updatedUser) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      await storage.createActivity({
-        userId: req.user!.id,
-        type: "profile_updated",
-        description: "Profile information updated",
-        metadata: { updatedFields: Object.keys(allowedUpdates) },
-      });
-
-      res.json(updatedUser);
-    } catch (error) {
-      res.status(400).json({ message: "Invalid profile update data" });
+      const updateData = insertAnnouncementSchema.partial().parse(req.body);
+      const updated = await storage.updateAnnouncement(req.params.id, updateData);
+      if (!updated) return res.status(404).json({ message: "Announcement not found" });
+      res.json(updated);
+    } catch (err) {
+      res.status(400).json({ message: "Invalid update data" });
     }
   });
 
-  app.get("/api/team", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin' && user.role !== 'payroll_officer') {
-        return res.status(403).json({ message: "Access denied" });
-    }
-
-    let teamMembers;
-    if (user.role === 'admin' || user.role === 'payroll_officer') {
-        // Admin: Return ALL users (Admins, Managers, Employees) for a comprehensive view
-        // This is crucial for cross-referencing manager names in the frontend.
-        teamMembers = await storage.getAllUsers();
-    } else {
-        // Manager: Return ONLY their direct reports (Employees)
-        teamMembers = await storage.getEmployeesForManager(user.id);
-    }
-
-    res.json(teamMembers);
-  });
-
+  // --- Reports & Analytics ---
   app.get("/api/dashboard-stats", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-
     const leaveRequests = await storage.getLeaveRequestsByUser(user.id);
     const approvedLeaves = leaveRequests.filter(req => req.status === 'approved');
     const usedDays = approvedLeaves.reduce((sum, req) => sum + req.days, 0);
     const leaveBalance = Math.max(0, 25 - usedDays);
-
     let pendingApprovals = 0;
     if (user.role === 'manager' || user.role === 'hr') {
-      const pending = await storage.getPendingLeaveRequests(
-        user.role === 'manager' ? user.id : undefined
-      );
+      const pending = await storage.getPendingLeaveRequests(user.role === 'manager' ? user.id : undefined);
       pendingApprovals = pending.length;
     }
 
-    const userTrainings = await storage.getUserTrainings(user.id);
-    const completedTrainings = userTrainings.filter(ut => ut.status === 'completed');
-    const allTrainings = await storage.getAllTrainings();
-    const requiredTrainings = allTrainings.filter(t => t.isMandatory);
-    const trainingProgress = requiredTrainings.length > 0
-      ? Math.round((completedTrainings.length / requiredTrainings.length) * 100)
-      : 0;
     const now = new Date();
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - now.getDay());
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 7);
-
     const weekSchedules = await storage.getSchedulesByUser(user.id, weekStart, weekEnd);
     const weeklyHours = weekSchedules.reduce((sum, schedule) => {
       if (schedule.type === 'work' && schedule.startTime && schedule.endTime) {
@@ -716,193 +476,57 @@ export function registerRoutes(app: Express): Server {
       }
       return sum;
     }, 0);
-
-    const stats = {
-      leaveBalance: `${leaveBalance} days`,
-      weeklyHours: `${weeklyHours.toFixed(1)} hrs`,
-      pendingApprovals,
-      trainingProgress: `${trainingProgress}%`,
-    };
-
-    res.json(stats);
+    res.json({ leaveBalance: `${leaveBalance} days`, weeklyHours: `${weeklyHours.toFixed(1)} hrs`, pendingApprovals });
   });
 
-  app.post("/api/reports", async (req, res) => {
+  app.get("/api/team", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    try {
-      const reportData = insertReportSchema.parse({
-        ...req.body,
-        userId: req.user!.id,
-      });
-      const report = await storage.createReport(reportData);
-      res.json(report);
-    } catch (error) {
-      res.status(400).json({ message: "Invalid report data" });
-    }
-  });
-
-  app.get("/api/reports", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
     const user = req.user!;
-    if (user.role === 'manager' || user.role === 'hr') {
-      const reports = await storage.getAllReports();
-      res.json(reports);
-    } else {
-      const reports = await storage.getReportsByUser(user.id);
-      res.json(reports);
-    }
+    if (user.role !== 'manager' && user.role !== 'admin' && user.role !== 'payroll_officer') return res.status(403).json({ message: "Access denied" });
+    let teamMembers;
+    if (user.role === 'admin' || user.role === 'payroll_officer') teamMembers = await storage.getAllUsers();
+    else teamMembers = await storage.getEmployeesForManager(user.id);
+    res.json(teamMembers);
   });
 
-  app.get("/api/reports/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const report = await storage.getReportById(req.params.id);
-    if (!report) {
-      return res.status(404).json({ message: "Report not found" });
-    }
-
-    const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin' && report.userId !== user.id) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    res.json(report);
-  });
-
-  app.patch("/api/reports/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    try {
-      const updates = z.object({
-        status: z.enum(["pending", "investigating", "resolved", "closed"]).optional(),
-        assignedTo: z.string().optional(),
-        resolvedBy: z.string().optional(),
-        resolvedAt: z.date().optional(),
-        notes: z.string().optional(),
-      }).parse(req.body);
-
-      const updatedReport = await storage.updateReport(req.params.id, updates);
-      if (!updatedReport) {
-        return res.status(404).json({ message: "Report not found" });
-      }
-
-      res.json(updatedReport);
-    } catch (error) {
-      res.status(400).json({ message: "Invalid update data" });
-    }
-  });
-
-  app.post("/api/labor-cost-data", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'hr') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    try {
-      const data = insertLaborCostDataSchema.parse(req.body);
-      const laborCost = await storage.createLaborCostData(data);
-      res.json(laborCost);
-    } catch (error) {
-      res.status(400).json({ message: "Invalid labor cost data" });
-    }
-  });
-
-  app.get("/api/labor-cost-data", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'hr') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    const year = req.query.year ? parseInt(req.query.year as string) : undefined;
-    const data = await storage.getLaborCostData(year);
-    res.json(data);
-  });
-
-  app.get("/api/labor-cost-data/:month/:year", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'hr') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    const month = parseInt(req.params.month);
-    const year = parseInt(req.params.year);
-    const data = await storage.getLaborCostDataByMonth(month, year);
-
-    if (!data) {
-      return res.status(404).json({ message: "Data not found" });
-    }
-
-    res.json(data);
-  });
-
-  app.patch("/api/labor-cost-data/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-
-    const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'hr') {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    try {
-      const updates = z.object({
-        totalSales: z.number().optional(),
-        totalLaborCost: z.number().optional(),
-        laborCostPercentage: z.number().optional(),
-        status: z.string().optional(),
-        performanceRating: z.string().optional(),
-        notes: z.string().optional(),
-      }).parse(req.body);
-
-      const updatedData = await storage.updateLaborCostData(req.params.id, updates);
-      if (!updatedData) {
-        return res.status(404).json({ message: "Data not found" });
-      }
-
-      res.json(updatedData);
-    } catch (error) {
-      res.status(400).json({ message: "Invalid update data" });
-    }
-  });
-
-  // Attendance routes
+  // --- Attendance Overrides ---
   app.post("/api/attendance/clock-in", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
-    }
+    if (!req.isAuthenticated()) return res.status(401).send("Not authenticated");
+    const user = req.user as any;
+    const clockInTime = req.body.date ? new Date(req.body.date) : new Date();
+    // FIX: No getDayRange call yet
 
-    const user = req.user!;
     try {
-      // Check if already clocked in today
-      const todayAttendance = await storage.getTodayAttendance(user.id);
-      if (todayAttendance && !todayAttendance.timeOut) {
-        return res.status(400).json({ message: "Already clocked in today" });
+      // 1. Check for ANY active session (clocked in, not out)
+      const activeSession = await db.query.attendance.findFirst({
+        where: and(eq(attendance.userId, user.id), isNull(attendance.timeOut))
+      });
+
+      if (activeSession) {
+        return res.status(400).json({ message: "You are already clocked in." });
       }
 
       const { notes } = req.body;
-      const attendance = await storage.clockIn(user.id, new Date(), notes);
+      
+      // FIX: Pass Date object to insert
+      const newRecord = await db.insert(attendance).values({
+        userId: user.id,
+        date: clockInTime, // Date object
+        timeIn: clockInTime, // Date object
+        status: "clocked_in",
+        notes: notes,
+        totalBreakMinutes: 0,
+        totalWorkMinutes: 0
+      }).returning();
 
-      await storage.createActivity({
+      await db.insert(activities).values({
         userId: user.id,
         type: "clock_in",
         entityType: "attendance",
-        entityId: attendance.id,
-        details: { action: "clock_in", userName: `${user.firstName} ${user.lastName}` },
+        entityId: newRecord[0].id,
+        details: { action: "clock_in", userName: `${user.firstName} ${user.lastName}` }
       });
-
-      res.json(attendance);
+      res.json(newRecord[0]);
     } catch (error) {
       console.error("Clock in error:", error);
       res.status(500).json({ message: "Failed to clock in" });
@@ -910,38 +534,44 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.post("/api/attendance/clock-out", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
-    }
+    if (!req.isAuthenticated()) return res.status(401).send("Not authenticated");
+    const user = req.user as any;
+    const clockOutTime = new Date(); 
 
-    const user = req.user!;
     try {
-      const todayAttendance = await storage.getTodayAttendance(user.id);
-      if (!todayAttendance) {
-        return res.status(400).json({ message: "No active clock-in found" });
-      }
+      // Find ACTIVE session
+      const currentAttendance = await db.query.attendance.findFirst({
+        where: and(eq(attendance.userId, user.id), isNull(attendance.timeOut))
+      });
 
-      if (todayAttendance.timeOut) {
-        return res.status(400).json({ message: "Already clocked out" });
-      }
+      if (!currentAttendance) return res.status(400).json({ message: "No active clock-in found." });
 
-      // Check if there's an active break
-      const activeBreak = await storage.getActiveBreak(user.id);
-      if (activeBreak) {
-        return res.status(400).json({ message: "Please end your break before clocking out" });
-      }
+      // Check for active breaks
+      const activeBreak = await db.query.breaks.findFirst({
+        where: and(eq(breaks.attendanceId, currentAttendance.id), isNull(breaks.breakEnd))
+      });
+      if (activeBreak) return res.status(400).json({ message: "Please end your break before clocking out" });
 
-      const attendance = await storage.clockOut(todayAttendance.id);
+      const durationMs = clockOutTime.getTime() - Number(currentAttendance.timeIn);
+      const workMinutes = Math.floor(durationMs / 60000) - (currentAttendance.totalBreakMinutes || 0);
 
-      await storage.createActivity({
+      const updated = await db.update(attendance)
+        .set({ 
+            timeOut: clockOutTime, // Date object
+            status: "clocked_out", 
+            totalWorkMinutes: workMinutes > 0 ? workMinutes : 0 
+        })
+        .where(eq(attendance.id, currentAttendance.id))
+        .returning();
+
+      await db.insert(activities).values({
         userId: user.id,
         type: "clock_out",
         entityType: "attendance",
-        entityId: todayAttendance.id,
-        details: { action: "clock_out", userName: `${user.firstName} ${user.lastName}` },
+        entityId: currentAttendance.id,
+        details: { action: "clock_out", userName: `${user.firstName} ${user.lastName}` }
       });
-
-      res.json(attendance);
+      res.json(updated[0]);
     } catch (error) {
       console.error("Clock out error:", error);
       res.status(500).json({ message: "Failed to clock out" });
@@ -949,40 +579,44 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.post("/api/attendance/break-start", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
-    }
+    if (!req.isAuthenticated()) return res.status(401).send("Not authenticated");
+    const user = req.user as any;
+    const breakStartTime = new Date();
 
-    const user = req.user!;
     try {
-      const todayAttendance = await storage.getTodayAttendance(user.id);
-      if (!todayAttendance || todayAttendance.timeOut) {
-        return res.status(400).json({ message: "Must be clocked in to take a break" });
-      }
+      // Find ACTIVE session
+      const currentAttendance = await db.query.attendance.findFirst({
+        where: and(eq(attendance.userId, user.id), isNull(attendance.timeOut))
+      });
+      
+      if (!currentAttendance) return res.status(400).json({ message: "Must be clocked in to take a break" });
 
-      // Check if already on break
-      const activeBreak = await storage.getActiveBreak(user.id);
-      if (activeBreak) {
-        return res.status(400).json({ message: "Already on break" });
-      }
+      const activeBreak = await db.query.breaks.findFirst({
+        where: and(eq(breaks.attendanceId, currentAttendance.id), isNull(breaks.breakEnd))
+      });
+      if (activeBreak) return res.status(400).json({ message: "Already on break" });
 
       const { breakType, notes } = req.body;
-      const breakRecord = await storage.startBreak(
-        todayAttendance.id,
-        user.id,
-        breakType || "regular",
-        notes
-      );
+      
+      // FIX: Pass Date objects for timestamps
+      const newBreak = await db.insert(breaks).values({
+        attendanceId: currentAttendance.id,
+        userId: user.id,
+        breakStart: breakStartTime,
+        breakType: breakType || "regular",
+        notes: notes
+      }).returning();
 
-      await storage.createActivity({
+      await db.update(attendance).set({ status: "on_break" }).where(eq(attendance.id, currentAttendance.id));
+
+      await db.insert(activities).values({
         userId: user.id,
         type: "break_start",
         entityType: "break",
-        entityId: breakRecord.id,
-        details: { action: "break_start", breakType: breakType || 'regular', userName: `${user.firstName} ${user.lastName}` },
+        entityId: newBreak[0].id,
+        details: { action: "break_start", breakType: breakType || 'regular', userName: `${user.firstName} ${user.lastName}` }
       });
-
-      res.json(breakRecord);
+      res.json(newBreak[0]);
     } catch (error) {
       console.error("Break start error:", error);
       res.status(500).json({ message: "Failed to start break" });
@@ -990,28 +624,39 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.post("/api/attendance/break-end", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
-    }
+    if (!req.isAuthenticated()) return res.status(401).send("Not authenticated");
+    const user = req.user as any;
+    const breakEndTime = new Date();
 
-    const user = req.user!;
     try {
-      const activeBreak = await storage.getActiveBreak(user.id);
-      if (!activeBreak) {
-        return res.status(400).json({ message: "No active break found" });
+      // Find ACTIVE break
+      const activeBreak = await db.query.breaks.findFirst({
+        where: and(eq(breaks.userId, user.id), isNull(breaks.breakEnd))
+      });
+      if (!activeBreak) return res.status(400).json({ message: "No active break found" });
+
+      const breakDuration = Math.floor((breakEndTime.getTime() - Number(activeBreak.breakStart)) / 60000);
+
+      const updatedBreak = await db.update(breaks)
+        .set({ breakEnd: breakEndTime, breakMinutes: breakDuration }) // Pass Date object
+        .where(eq(breaks.id, activeBreak.id))
+        .returning();
+
+      const att = await db.query.attendance.findFirst({ where: eq(attendance.id, activeBreak.attendanceId) });
+      if (att) {
+        await db.update(attendance)
+          .set({ status: "clocked_in", totalBreakMinutes: (att.totalBreakMinutes || 0) + breakDuration })
+          .where(eq(attendance.id, att.id));
       }
 
-      const breakRecord = await storage.endBreak(activeBreak.id);
-
-      await storage.createActivity({
+      await db.insert(activities).values({
         userId: user.id,
         type: "break_end",
         entityType: "break",
         entityId: activeBreak.id,
-        details: { action: "break_end", userName: `${user.firstName} ${user.lastName}` },
+        details: { action: "break_end", userName: `${user.firstName} ${user.lastName}` }
       });
-
-      res.json(breakRecord);
+      res.json(updatedBreak[0]);
     } catch (error) {
       console.error("Break end error:", error);
       res.status(500).json({ message: "Failed to end break" });
@@ -1019,66 +664,60 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.get("/api/attendance/today", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
-    }
+    if (!req.isAuthenticated()) return res.status(401).send("Not authenticated");
+    const user = req.user as any;
+    const today = new Date();
+    const { start, end } = getDayRange(today);
 
-    const user = req.user!;
     try {
-      const todayAttendance = await storage.getTodayAttendance(user.id);
-      const activeBreak = await storage.getActiveBreak(user.id);
+      // 1. Check for ACTIVE session first (Overnight support)
+      let todayAttendance = await db.query.attendance.findFirst({
+        where: and(eq(attendance.userId, user.id), isNull(attendance.timeOut))
+      });
 
-      let breaks = [];
-      if (todayAttendance) {
-        breaks = await storage.getBreaksByAttendance(todayAttendance.id);
+      // 2. If no active session, check for completed session TODAY
+      if (!todayAttendance) {
+          todayAttendance = await db.query.attendance.findFirst({
+            where: and(eq(attendance.userId, user.id), gte(attendance.date, start), lte(attendance.date, end)),
+            orderBy: [desc(attendance.timeIn)]
+          });
       }
 
-      res.json({
-        attendance: todayAttendance || null,
-        activeBreak: activeBreak || null,
-        breaks,
-      });
+      let activeBreak = null;
+      let breaksList = [];
+
+      if (todayAttendance) {
+        breaksList = await db.query.breaks.findMany({ where: eq(breaks.attendanceId, todayAttendance.id) });
+        activeBreak = breaksList.find(b => !b.breakEnd) || null;
+      }
+
+      res.json({ attendance: todayAttendance || null, activeBreak: activeBreak, breaks: breaksList });
     } catch (error) {
       console.error("Get today attendance error:", error);
       res.status(500).json({ message: "Failed to get attendance" });
     }
   });
 
-  app.get("/api/attendance", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
-    }
-
-    const user = req.user!;
-    try {
-      const { startDate, endDate } = req.query;
-      const start = startDate ? new Date(startDate as string) : undefined;
-      const end = endDate ? new Date(endDate as string) : undefined;
-
-      const attendanceRecords = await storage.getAttendanceByUser(user.id, start, end);
-      res.json(attendanceRecords);
-    } catch (error) {
-      console.error("Get attendance error:", error);
-      res.status(500).json({ message: "Failed to get attendance records" });
-    }
-  });
-
+  // Get All Attendance (Filtered by Date)
   app.get("/api/attendance/all", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
-    }
-
+    if (!req.isAuthenticated()) return res.status(401).send("Not authenticated");
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'payroll_officer' && user.role !== 'admin') {
-      return res.status(403).json({ message: "Access denied" });
-    }
+    // Allow managers/admin/payroll
+    if (user.role !== 'manager' && user.role !== 'payroll_officer' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
 
     try {
       const { startDate, endDate } = req.query;
       const start = startDate ? new Date(startDate as string) : undefined;
       const end = endDate ? new Date(endDate as string) : undefined;
 
-      const attendanceRecords = await storage.getAllAttendance(start, end);
+      const conditions = [];
+      if (start) conditions.push(gte(attendance.date, start));
+      if (end) conditions.push(lte(attendance.date, end));
+
+      const attendanceRecords = await db.query.attendance.findMany({
+         where: conditions.length > 0 ? and(...conditions) : undefined,
+         orderBy: [desc(attendance.date)]
+      });
       res.json(attendanceRecords);
     } catch (error) {
       console.error("Get all attendance error:", error);

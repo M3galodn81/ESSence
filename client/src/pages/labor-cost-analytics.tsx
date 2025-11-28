@@ -359,7 +359,7 @@ export default function LaborCostAnalytics() {
                         />
                      </svg>
                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className={`font-bold tracking-tighter ${currentMonthData.laborCostPercentage > 99900 ? 'text-3xl' : 'text-5xl'}`}>
+                        <span className={`font-bold ${currentMonthData.laborCostPercentage > 99900 ? 'text-3xl' : 'text-5xl'}`}>
                            {formatCompactNumber(currentMonthData.laborCostPercentage / 100)}<span className="text-2xl text-slate-400">%</span>
                         </span>
                         <span className="text-xs font-medium text-slate-400 uppercase mt-1">Labor / Sales</span>
@@ -404,7 +404,7 @@ export default function LaborCostAnalytics() {
            <Card className="bg-gradient-to-br from-blue-50/80 to-white/80 backdrop-blur-xl border-blue-100/60 shadow-sm rounded-3xl">
               <CardHeader className="pb-2">
                  <CardTitle className="text-sm font-bold text-blue-600 uppercase tracking-wider flex items-center gap-2">
-                    <Lightbulb className="w-4 h-4" /> AI Insight
+                    <Lightbulb className="w-4 h-4" /> Suggestions
                  </CardTitle>
               </CardHeader>
               <CardContent>

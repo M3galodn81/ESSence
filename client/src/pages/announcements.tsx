@@ -206,7 +206,7 @@ export default function Announcements() {
 
       {/* Bento Grid Stats - Refactored to use Components */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <BentoCard title="Total Posts" value={stats.total} icon={Bell} variant="default" testIdPrefix="total-announcements" />
+        <BentoCard title="Total Announcements" value={stats.total} icon={Bell} variant="default" testIdPrefix="total-announcements" />
         <BentoCard title="Active" value={stats.active} icon={Eye} variant="emerald" testIdPrefix="active-announcements" />
         <BentoCard title="Urgent" value={stats.urgent} icon={AlertCircle} variant="rose" testIdPrefix="urgent-announcements" />
         <BentoCard title="This Week" value={stats.thisWeek} icon={Clock} variant="amber" testIdPrefix="weekly-announcements" />
@@ -287,7 +287,7 @@ export default function Announcements() {
               </p>
               {canManage && announcements?.length === 0 && (
                  <Button onClick={() => setIsDialogOpen(true)} className="rounded-full">
-                    <Plus className="w-4 h-4 mr-2" /> Create First Post
+                    <Plus className="w-4 h-4 mr-2" /> Create First Announcement
                  </Button>
               )}
             </div>
