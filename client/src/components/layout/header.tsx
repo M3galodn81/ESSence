@@ -41,13 +41,13 @@ export default function Header({ title, subtitle }: HeaderProps) {
         {/* Actions Section */}
         <div className="flex items-center space-x-3 md:space-x-4">
           {/* Search Input (Visual Enhancement) */}
-          <div className="hidden md:flex relative group">
+          {/* <div className="hidden md:flex relative group">
              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-primary transition-colors" />
              <Input 
                placeholder="Search..." 
                className="pl-9 h-10 w-48 lg:w-64 bg-slate-100/50 border-transparent focus:bg-white focus:border-primary/20 focus:ring-2 focus:ring-primary/10 rounded-full transition-all text-sm"
              />
-          </div>
+          </div> */}
 
           {/* Notification Bell */}
           <Popover>

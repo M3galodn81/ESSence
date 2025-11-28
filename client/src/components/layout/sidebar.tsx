@@ -21,7 +21,7 @@ import {
   Briefcase
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { canAccessManagementTab } from "@/lib/permissions";
+import { canAccessManagementTab, canAccessPayslipManagement } from "@/lib/permissions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -49,9 +49,14 @@ const managementItems = [
   { path: "/user-management", label: "User Management", icon: UserPlus, roles: ["manager", "admin"] },
   { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
   { path: "/shift-management", label: "Shift Management", icon: Calendar, roles: ["manager", "admin"] },
+  { path: "/labor-cost-analytics", label: "Labor Analytics", icon: Briefcase, roles: ["manager"] },
+];
+
+const payrollItems = [
   { path: "/payslip-history", label: "Payslip History", icon: FileText, roles: ["payroll_officer"] },
   { path: "/payroll-management", label: "Payroll Generator", icon: PhilippinePeso, roles: ["payroll_officer"] },
-  { path: "/labor-cost-analytics", label: "Labor Analytics", icon: Briefcase, roles: ["manager"] },
+  { path: "/admin-attendance", label: "Employee Attendance", icon: FileText, roles: ["payroll_officer"] },
+  { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, roles: ["payroll_officer"] },
 ];
 
 export default function Sidebar({ className }: SidebarProps) {
@@ -83,7 +88,7 @@ export default function Sidebar({ className }: SidebarProps) {
     setIsMobileOpen(false);
   };
 
-  const canAccessManagement = canAccessManagementTab(user) || user?.role === "payroll_officer";
+  const canAccessManagement = canAccessManagementTab(user) ;
 
   const isActive = (path: string) => {
     if (path === "/") return location === "/";
@@ -104,8 +109,8 @@ export default function Sidebar({ className }: SidebarProps) {
           />
         </div>
         <div className="mt-4 text-center">
-          <h1 className="font-bold text-white tracking-tight">ESSence</h1>
-          <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Self Service</p>
+          <h1 className="font-bold text-lg text-white tracking-tight">ESSence</h1>
+          {/* <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Self Service</p> */}
         </div>
       </div>
 
@@ -144,6 +149,33 @@ export default function Sidebar({ className }: SidebarProps) {
               Admin & Management
             </p>
             {managementItems
+              .filter(item => item.roles.includes(user?.role || "employee"))
+              .map((item) => (
+                <Button
+                  key={item.path}
+                  variant="ghost"
+                  className={cn(
+                    "w-full justify-start h-11 mb-1 transition-all duration-200 ease-in-out rounded-lg group",
+                    isActive(item.path)
+                      ? "bg-gradient-to-r from-primary to-red-700 text-white shadow-md shadow-primary/20 font-medium"
+                      : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/50"
+                  )}
+                  onClick={() => handleNavigation(item.path)}
+                  data-testid={`nav-${item.path.slice(1)}`}
+                >
+                  <item.icon className={cn("w-5 h-5 mr-3", isActive(item.path) ? "text-white" : "text-slate-500 group-hover:text-slate-300")} />
+                  {item.label}
+                </Button>
+              ))}
+          </div>
+        )}
+
+        {canAccessPayslipManagement(user) && (
+          <div className="mt-8 space-y-1">
+            <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Payslips
+            </p>
+            {payrollItems
               .filter(item => item.roles.includes(user?.role || "employee"))
               .map((item) => (
                 <Button

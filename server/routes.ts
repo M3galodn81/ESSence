@@ -5,7 +5,8 @@ import { setupAuth, hashPassword } from "./auth";
 import {
   insertLeaveRequestSchema,
   insertAnnouncementSchema,
-  insertDocumentSchema,
+    insertHolidaySchema,
+  holidays,
   insertScheduleSchema,
   insertScheduleApiSchema,
   insertReportSchema,
@@ -179,6 +180,37 @@ export function registerRoutes(app: Express): Server {
       res.status(400).send(error.message || "Failed to delete user");
     }
   });
+
+  app.get("/api/holidays", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const allHolidays = await db.select().from(holidays);
+    res.json(allHolidays);
+  });
+
+  app.post("/api/holidays", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (req.user!.role !== 'payroll_officer' && req.user!.role !== 'admin') return res.status(403).json({ message: "Access denied" });
+    
+    try {
+      const data = insertHolidaySchema.parse({
+        ...req.body,
+        date: new Date(req.body.date),
+      });
+      const holiday = await db.insert(holidays).values(data).returning();
+      res.json(holiday[0]);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid holiday data" });
+    }
+  });
+
+  app.delete("/api/holidays/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+     if (req.user!.role !== 'payroll_officer' && req.user!.role !== 'admin') return res.status(403).json({ message: "Access denied" });
+    
+    await db.delete(holidays).where(eq(holidays.id, req.params.id));
+    res.json({ message: "Holiday deleted" });
+  });
+
 
   app.post("/api/leave-requests", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -496,27 +528,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.get("/api/documents", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    const documents = await storage.getDocumentsByUser(req.user!.id);
-    res.json(documents);
-  });
-
-  app.post("/api/documents", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    try {
-      const documentData = insertDocumentSchema.parse({
-        ...req.body,
-        userId: req.user!.id,
-      });
-      const document = await storage.createDocument(documentData);
-      res.json(document);
-    } catch (error) {
-      res.status(400).json({ message: "Invalid document data" });
-    }
-  });
 
   app.get("/api/announcements", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
