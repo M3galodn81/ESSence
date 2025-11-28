@@ -75,7 +75,7 @@ export default function PayslipHistory() {
   const { data: payslips, isLoading } = useQuery({
     queryKey: ["/api/payslips", { all: true }],
     queryFn: async () => {
-       const res = await fetch("/api/payslips/all");
+       const res = await fetch("/api/payslips?all=true");
        if (!res.ok) throw new Error("Failed to fetch payslips");
        return res.json();
     }
@@ -419,8 +419,8 @@ export default function PayslipHistory() {
                                                 <span className="font-medium text-slate-700 text-right">₱{(group.deductions.philHealth / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                                 <span className="text-slate-500">Pag-IBIG:</span>
                                                 <span className="font-medium text-slate-700 text-right">₱{(group.deductions.pagIbig / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                <span className="text-slate-500">Tax:</span>
-                                                <span className="font-medium text-slate-700 text-right">₱{(group.deductions.tax / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                {/* <span className="text-slate-500">Tax:</span> */}
+                                                {/* <span className="font-medium text-slate-700 text-right">₱{(group.deductions.tax / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span> */}
                                                 {group.deductions.others > 0 && (
                                                     <>
                                                         <span className="text-slate-500">Others:</span>
@@ -505,7 +505,7 @@ export default function PayslipHistory() {
                          <div className="flex justify-between"><span className="text-slate-600">SSS</span><span className="font-medium">₱{((selectedPayslip.deductions?.sss || 0) / 100).toLocaleString()}</span></div>
                          <div className="flex justify-between"><span className="text-slate-600">PhilHealth</span><span className="font-medium">₱{((selectedPayslip.deductions?.philHealth || 0) / 100).toLocaleString()}</span></div>
                          <div className="flex justify-between"><span className="text-slate-600">Pag-IBIG</span><span className="font-medium">₱{((selectedPayslip.deductions?.pagIbig || 0) / 100).toLocaleString()}</span></div>
-                         <div className="flex justify-between"><span className="text-slate-600">Tax</span><span className="font-medium">₱{((selectedPayslip.deductions?.tax || 0) / 100).toLocaleString()}</span></div>
+                         {/* <div className="flex justify-between"><span className="text-slate-600">Tax</span><span className="font-medium">₱{((selectedPayslip.deductions?.tax || 0) / 100).toLocaleString()}</span></div> */}
                          {selectedPayslip.deductions?.others > 0 && <div className="flex justify-between"><span className="text-slate-600">Others</span><span className="font-medium">₱{((selectedPayslip.deductions?.others || 0) / 100).toLocaleString()}</span></div>}
                          <div className="pt-2 border-t flex justify-between font-bold text-rose-600"><span>Total Deductions</span><span>-₱{((selectedPayslip.grossPay - selectedPayslip.netPay) / 100).toLocaleString()}</span></div>
                       </div>
@@ -578,7 +578,7 @@ export default function PayslipHistory() {
                                 <div className="flex justify-between text-xs text-rose-600"><span>SSS:</span><span>-{editForm.sss.toLocaleString()}</span></div>
                                 <div className="flex justify-between text-xs text-rose-600"><span>PhilHealth:</span><span>-{editForm.philHealth.toLocaleString()}</span></div>
                                 <div className="flex justify-between text-xs text-rose-600"><span>Pag-IBIG:</span><span>-{editForm.pagIbig.toLocaleString()}</span></div>
-                                <div className="flex justify-between text-xs text-rose-600"><span>Tax:</span><span>-{editForm.tax.toLocaleString()}</span></div>
+                                {/* <div className="flex justify-between text-xs text-rose-600"><span>Tax:</span><span>-{editForm.tax.toLocaleString()}</span></div> */}
                                 <div className="flex justify-between text-xs text-rose-600"><span>Other Ded:</span><span>-{editForm.otherDeductions.toLocaleString()}</span></div>
                             </div>
 

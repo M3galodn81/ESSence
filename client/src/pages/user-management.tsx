@@ -8,70 +8,72 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
-  UserPlus,
-  Users,
-  Shield,
-  Edit,
-  Trash2,
-  Key,
-  Eye,
-  EyeOff,
-  AlertTriangle
+  UserPlus,
+  Users,
+  Shield,
+  Edit,
+  Trash2,
+  Key,
+  Briefcase,
+  AlertTriangle,
+  UserCog,
+  UserCheck
 } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { BentoCard } from "@/components/custom/bento-card";
 
 const createUserSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  email: z.string().email("Invalid email address"),
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  role: z.enum(["employee", "manager","payroll_officer"]),
-  department: z.string().optional(),
-  position: z.string().optional(),
-  employeeId: z.string().optional(),
-  phoneNumber: z.string().optional(),
-  managerId: z.string().optional(),
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  email: z.string().email("Invalid email address"),
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  role: z.enum(["employee", "manager","payroll_officer"]),
+  department: z.string().optional(),
+  position: z.string().optional(),
+  employeeId: z.string().optional(),
+  phoneNumber: z.string().optional(),
+  managerId: z.string().optional(),
 });
 
 const editUserSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  email: z.string().email("Invalid email address"),
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  role: z.enum(["employee", "manager", "admin","payroll_officer"]),
-  department: z.string().optional(),
-  position: z.string().optional(),
-  employeeId: z.string().optional(),
-  phoneNumber: z.string().optional(),
-  managerId: z.string().optional(),
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  email: z.string().email("Invalid email address"),
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  role: z.enum(["employee", "manager", "admin","payroll_officer"]),
+  department: z.string().optional(),
+  position: z.string().optional(),
+  employeeId: z.string().optional(),
+  phoneNumber: z.string().optional(),
+  managerId: z.string().optional(),
   
-  annualLeaveBalanceLimit: z.string().optional(),
-  sickLeaveBalanceLimit: z.string().optional(),
-  serviceIncentiveLeaveBalanceLimit: z.string().optional(),
+  annualLeaveBalanceLimit: z.string().optional(),
+  sickLeaveBalanceLimit: z.string().optional(),
+  serviceIncentiveLeaveBalanceLimit: z.string().optional(),
 });
 
 const changePasswordSchema = z.object({
-  newPassword: z.string().min(6, "Password must be at least 6 characters"),
-  confirmPassword: z.string().min(1, "Please confirm password"),
+  newPassword: z.string().min(6, "Password must be at least 6 characters"),
+  confirmPassword: z.string().min(1, "Please confirm password"),
 }).refine((data) => data.newPassword === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
 });
 
 type CreateUserForm = z.infer<typeof createUserSchema>;
@@ -79,60 +81,57 @@ type EditUserForm = z.infer<typeof editUserSchema>;
 type ChangePasswordForm = z.infer<typeof changePasswordSchema>;
 
 export default function UserManagement() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
-  const [isDemotionAlertOpen, setIsDemotionAlertOpen] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [isDemotionAlertOpen, setIsDemotionAlertOpen] = useState(false);
 
-  const createForm = useForm<CreateUserForm>({
-    resolver: zodResolver(createUserSchema),
-    defaultValues: {
-      username: "",
-      password: "",
-      email: "",
-      firstName: "",
-      lastName: "",
-      role: "employee",
-      department: "",
-      position: "",
-      employeeId: "",
-      phoneNumber: "",
-      managerId: "",
-    },
-  });
+  const createForm = useForm<CreateUserForm>({
+    resolver: zodResolver(createUserSchema),
+    defaultValues: {
+      username: "",
+      password: "",
+      email: "",
+      firstName: "",
+      lastName: "",
+      role: "employee",
+      department: "",
+      position: "",
+      employeeId: "",
+      phoneNumber: "",
+      managerId: "",
+    },
+  });
 
   const watchedCreateRole = createForm.watch("role");
 
-  const editForm = useForm<EditUserForm>({
-    resolver: zodResolver(editUserSchema),
-    // 🟢 Initializing only limit fields
-    defaultValues: {
-        annualLeaveBalanceLimit: "",
-        sickLeaveBalanceLimit: "",
-        serviceIncentiveLeaveBalanceLimit: "",
-    }
-  });
+  const editForm = useForm<EditUserForm>({
+    resolver: zodResolver(editUserSchema),
+    defaultValues: {
+        annualLeaveBalanceLimit: "",
+        sickLeaveBalanceLimit: "",
+        serviceIncentiveLeaveBalanceLimit: "",
+    }
+  });
 
-  const passwordForm = useForm<ChangePasswordForm>({
-    resolver: zodResolver(changePasswordSchema),
-    defaultValues: {
-      newPassword: "",
-      confirmPassword: "",
-    },
-  });
+  const passwordForm = useForm<ChangePasswordForm>({
+    resolver: zodResolver(changePasswordSchema),
+    defaultValues: {
+      newPassword: "",
+      confirmPassword: "",
+    },
+  });
 
-  const { data: users = [], isLoading: usersLoading } = useQuery({
-    queryKey: ["/api/users"],
-    enabled: user?.role === "admin" || user?.role === "manager",
-  });
+  const { data: users = [], isLoading: usersLoading } = useQuery({
+    queryKey: ["/api/users"],
+    enabled: user?.role === "admin" || user?.role === "manager",
+  });
 
-  // Filter out managers and admins for the employee creation/edit process
-  const managers = users.filter((u: any) => u.role === "manager" );
+  const managers = users.filter((u: any) => u.role === "manager" );
 
   const generateNextEmployeeId = (role: string) => {
     let prefix = "EMP";
@@ -140,14 +139,12 @@ export default function UserManagement() {
     if (role === "admin") prefix = "ADM";
     if (role === "payroll_officer") prefix = "PAY";
 
-    // Find all IDs that start with this prefix
     const existingIds = users
       .map((u: any) => u.employeeId)
       .filter((id: string) => id && id.startsWith(prefix));
 
     let maxNum = 0;
     existingIds.forEach((id: string) => {
-      // Split "EMP-001" -> ["EMP", "001"]
       const parts = id.split("-");
       if (parts.length === 2) {
         const num = parseInt(parts[1], 10);
@@ -157,7 +154,6 @@ export default function UserManagement() {
       }
     });
 
-    // Generate next number formatted with leading zeros (e.g., 005)
     const nextNum = (maxNum + 1).toString().padStart(3, "0");
     return `${prefix}-${nextNum}`;
   };
@@ -169,981 +165,566 @@ export default function UserManagement() {
     }
   }, [watchedCreateRole, isCreateDialogOpen, users, createForm.setValue]);
 
-  const createUserMutation = useMutation({
-    mutationFn: async (data: CreateUserForm) => {
-      const response = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        // 🟢 Clean up data: convert empty strings to null for optional fields
-        body: JSON.stringify({
-            ...data,
-            department: data.department || null,
-            position: data.position || null,
-            employeeId: data.employeeId || null,
-            phoneNumber: data.phoneNumber || null,
-            managerId: data.managerId || null,
-        }),
-      });
+  const createUserMutation = useMutation({
+    mutationFn: async (data: CreateUserForm) => {
+      const response = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+            ...data,
+            department: data.department || null,
+            position: data.position || null,
+            employeeId: data.employeeId || null,
+            phoneNumber: data.phoneNumber || null,
+            managerId: data.managerId || null,
+        }),
+      });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || "Failed to create user");
-      }
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || "Failed to create user");
+      }
 
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      setIsCreateDialogOpen(false);
-      createForm.reset();
-      toast({
-        title: "Success",
-        description: "User created successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setIsCreateDialogOpen(false);
+      createForm.reset();
+      toast({
+        title: "Success",
+        description: "User created successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
-  const editUserMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: EditUserForm }) => {
-        
-        // Helper to convert optional string number to integer or null
-        const parseOptionalInt = (value: string | undefined): number | null => {
-            if (value === undefined || value.trim() === "") return null;
-            const parsed = parseInt(value, 10);
-            return isNaN(parsed) ? null : parsed;
-        };
+  const editUserMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: EditUserForm }) => {
+        const parseOptionalInt = (value: string | undefined): number | null => {
+            if (value === undefined || value.trim() === "") return null;
+            const parsed = parseInt(value, 10);
+            return isNaN(parsed) ? null : parsed;
+        };
 
-        // 🟢 Clean up data: convert empty strings to null for optional fields and parse numbers
-        const cleanedData = {
-            ...data,
-            department: data.department || null,
-            position: data.position || null,
-            employeeId: data.employeeId || null,
-            phoneNumber: data.phoneNumber || null,
-            // Ensure managerId is null if employee role is changed to non-employee (Admin/Manager)
-            managerId: (data.role !== 'employee' || !data.managerId) ? null : data.managerId,
-            
-            // 🟢 LEAVE BALANCES (Limit Only)
+        const cleanedData = {
+            ...data,
+            department: data.department || null,
+            position: data.position || null,
+            employeeId: data.employeeId || null,
+            phoneNumber: data.phoneNumber || null,
+            managerId: (data.role !== 'employee' || !data.managerId) ? null : data.managerId,
             annualLeaveBalanceLimit: parseOptionalInt(data.annualLeaveBalanceLimit),
-            sickLeaveBalanceLimit: parseOptionalInt(data.sickLeaveBalanceLimit),
-            serviceIncentiveLeaveBalanceLimit: parseOptionalInt(data.serviceIncentiveLeaveBalanceLimit),
-        };
-        
-      const response = await fetch(`/api/users/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(cleanedData),
-      });
+            sickLeaveBalanceLimit: parseOptionalInt(data.sickLeaveBalanceLimit),
+            serviceIncentiveLeaveBalanceLimit: parseOptionalInt(data.serviceIncentiveLeaveBalanceLimit),
+        };
+        
+      const response = await fetch(`/api/users/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(cleanedData),
+      });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || "Failed to update user");
-      }
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || "Failed to update user");
+      }
 
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      setIsEditDialogOpen(false);
-      toast({
-        title: "Success",
-        description: "User updated successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setIsEditDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "User updated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
-  const changePasswordMutation = useMutation({
-    mutationFn: async ({ id, password }: { id: string; password: string }) => {
-      const response = await fetch(`/api/users/${id}/password`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ password }),
-      });
+  const changePasswordMutation = useMutation({
+    mutationFn: async ({ id, password }: { id: string; password: string }) => {
+      const response = await fetch(`/api/users/${id}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ password }),
+      });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || "Failed to change password");
-      }
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || "Failed to change password");
+      }
 
-      return response.json();
-    },
-    onSuccess: () => {
-      setIsPasswordDialogOpen(false);
-      passwordForm.reset();
-      toast({
-        title: "Success",
-        description: "Password changed successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+      return response.json();
+    },
+    onSuccess: () => {
+      setIsPasswordDialogOpen(false);
+      passwordForm.reset();
+      toast({
+        title: "Success",
+        description: "Password changed successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
-  const deleteUserMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await fetch(`/api/users/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+  const deleteUserMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/users/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
 
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || "Failed to delete user");
-      }
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error || "Failed to delete user");
+      }
 
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      setIsDeleteDialogOpen(false);
-      toast({
-        title: "Success",
-        description: "User deleted successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setIsDeleteDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "User deleted successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
-  const onCreateSubmit = (data: CreateUserForm) => {
-    createUserMutation.mutate(data);
-  };
+  const onCreateSubmit = (data: CreateUserForm) => {
+    createUserMutation.mutate(data);
+  };
 
-  const onEditSubmit = (data: EditUserForm) => {
-    if (!selectedUser) return;
-    
-    // Check for manager demotion conflict
-    const isDemotingManager = selectedUser.role === 'manager' && data.role !== 'manager';
-    const hasDirectReports = users.some((u: any) => u.managerId === selectedUser.id);
+  const onEditSubmit = (data: EditUserForm) => {
+    if (!selectedUser) return;
+    
+    const isDemotingManager = selectedUser.role === 'manager' && data.role !== 'manager';
+    const hasDirectReports = users.some((u: any) => u.managerId === selectedUser.id);
 
-    if (isDemotingManager && hasDirectReports) {
-        // Prevent submission and show alert if manager has reports
-        setIsDemotionAlertOpen(true);
-        return;
-    }
-    
-    // Proceed with mutation
-    editUserMutation.mutate({ id: selectedUser.id, data });
-  };
-    
-  // Function to handle demotion after confirming the alert
-  const handleConfirmedDemotion = () => {
-      // Note: We expect the backend API to handle clearing managerId for direct reports
-      // OR the mutation logic in editUserMutation needs to be robust (which it is now
-      // by setting managerId to null if role is not employee).
-      if (selectedUser) {
-        const data = editForm.getValues();
-        editUserMutation.mutate({ id: selectedUser.id, data });
-      }
-      setIsDemotionAlertOpen(false);
-  };
+    if (isDemotingManager && hasDirectReports) {
+        setIsDemotionAlertOpen(true);
+        return;
+    }
+    
+    editUserMutation.mutate({ id: selectedUser.id, data });
+  };
+    
+  const handleConfirmedDemotion = () => {
+      if (selectedUser) {
+        const data = editForm.getValues();
+        editUserMutation.mutate({ id: selectedUser.id, data });
+      }
+      setIsDemotionAlertOpen(false);
+  };
 
-  const onPasswordSubmit = (data: ChangePasswordForm) => {
-    if (selectedUser) {
-      changePasswordMutation.mutate({
-        id: selectedUser.id,
-        password: data.newPassword
-      });
-    }
-  };
+  const onPasswordSubmit = (data: ChangePasswordForm) => {
+    if (selectedUser) {
+      changePasswordMutation.mutate({
+        id: selectedUser.id,
+        password: data.newPassword
+      });
+    }
+  };
 
-  const handleEdit = (userData: any) => {
-    setSelectedUser(userData);
-    editForm.reset({
-      username: userData.username,
-      email: userData.email,
-      firstName: userData.firstName,
-      lastName: userData.lastName,
-      role: userData.role,
-      department: userData.department || "",
-      position: userData.position || "",
-      employeeId: userData.employeeId || "",
-      phoneNumber: userData.phoneNumber || "",
-      // managerId is set to "" if null, matching the Select component's requirement for a string value
-      managerId: userData.managerId || "",
+  const handleEdit = (userData: any) => {
+    setSelectedUser(userData);
+    editForm.reset({
+      username: userData.username,
+      email: userData.email,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      role: userData.role,
+      department: userData.department || "",
+      position: userData.position || "",
+      employeeId: userData.employeeId || "",
+      phoneNumber: userData.phoneNumber || "",
+      managerId: userData.managerId || "",
+      annualLeaveBalanceLimit: userData.annualLeaveBalanceLimit?.toString() || "",
+      sickLeaveBalanceLimit: userData.sickLeaveBalanceLimit?.toString() || "",
+      serviceIncentiveLeaveBalanceLimit: userData.serviceIncentiveLeaveBalanceLimit?.toString() || "",
+    });
+    setIsEditDialogOpen(true);
+  };
 
-      // 🟢 LEAVE BALANCES (Limit Only): Populate the new limit fields.
-      annualLeaveBalanceLimit: userData.annualLeaveBalanceLimit?.toString() || "",
-      sickLeaveBalanceLimit: userData.sickLeaveBalanceLimit?.toString() || "",
-      serviceIncentiveLeaveBalanceLimit: userData.serviceIncentiveLeaveBalanceLimit?.toString() || "",
-    });
-    setIsEditDialogOpen(true);
-  };
+  const handleChangePassword = (userData: any) => {
+    setSelectedUser(userData);
+    passwordForm.reset();
+    setIsPasswordDialogOpen(true);
+  };
 
-  const handleChangePassword = (userData: any) => {
-    setSelectedUser(userData);
-    passwordForm.reset();
-    setIsPasswordDialogOpen(true);
-  };
+  const handleDelete = (userData: any) => {
+    setSelectedUser(userData);
+    setIsDeleteDialogOpen(true);
+  };
 
-  const handleDelete = (userData: any) => {
-    setSelectedUser(userData);
-    setIsDeleteDialogOpen(true);
-  };
+  const confirmDelete = () => {
+    if (selectedUser) {
+      deleteUserMutation.mutate(selectedUser.id);
+    }
+  };
 
-  const confirmDelete = () => {
-    if (selectedUser) {
-      deleteUserMutation.mutate(selectedUser.id);
-    }
-  };
-
-  const getAvailableRoles = () => {
-    if (user?.role === "admin") {
-      return [
+  const getAvailableRoles = () => {
+    if (user?.role === "admin") {
+      return [
+        { value: "admin", label: "Admin" },
         { value: "manager", label: "Manager" },
-        { value: "payroll_officer", label: "Payroll Officer" }, 
-        { value: "employee", label: "Employee" },
-      ];
-    } else if (user?.role === "manager") {
-      return [
-        { value: "employee", label: "Employee" },
-      ];
-    }
-    return [];
-  };
+        { value: "payroll_officer", label: "Payroll Officer" }, 
+        { value: "employee", label: "Employee" },
+      ];
+    } else if (user?.role === "manager") {
+      return [
+        { value: "employee", label: "Employee" },
+      ];
+    }
+    return [];
+  };
 
-  const getRoleBadge = (role: string) => {
-    const colors: Record<string, string> = {
-      admin: "bg-red-600 text-white",
-      manager: "bg-gray-500 text-white",
-      payroll_officer: "bg-blue-400 text-white",
-      employee: "bg-gray-300 text-gray-900",
-    };
-    return <Badge className={colors[role] || "bg-gray-100"}>{role.replace(/_/g, " ").toUpperCase()}</Badge>;
-  };
-
+  const getRoleBadge = (role: string) => {
+    const colors: Record<string, string> = {
+      admin: "bg-rose-100 text-rose-700 border-rose-200",
+      manager: "bg-purple-100 text-purple-700 border-purple-200",
+      payroll_officer: "bg-blue-100 text-blue-700 border-blue-200",
+      employee: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    };
+    return <Badge variant="outline" className={`capitalize ${colors[role] || "bg-gray-100"} border px-2.5 py-0.5`}>{role.replace(/_/g, " ")}</Badge>;
+  };
+  
   const canModifyUser = (targetUser: any) => {
-    // 1. Admin can modify anyone except themselves (delete check handles self-delete)
     if (user?.role === "admin") return true;
-
-    // 2. Manager checks
     if (user?.role === "manager") {
-      // Manager can modify themselves
       if (user.id === targetUser.id) return true;
-      // Manager can modify their direct reports (employees only)
       if (targetUser.role === 'employee' && targetUser.managerId === user.id) return true;
     }
     return false;
   };
 
-  //move this to permissions.ts
-  if (user?.role !== "admin" && user?.role !== "manager") {
-    return (
-      <div className="p-8">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              You don't have permission to access user management.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // Calculate stats for Bento
+  const stats = {
+      total: users.length,
+      admins: users.filter((u: any) => u.role === 'admin').length,
+      managers: users.filter((u: any) => u.role === 'manager').length,
+      employees: users.filter((u: any) => u.role === 'employee').length,
+  };
 
-  return (
-    <div className="p-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Users className="w-8 h-8" />
-            User Management
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Create and manage user accounts
-          </p>
-        </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
-          setIsCreateDialogOpen(open);
-          if (!open) {
-            createForm.reset();
-          }
-        }}>
-          <DialogTrigger asChild>
-            <Button>
-              <UserPlus className="w-4 h-4 mr-2" />
-              Create User
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create New User</DialogTitle>
-              <DialogDescription>
-                Add a new user to the system
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="firstName">First Name *</Label>
-                  <Input
-                    id="firstName"
-                    {...createForm.register("firstName")}
-                    placeholder="First name"
-                  />
-                  {createForm.formState.errors.firstName && (
-                    <p className="text-sm text-destructive mt-1">
-                      {createForm.formState.errors.firstName.message}
-                  </p>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="lastName">Last Name *</Label>
-                  <Input
-                    id="lastName"
-                    {...createForm.register("lastName")}
-                    placeholder="Last name"
-                  />
-                  {createForm.formState.errors.lastName && (
-                    <p className="text-sm text-destructive mt-1">
-                      {createForm.formState.errors.lastName.message}
-                  </p>
-                  )}
-                </div>
-              </div>
+  if (user?.role !== "admin" && user?.role !== "manager") {
+    return (
+      <div className="p-8 flex justify-center items-center h-screen">
+        <Card className="w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-lg rounded-3xl">
+          <CardContent className="py-12 text-center space-y-4">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                <Shield className="w-8 h-8" />
+            </div>
+            <p className="text-slate-500">You don't have permission to access user management.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-              <div>
-                <Label htmlFor="email">Email *</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  {...createForm.register("email")}
-                  placeholder="user@company.com"
-                />
-                {createForm.formState.errors.email && (
-                  <p className="text-sm text-destructive mt-1">
-                    {createForm.formState.errors.email.message}
-                  </p>
-                )}
-                </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="username">Username *</Label>
-                  <Input
-                    id="username"
-                    {...createForm.register("username")}
-                    placeholder="username"
-                  />
-                  {createForm.formState.errors.username && (
-                    <p className="text-sm text-destructive mt-1">
-                      {createForm.formState.errors.username.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="password">Password *</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    {...createForm.register("password")}
-                    placeholder="Enter password"
-                  />
-                  {createForm.formState.errors.password && (
-                    <p className="text-sm text-destructive mt-1">
-                      {createForm.formState.errors.password.message}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="role">Role *</Label>
-                <Select
-                  onValueChange={(value) => createForm.setValue("role", value as any)}
-                  defaultValue="employee"
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getAvailableRoles().map((role) => (
-                      <SelectItem key={role.value} value={role.value}>
-                        {role.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {createForm.formState.errors.role && (
-                  <p className="text-sm text-destructive mt-1">
-                    {createForm.formState.errors.role.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="department">Department</Label>
-                  <Input
-                    id="department"
-                    {...createForm.register("department")}
-                    placeholder="Department"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="position">Position</Label>
-                  <Input
-                    id="position"
-                    {...createForm.register("position")}
-                    placeholder="Job position"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="employeeId">Employee ID</Label>
-                  <Input
-                    id="employeeId"
-                    {...createForm.register("employeeId")}
-                    placeholder="Autogenerated (e.g. EMP-001)"
-                  />
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    Auto-generated based on role: {generateNextEmployeeId(watchedCreateRole)}
-                  </p>
+  return (
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">User Management</h1>
+          <p className="text-slate-500 mt-1 text-sm">Create and manage user accounts and permissions</p>
+        </div>
+        <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
+          setIsCreateDialogOpen(open);
+          if (!open) createForm.reset();
+        }}>
+          <DialogTrigger asChild>
+            <Button className="bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/20 rounded-full px-6">
+              <UserPlus className="w-4 h-4 mr-2" /> Create User
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>Create New User</DialogTitle>
+              <DialogDescription>Add a new user to the system</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4 mt-2">
+              {/* ... Create Form Content (Standardized Inputs) ... */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>First Name *</Label>
+                  <Input {...createForm.register("firstName")} className="rounded-xl" />
+                  {createForm.formState.errors.firstName && <p className="text-xs text-red-500 mt-1">{createForm.formState.errors.firstName.message}</p>}
                 </div>
-                <div>
-                  <Label htmlFor="phoneNumber">Phone Number</Label>
-                  <Input
-                    id="phoneNumber"
-                    {...createForm.register("phoneNumber")}
-                    placeholder="+63 XXX XXX XXXX"
-                  />
-                </div>
-              </div>
-
-              {createForm.watch("role") === "employee" && (
-                <div>
-                  <Label htmlFor="managerId">Manager (Optional)</Label>
-                  <Select
-                    value={createForm.watch("managerId") || ""}
-                    onValueChange={(value) => createForm.setValue("managerId", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={managers.length > 0 ? "Select manager" : "No managers available"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {managers.length > 0 ? (
-                        managers.map((manager: any) => (
-                          <SelectItem key={manager.id} value={manager.id}>
-                            {manager.firstName} {manager.lastName} ({manager.role})
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="none" disabled>
-                          No managers or admins available
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                </Select>
-                {managers.length === 0 && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Create a manager or admin user first to assign them to employees
-                  </p>
-                )}
+                <div>
+                  <Label>Last Name *</Label>
+                  <Input {...createForm.register("lastName")} className="rounded-xl" />
+                  {createForm.formState.errors.lastName && <p className="text-xs text-red-500 mt-1">{createForm.formState.errors.lastName.message}</p>}
                 </div>
-              )}
-
-              <div className="flex gap-2 justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsCreateDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createUserMutation.isPending}>
-                  {createUserMutation.isPending ? "Creating..." : "Create User"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>All Users</CardTitle>
-          <CardDescription>
-            Manage system users and their roles
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {usersLoading ? (
-              <p className="text-center text-muted-foreground py-8">Loading users...</p>
-            ) : users.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                No users found
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {users.map((u: any) => (
-                  <div
-                    key={u.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
-                  >
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                        <Shield className="w-5 h-5 text-gray-600" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium">
-                          {u.firstName} {u.lastName}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {u.email} • @{u.username}
-                        </p>
-                        {u.position && (
-                          <p className="text-sm text-muted-foreground">
-                            {u.position} {u.department && `• ${u.department}`}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {getRoleBadge(u.role)}
-                      {(user?.role === "admin" || canModifyUser(u)) && (
-                        <div className="flex gap-1 ml-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleEdit(u)}
-                            title="Edit User"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleChangePassword(u)}
-                            title="Change Password"
-                          >
-                            <Key className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleDelete(u)}
-                            title="Delete User"
-                            disabled={u.id === user.id || !user?.role === "admin"}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
               </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Edit User Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
-        setIsEditDialogOpen(open);
-        if (!open) {
-          editForm.reset();
-          setSelectedUser(null);
-        }
-      }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit User</DialogTitle>
-            <DialogDescription>
-              Update user information
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-firstName">First Name *</Label>
-                <Input
-                  id="edit-firstName"
-                  {...editForm.register("firstName")}
-                  placeholder="First name"
-                />
-                {editForm.formState.errors.firstName && (
-                  <p className="text-sm text-destructive mt-1">
-                    {editForm.formState.errors.firstName.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="edit-lastName">Last Name *</Label>
-                <Input
-                  id="edit-lastName"
-                  {...editForm.register("lastName")}
-                  placeholder="Last name"
-                />
-                {editForm.formState.errors.lastName && (
-                  <p className="text-sm text-destructive mt-1">
-                    {editForm.formState.errors.lastName.message}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="edit-email">Email *</Label>
-              <Input
-                id="edit-email"
-                type="email"
-                {...editForm.register("email")}
-                placeholder="user@company.com"
-              />
-              {editForm.formState.errors.email && (
-                <p className="text-sm text-destructive mt-1">
-                  {editForm.formState.errors.email.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="edit-username">Username *</Label>
-              <Input
-                id="edit-username"
-                {...editForm.register("username")}
-                placeholder="username"
-              />
-              {editForm.formState.errors.username && (
-                <p className="text-sm text-destructive mt-1">
-                  {editForm.formState.errors.username.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="edit-role">Role *</Label>
-              <Select
-                onValueChange={(value) => editForm.setValue("role", value as any)}
-                value={editForm.watch("role")}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="employee">Employee</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
-                  <SelectItem value="payroll_officer">Payroll Officer</SelectItem>
-                </SelectContent>
-              </Select>
-              {editForm.formState.errors.role && (
-                <p className="text-sm text-destructive mt-1">
-                  {editForm.formState.errors.role.message}
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-department">Department</Label>
-                <Input
-                  id="edit-department"
-                  {...editForm.register("department")}
-                  placeholder="Department"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-position">Position</Label>
-                <Input
-                  id="edit-position"
-                  {...editForm.register("position")}
-                  placeholder="Job position"
-                />
-              </div>
-            </div>
-            
-            {/* This section was wrapped in a redundant div, checking and fixing closure */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="edit-employeeId">Employee ID</Label>
-                <Input
-                  id="edit-employeeId"
-                  {...editForm.register("employeeId")}
-                  placeholder="EMP-001"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit-phoneNumber">Phone Number</Label>
-                <Input
-                  id="edit-phoneNumber"
-                  {...editForm.register("phoneNumber")}
-                  placeholder="+63 XXX XXX XXXX"
-                />
-              </div>
-            </div>
-
-            {/* 🟢 LEAVE BALANCES SECTION (Updated for Balance and Limit) */}
-            <h4 className="text-lg font-semibold border-b pb-1 mt-4">Leave Management</h4>
-            
-            <p className="text-sm text-muted-foreground">Adjust the employee's current used balance and their maximum annual entitlement.</p>
-            
-            {/* Row 1: Current Balances */}
-            {/* <h5 className="font-medium mt-4">Current Balance (Days Remaining)</h5>
-            <div className="grid grid-cols-3 gap-4">
-                <div>
-                    <Label htmlFor="annualLeaveBalance">Annual Leave</Label>
-                    <Input
-                        id="annualLeaveBalance"
-                        type="number"
-                        min={0}
-                        {...editForm.register("annualLeaveBalance")}
-                        placeholder="Current Balance"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="sickLeaveBalance">Sick Leave</Label>
-                    <Input
-                        id="sickLeaveBalance"
-                        type="number"
-                        min={0}
-                        {...editForm.register("sickLeaveBalance")}
-                        placeholder="Current Balance"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="serviceIncentiveLeaveBalance">Service Incentive Leave</Label>
-                    <Input
-                        id="serviceIncentiveLeaveBalance"
-                        type="number"
-                        min={0}
-                        {...editForm.register("serviceIncentiveLeaveBalance")}
-                        placeholder="Current Balance"
-                    />
-                </div>
-            </div> */}
-
-            {/* Row 2: Maximum Limits */}
-            <h5 className="font-medium mt-4">Maximum Limit (Annual Entitlement)</h5>
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <Label htmlFor="annualLeaveBalanceLimit">Service Incentive Leave Limit</Label>
-                    <Input
-                        id="annualLeaveBalanceLimit"
-                        type="number"
-                        min={0}
-                        {...editForm.register("annualLeaveBalanceLimit")}
-                        placeholder="Max Limit"
-                    />
-                </div>
-                <div>
-                    <Label htmlFor="sickLeaveBalanceLimit">Additional Leave Limit</Label>
-                    <Input
-                        id="sickLeaveBalanceLimit"
-                        type="number"
-                        min={0}
-                        {...editForm.register("sickLeaveBalanceLimit")}
-                        placeholder="Max Limit"
-                    />
-                </div>
-{/*                 <div>
-                    <Label htmlFor="serviceIncentiveLeaveBalanceLimit">Service Incentive Leave Limit</Label>
-                    <Input
-                        id="serviceIncentiveLeaveBalanceLimit"
-                        type="number"
-                        min={0}
-                        {...editForm.register("serviceIncentiveLeaveBalanceLimit")}
-                        placeholder="Max Limit"
-                    />
-                </div> */}
-            </div>
-
-            {editForm.watch("role") === "employee" && (
-              <div>
-                <Label htmlFor="edit-managerId">Manager (Optional)</Label>
-                <Select
-                  value={editForm.watch("managerId") || ""}
-                  onValueChange={(value) => editForm.setValue("managerId", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select manager" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {managers.length > 0 ? (
-                      managers.map((manager: any) => (
-                        <SelectItem key={manager.id} value={manager.id}>
-                          {manager.firstName} {manager.lastName} ({manager.role})
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="none" disabled>
-                        No managers or admins available
-                      </SelectItem>
-                    )}
+              <div>
+                <Label>Email *</Label>
+                <Input type="email" {...createForm.register("email")} className="rounded-xl" />
+                {createForm.formState.errors.email && <p className="text-xs text-red-500 mt-1">{createForm.formState.errors.email.message}</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Username *</Label>
+                  <Input {...createForm.register("username")} className="rounded-xl" />
+                  {createForm.formState.errors.username && <p className="text-xs text-red-500 mt-1">{createForm.formState.errors.username.message}</p>}
+                </div>
+                <div>
+                  <Label>Password *</Label>
+                  <Input type="password" {...createForm.register("password")} className="rounded-xl" />
+                  {createForm.formState.errors.password && <p className="text-xs text-red-500 mt-1">{createForm.formState.errors.password.message}</p>}
+                </div>
+              </div>
+              <div>
+                <Label>Role *</Label>
+                <Select onValueChange={(value) => createForm.setValue("role", value as any)} defaultValue="employee">
+                  <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {getAvailableRoles().map((role) => (
+                      <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-              </div>
-            )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Department</Label>
+                  <Input {...createForm.register("department")} className="rounded-xl" />
+                </div>
+                <div>
+                  <Label>Position</Label>
+                  <Input {...createForm.register("position")} className="rounded-xl" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                    <Label>Employee ID</Label>
+                    <Input {...createForm.register("employeeId")} className="rounded-xl" />
+                 </div>
+                 <div>
+                    <Label>Phone Number</Label>
+                    <Input {...createForm.register("phoneNumber")} className="rounded-xl" />
+                 </div>
+              </div>
+              {createForm.watch("role") === "employee" && (
+                <div>
+                  <Label>Manager (Optional)</Label>
+                  <Select value={createForm.watch("managerId") || ""} onValueChange={(value) => createForm.setValue("managerId", value)}>
+                    <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select manager" /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {managers.length > 0 ? managers.map((m: any) => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>) : <SelectItem value="none" disabled>No managers available</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)} className="rounded-full">Cancel</Button>
+                <Button type="submit" disabled={createUserMutation.isPending} className="rounded-full bg-slate-900">{createUserMutation.isPending ? "Creating..." : "Create User"}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
 
-            <div className="flex gap-2 justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsEditDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={editUserMutation.isPending}>
-                {editUserMutation.isPending ? "Updating..." : "Update User"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Bento Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <BentoCard title="Total Users" value={stats.total} icon={Users} variant="default" testIdPrefix="stat-total" />
+        <BentoCard title="Employees" value={stats.employees} icon={UserCheck} variant="emerald" testIdPrefix="stat-employees" />
+        <BentoCard title="Managers" value={stats.managers} icon={Briefcase} variant="rose" testIdPrefix="stat-managers" />
+        <BentoCard title="Admins" value={stats.admins} icon={Shield} variant="amber" testIdPrefix="stat-admins" />
+      </div>
 
-      {/* Change Password Dialog */}
-      <Dialog open={isPasswordDialogOpen} onOpenChange={(open) => {
-        setIsPasswordDialogOpen(open);
-        if (!open) {
-          passwordForm.reset();
-          setSelectedUser(null);
-        }
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Change Password</DialogTitle>
-            <DialogDescription>
-              Set a new password for {selectedUser?.firstName} {selectedUser?.lastName}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
-            <div>
-              <Label htmlFor="newPassword">New Password *</Label>
-              <Input
-                id="newPassword"
-                type="password"
-                {...passwordForm.register("newPassword")}
-                placeholder="Enter new password"
-              />
-              {passwordForm.formState.errors.newPassword && (
-                <p className="text-sm text-destructive mt-1">
-                  {passwordForm.formState.errors.newPassword.message}
-                </p>
-              )}
-            </div>
+      {/* Glass User Grid */}
+      {usersLoading ? (
+        <div className="text-center py-12 text-slate-400">Loading users...</div>
+      ) : users.length === 0 ? (
+        <div className="text-center py-20 bg-white/40 border border-dashed border-slate-200 rounded-3xl">
+           <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+           <p className="text-slate-500">No users found.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {users.map((u: any) => (
+            <Card key={u.id} className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm hover:shadow-md transition-all rounded-2xl overflow-hidden group">
+              <CardContent className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-4">
+                     <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-lg font-bold text-slate-600 border border-slate-200">
+                        {u.firstName.charAt(0)}{u.lastName.charAt(0)}
+                     </div>
+                     <div>
+                        <h3 className="font-bold text-slate-900">{u.firstName} {u.lastName}</h3>
+                        <p className="text-xs text-slate-500">{u.email}</p>
+                     </div>
+                  </div>
+                  {getRoleBadge(u.role)}
+                </div>
+                
+                <div className="space-y-2 mb-6">
+                   <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Position:</span>
+                      <span className="font-medium text-slate-700">{u.position || "—"}</span>
+                   </div>
+                   <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">ID:</span>
+                      <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">{u.employeeId || "—"}</span>
+                   </div>
+                   <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Department:</span>
+                      <span className="font-medium text-slate-700">{u.department || "—"}</span>
+                   </div>
+                </div>
 
-            <div>
-              <Label htmlFor="confirmPassword">Confirm Password *</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                {...passwordForm.register("confirmPassword")}
-                placeholder="Confirm new password"
-              />
-              {passwordForm.formState.errors.confirmPassword && (
-                <p className="text-sm text-destructive mt-1">
-                  {passwordForm.formState.errors.confirmPassword.message}
-                </p>
-              )}
-            </div>
+                {(user?.role === "admin" || canModifyUser(u)) && (
+                  <div className="flex items-center gap-2 pt-4 border-t border-slate-100/50 opacity-60 group-hover:opacity-100 transition-opacity">
+                     <Button size="sm" variant="ghost" className="flex-1 h-8 bg-white border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-100 rounded-lg text-xs" onClick={() => handleEdit(u)}>
+                        <Edit className="w-3.5 h-3.5 mr-1.5" /> Edit
+                     </Button>
+                     <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-white border border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100 rounded-lg" onClick={() => handleChangePassword(u)} title="Change Password">
+                        <Key className="w-3.5 h-3.5" />
+                     </Button>
+                     <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-white border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100 rounded-lg" onClick={() => handleDelete(u)} disabled={u.id === user.id} title="Delete">
+                        <Trash2 className="w-3.5 h-3.5" />
+                     </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
-            <div className="flex gap-2 justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsPasswordDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={changePasswordMutation.isPending}>
-                {changePasswordMutation.isPending ? "Changing..." : "Change Password"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {/* Edit User Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) { editForm.reset(); setSelectedUser(null); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4 mt-2">
+             {/* Same structure as create form but populated */}
+             <div className="grid grid-cols-2 gap-4">
+                <div><Label>First Name</Label><Input {...editForm.register("firstName")} className="rounded-xl" /></div>
+                <div><Label>Last Name</Label><Input {...editForm.register("lastName")} className="rounded-xl" /></div>
+             </div>
+             <div><Label>Email</Label><Input {...editForm.register("email")} className="rounded-xl" /></div>
+             <div><Label>Username</Label><Input {...editForm.register("username")} className="rounded-xl" /></div>
+             <div>
+                <Label>Role</Label>
+                <Select value={editForm.watch("role")} onValueChange={(val) => editForm.setValue("role", val as any)}>
+                   <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                   <SelectContent className="rounded-xl">
+                      {getAvailableRoles().map((role) => <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>)}
+                   </SelectContent>
+                </Select>
+             </div>
+             <div className="grid grid-cols-2 gap-4">
+                <div><Label>Department</Label><Input {...editForm.register("department")} className="rounded-xl" /></div>
+                <div><Label>Position</Label><Input {...editForm.register("position")} className="rounded-xl" /></div>
+             </div>
+             <div className="grid grid-cols-2 gap-4">
+                <div><Label>Employee ID</Label><Input {...editForm.register("employeeId")} className="rounded-xl" /></div>
+                <div><Label>Phone</Label><Input {...editForm.register("phoneNumber")} className="rounded-xl" /></div>
+             </div>
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={(open) => {
-        setIsDeleteDialogOpen(open);
-        if (!open) {
-          setSelectedUser(null);
-        }
-      }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-destructive" />
-              Delete User Account
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete the account for{" "}
-              <span className="font-semibold">
-                {selectedUser?.firstName} {selectedUser?.lastName}
-              </span>
-              ? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteUserMutation.isPending ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      {/* 🟢 Manager Demotion Alert Dialog */}
-      <AlertDialog open={isDemotionAlertOpen} onOpenChange={setIsDemotionAlertOpen}>
-        <AlertDialogContent>
+             <div className="space-y-3 pt-2 border-t border-slate-100">
+                <h4 className="text-sm font-semibold text-slate-900">Leave Limits (Annual)</h4>
+                <div className="grid grid-cols-2 gap-4">
+                   <div><Label className="text-xs text-slate-500">Service Incentive Limit</Label><Input type="number" {...editForm.register("annualLeaveBalanceLimit")} className="rounded-xl" /></div>
+                   <div><Label className="text-xs text-slate-500">Additional Benefit Limit</Label><Input type="number" {...editForm.register("sickLeaveBalanceLimit")} className="rounded-xl" /></div>
+                </div>
+             </div>
+
+             {editForm.watch("role") === "employee" && (
+                <div>
+                   <Label>Manager</Label>
+                   <Select value={editForm.watch("managerId") || ""} onValueChange={(val) => editForm.setValue("managerId", val)}>
+                      <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select Manager" /></SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                         {managers.map((m: any) => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}
+                      </SelectContent>
+                   </Select>
+                </div>
+             )}
+
+             <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} className="rounded-full">Cancel</Button>
+                <Button type="submit" disabled={editUserMutation.isPending} className="rounded-full bg-slate-900">Save Changes</Button>
+             </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change Password Dialog */}
+      <Dialog open={isPasswordDialogOpen} onOpenChange={(open) => { setIsPasswordDialogOpen(open); if (!open) passwordForm.reset(); }}>
+        <DialogContent className="rounded-2xl">
+          <DialogHeader><DialogTitle>Change Password</DialogTitle></DialogHeader>
+          <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
+             <div><Label>New Password</Label><Input type="password" {...passwordForm.register("newPassword")} className="rounded-xl" /></div>
+             <div><Label>Confirm Password</Label><Input type="password" {...passwordForm.register("confirmPassword")} className="rounded-xl" /></div>
+             <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsPasswordDialogOpen(false)} className="rounded-full">Cancel</Button>
+                <Button type="submit" disabled={changePasswordMutation.isPending} className="rounded-full bg-slate-900">Update Password</Button>
+             </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={(open) => { setIsDeleteDialogOpen(open); if (!open) setSelectedUser(null); }}>
+        <AlertDialogContent className="rounded-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-warning">
-              <AlertTriangle className="w-5 h-5 text-warning" />
-              Potential Manager Demotion Conflict
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              The user <span className="font-semibold">{selectedUser?.firstName} {selectedUser?.lastName}</span> is currently assigned as the manager for one or more employees.
-              <br/><br/>
-              To avoid a Foreign Key error, you must ensure their direct reports are reassigned or removed before demoting this user from a Manager role.
-              <br/><br/>
-              **Warning:** Proceeding will likely result in an error if the backend is configured with strict foreign key constraints.
-            </AlertDialogDescription>
+            <AlertDialogTitle className="flex items-center gap-2 text-rose-600"><AlertTriangle className="w-5 h-5" /> Delete User</AlertDialogTitle>
+            <AlertDialogDescription>Are you sure you want to delete <strong>{selectedUser?.firstName} {selectedUser?.lastName}</strong>? This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Close</AlertDialogCancel>
-            <AlertDialogAction 
-                onClick={handleConfirmedDemotion} 
-                className="bg-warning text-white hover:bg-warning/80"
-                disabled={editUserMutation.isPending}
-            >
-              Proceed Anyway (Requires backend handling)
-            </AlertDialogAction>
+            <AlertDialogCancel className="rounded-full">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="rounded-full bg-rose-600 hover:bg-rose-700">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
-  );
+      
+      {/* Manager Demotion Alert Dialog */}
+      <AlertDialog open={isDemotionAlertOpen} onOpenChange={setIsDemotionAlertOpen}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-amber-600"><AlertTriangle className="w-5 h-5" /> Demotion Conflict</AlertDialogTitle>
+            <AlertDialogDescription>This user is a manager for other employees. Please reassign their direct reports before demoting them.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-full">Close</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmedDemotion} className="rounded-full bg-amber-600 hover:bg-amber-700">Proceed Anyway</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
 }
