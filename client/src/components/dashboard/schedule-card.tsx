@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Calendar } from "lucide-react";
+import { Calendar, Clock } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Schedule } from "@shared/schema";
 
@@ -12,139 +12,54 @@ interface ScheduleCardProps {
 
 export default function ScheduleCard({ schedules, isLoading }: ScheduleCardProps) {
   const [, navigate] = useLocation();
-  const getScheduleColor = (shiftType: string) => {
-    switch (shiftType) {
-      case "morning":
-        return "bg-primary";
-      case "afternoon":
-        return "bg-success";
-      case "night":
-        return "bg-accent-foreground";
-      case "off":
-        return "bg-muted-foreground";
-      default:
-        return "bg-muted-foreground";
-    }
-  };
+  
+  const today = new Date();
+  const todaySchedule = schedules.find(s => 
+    new Date(s.date).toDateString() === today.toDateString()
+  );
 
-  const formatTime = (time: number | Date | string | null | undefined) => {
-    if (!time) return '';
-
-    let date: Date;
-    if (typeof time === 'number') {
-      date = new Date(time);
-    } else if (typeof time === 'string') {
-      date = new Date(time);
-    } else if (time instanceof Date) {
-      date = time;
-    } else {
-      return '';
-    }
-
-    if (isNaN(date.getTime())) {
-      return '';
-    }
-
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  };
-
-  const getWeekSchedule = () => {
-    const today = new Date();
-    const weekSchedule = [];
-    
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      
-      const schedule = schedules.find(s => {
-        const scheduleDate = new Date(s.date);
-        return scheduleDate.toDateString() === date.toDateString();
-      });
-      
-      weekSchedule.push({
-        date,
-        schedule,
-        isToday: date.toDateString() === today.toDateString(),
-      });
-    }
-    
-    return weekSchedule;
-  };
-
-  const getDayLabel = (date: Date, isToday: boolean) => {
-    if (isToday) return "Today";
-    
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    if (date.toDateString() === tomorrow.toDateString()) return "Tomorrow";
-    
-    return date.toLocaleDateString('en-US', { weekday: 'short' });
-  };
+  const formatTime = (date: number | Date) => new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <Card data-testid="schedule-card">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center text-lg font-semibold">
-            <Calendar className="w-5 h-5 mr-2" />
-            This Week's Schedule
+    <Card className="bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-lg rounded-2xl border-none" data-testid="schedule-card">
+      <CardHeader className="pb-2">
+        <div className="flex justify-between items-center">
+          <CardTitle className="text-lg font-bold flex items-center gap-2">
+             <Calendar className="w-4 h-4 text-slate-400" /> Today
           </CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-primary hover:text-primary/80"
-            onClick={() => navigate("/schedules")}
-            data-testid="button-view-calendar"
-          >
-            View Calendar
+          <Button variant="ghost" size="sm" className="text-xs h-auto py-1 px-2 text-slate-400 hover:text-white hover:bg-white/10" onClick={() => navigate("/schedules")}>
+            Calendar
           </Button>
         </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-1/3 bg-white/10" />
+            <Skeleton className="h-8 w-2/3 bg-white/10" />
+          </div>
+        ) : todaySchedule ? (
           <div className="space-y-4">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="flex items-center justify-between py-2">
-                <div className="flex items-center space-x-3">
-                  <Skeleton className="w-3 h-3 rounded-full" />
-                  <div className="space-y-1">
-                    <Skeleton className="h-4 w-20" />
-                    <Skeleton className="h-3 w-16" />
-                  </div>
-                </div>
-                <Skeleton className="h-3 w-12" />
-              </div>
-            ))}
+            <div>
+              <p className="text-3xl font-bold tracking-tight">
+                {formatTime(todaySchedule.startTime)}
+              </p>
+              <p className="text-sm text-slate-400 flex items-center gap-1.5 mt-1">
+                <Clock className="w-3.5 h-3.5" />
+                Until {formatTime(todaySchedule.endTime)}
+              </p>
+            </div>
+            <div className="pt-4 border-t border-white/10 flex justify-between items-center">
+               <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Shift</span>
+               <span className="text-sm font-medium bg-white/10 px-3 py-1 rounded-full capitalize">
+                 {todaySchedule.type}
+               </span>
+            </div>
           </div>
         ) : (
-          <div className="space-y-4">
-            {getWeekSchedule().slice(0, 5).map((item, index) => (
-              <div key={index} className="flex items-center justify-between py-2" data-testid={`schedule-item-${index}`}>
-                <div className="flex items-center space-x-3">
-                  <div className={`w-3 h-3 rounded-full ${item.schedule ? getScheduleColor(item.schedule.type) : 'bg-muted'}`} />
-                  <div>
-                    <p className="text-sm font-medium" data-testid={`schedule-title-${index}`}>
-                      {item.schedule ?
-                        (item.schedule.type === 'off' ? 'Day Off' : `${item.schedule.type.charAt(0).toUpperCase() + item.schedule.type.slice(1)} Shift`) :
-                        'No Schedule'
-                      }
-                    </p>
-                    {item.schedule && item.schedule.type !== 'off' && item.schedule.startTime && item.schedule.endTime && (
-                      <p className="text-xs text-muted-foreground" data-testid={`schedule-time-${index}`}>
-                        {formatTime(item.schedule.startTime)} - {formatTime(item.schedule.endTime)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <span className="text-xs text-muted-foreground" data-testid={`schedule-day-${index}`}>
-                  {getDayLabel(item.date, item.isToday)}
-                </span>
-              </div>
-            ))}
+          <div className="py-6 text-center">
+            <p className="text-slate-400 font-medium">No shift today</p>
+            <p className="text-xs text-slate-500 mt-1">Enjoy your day off!</p>
           </div>
         )}
       </CardContent>

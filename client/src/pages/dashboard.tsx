@@ -28,56 +28,54 @@ export default function Dashboard() {
 
   const { user } = useAuth();
 
-  //TODO: Fix view for admin/managers
   return (
-    <div className="p-6 space-y-8">
-      {}
+    <div className="p-6 md:p-8 space-y-8">
+      
+      {/* 1. Bento Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {canViewDashoardLeaveBalance(user) && (
           <StatCard
-          title="Leave Balance"
-          value={stats?.leaveBalance || "0 days"}
-          icon={Calendar}
-          iconColor="text-primary"
-          bgColor="bg-primary/10"
-          isLoading={statsLoading}
-          data-testid="stat-leave-balance"
-        />
+            title="Leave Balance"
+            value={stats?.leaveBalance || "0 days"}
+            icon={Calendar}
+            variant="blue"
+            isLoading={statsLoading}
+            testId="stat-leave-balance"
+          />
         )}
         {canViewDashoardHoursThisWeek(user) && (
-        <StatCard
-          title="Hours This Week"
-          value={stats?.weeklyHours || "0 hrs"}
-          icon={Clock}
-          iconColor="text-success"
-          bgColor="bg-success/10"
-          isLoading={statsLoading}
-          data-testid="stat-weekly-hours"
-        />
+          <StatCard
+            title="Hours This Week"
+            value={stats?.weeklyHours || "0 hrs"}
+            icon={Clock}
+            variant="emerald"
+            isLoading={statsLoading}
+            testId="stat-weekly-hours"
+          />
         )}
         <StatCard
           title="Pending Approvals"
           value={stats?.pendingApprovals?.toString() || "0"}
           icon={AlertTriangle}
-          iconColor="text-warning"
-          bgColor="bg-warning/10"
+          variant="amber"
           isLoading={statsLoading}
-          data-testid="stat-pending-approvals"
+          testId="stat-pending-approvals"
         />
+        {/* Example of a 4th card or placeholder */}
         {/* <StatCard
           title="Training Progress"
           value={stats?.trainingProgress || "0%"}
           icon={GraduationCap}
-          iconColor="text-accent-foreground"
-          bgColor="bg-accent/10"
+          variant="rose"
           isLoading={statsLoading}
-          data-testid="stat-training-progress"
+          testId="stat-training-progress"
         /> */}
       </div>
 
-      {}
+      {/* 2. Main Content Grid (Asymmetric Bento) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {}
+        
+        {/* Left Column: Feeds (2/3 width) */}
         <div className="lg:col-span-2 space-y-8">
           <AnnouncementsCard
             announcements={announcements || []}
@@ -89,16 +87,17 @@ export default function Dashboard() {
           />
         </div>
 
-        {}
+        {/* Right Column: Tools & Tasks (1/3 width) */}
         <div className="space-y-8">
+          <QuickActionsCard />
+          
           {canViewDashoardWeekSchedule(user) && (
             <ScheduleCard
-            schedules={schedules || []}
-            isLoading={schedulesLoading}
-          />
+              schedules={schedules || []}
+              isLoading={schedulesLoading}
+            />
           )}
           
-          <QuickActionsCard />
           <PendingTasksCard />
         </div>
       </div>

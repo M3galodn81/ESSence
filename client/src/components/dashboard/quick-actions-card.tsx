@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CalendarPlus, FileText, UserCog } from "lucide-react";
+import { CalendarPlus, FileText, UserCog, ArrowRight } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function QuickActionsCard() {
@@ -10,43 +10,51 @@ export default function QuickActionsCard() {
     {
       icon: CalendarPlus,
       label: "Apply Leave",
+      desc: "Request time off",
       action: () => navigate("/leave-management"),
-      testId: "quick-action-leave",
+      color: "text-rose-600",
+      bg: "bg-rose-50 hover:bg-rose-100",
     },
     {
       icon: FileText,
       label: "View Payslip",
+      desc: "Check salary history",
       action: () => navigate("/payslips"),
-      testId: "quick-action-payslip",
+      color: "text-emerald-600",
+      bg: "bg-emerald-50 hover:bg-emerald-100",
     },
     {
       icon: UserCog,
-      label: "Update Profile",
+      label: "My Profile",
+      desc: "Update information",
       action: () => navigate("/profile"),
-      testId: "quick-action-profile",
+      color: "text-blue-600",
+      bg: "bg-blue-50 hover:bg-blue-100",
     },
   ];
 
   return (
-    <Card data-testid="quick-actions-card">
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">Quick Actions</CardTitle>
+    <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl" data-testid="quick-actions-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg font-bold text-slate-800">Quick Actions</CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 gap-4">
-          {quickActions.map((action) => (
-            <Button
-              key={action.testId}
-              variant="outline"
-              className="flex flex-col items-center p-4 h-auto space-y-2 hover:bg-accent hover:text-accent-foreground transition-colors"
-              onClick={action.action}
-              data-testid={action.testId}
-            >
-              <action.icon className="w-5 h-5 text-primary" />
-              <span className="text-sm font-medium text-center">{action.label}</span>
-            </Button>
-          ))}
-        </div>
+      <CardContent className="grid gap-3">
+        {quickActions.map((action, i) => (
+          <button
+            key={i}
+            onClick={action.action}
+            className={`flex items-center p-3 rounded-xl transition-all group text-left w-full ${action.bg}`}
+          >
+            <div className={`p-2 rounded-lg bg-white shadow-sm ${action.color}`}>
+              <action.icon className="w-5 h-5" />
+            </div>
+            <div className="ml-3 flex-1">
+              <p className="text-sm font-semibold text-slate-800">{action.label}</p>
+              <p className="text-xs text-slate-500">{action.desc}</p>
+            </div>
+            <ArrowRight className="w-4 h-4 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
+          </button>
+        ))}
       </CardContent>
     </Card>
   );
