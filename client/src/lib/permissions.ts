@@ -118,12 +118,9 @@ export const canDeleteShift = canViewShiftManagement;
 // #endregion
 
 // #region Payslip Generator
-export const canViewPayslipGenerator = (user?: User | null) =>
+export const canAccessPayslipManagement = (user?: User | null) =>
  hasAnyRole(user, PAYROLL_FEATURES);
 
-export const canGeneratePayslip = canViewPayslipGenerator;
-export const canEditPayslip = canViewPayslipGenerator;
-export const canDeletePayslip = canViewPayslipGenerator;
 
 // #endregion
 

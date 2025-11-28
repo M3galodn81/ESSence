@@ -10,7 +10,7 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children, title = "Dashboard", subtitle }: MainLayoutProps) {
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-slate-50 via-white to-gray-100 font-sans text-slate-900">
+    <div className="min-h-screen flex bg-gradient-to-br from-slate-100  to-gray-100 font-sans text-slate-900">
       {/* Sidebar is assumed to be fixed or sticky */}
       <Sidebar />
       

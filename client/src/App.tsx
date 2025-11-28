@@ -11,7 +11,6 @@ import Dashboard from "@/pages/dashboard";
 import Profile from "@/pages/profile";
 import LeaveManagement from "@/pages/leave-management";
 import PayslipsEnhanced from "@/pages/payslips-enhanced";
-import PayslipMobile from "@/pages/payslip-mobile";
 import PayslipManagement from "./pages/payslip-management";
 import SalaryComputation from "@/pages/salary-computation";
 import Schedules from "@/pages/schedules";
@@ -26,6 +25,8 @@ import Attendance from "@/pages/attendances";
 import NotFound from "@/pages/not-found";
 import MainLayout from "@/components/layout/main-layout";
 import PayslipHistory from "@/pages/payslip-history";
+import AdminAttendance from "@/pages/admin-attendance";
+import HolidayCalendar from "@/pages/holiday-calendar";
 
 function Router() {
   const { needsSetup, isLoading } = useAuth();
@@ -66,9 +67,7 @@ function Router() {
           <PayslipsEnhanced />
         </MainLayout>
       )} />
-      <ProtectedRoute path="/payslip-mobile" component={() => (
-        <PayslipMobile />
-      )} />
+
       <ProtectedRoute path="/payslip-history" component={() => (
         <MainLayout>
           <PayslipHistory />
@@ -130,6 +129,19 @@ function Router() {
           <UserManagement />
         </MainLayout>
       )} />
+
+      <ProtectedRoute path="/admin-attendance" component={() => (
+        <MainLayout>
+          <AdminAttendance />
+        </MainLayout>
+      )} />
+      <ProtectedRoute path="/holiday-calendar" component={() => (
+        <MainLayout>
+          <HolidayCalendar />
+        </MainLayout>
+      )} />
+
+      
       <Route component={NotFound} />
     </Switch>
   );
