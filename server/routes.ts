@@ -489,6 +489,26 @@ export function registerRoutes(app: Express): Server {
     res.json(teamMembers);
   });
 
+    app.get("/api/activities", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+    const activities = await storage.getActivitiesByUser(req.user!.id, limit);
+    res.json(activities);
+  });
+
+  app.get("/api/activities/all", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    if (req.user!.role !== 'admin') {
+      return res.status(403).json({ error: "Forbidden: Admin access only" });
+    }
+
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+    const activities = await storage.getAllActivities(limit);
+    res.json(activities);
+  });
+
   // --- Attendance Overrides ---
   app.post("/api/attendance/clock-in", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).send("Not authenticated");
