@@ -6,10 +6,85 @@ import {
 } from "../../shared/schema";
 import { hashPassword } from "../../server/auth";
 
+// --- Constants & Helpers ---
+const HOURLY_RATE = 58.75;
+const OT_MULTIPLIER = 1.25;
+const ND_MULTIPLIER = 1.1;
+
+const sssBrackets = [
+  { min: 0,        max: 5249.99,  ms: 5000,  ee: 250 },
+  { min: 5250,     max: 5749.99,  ms: 5500,  ee: 275 },
+  { min: 5750,     max: 6249.99,  ms: 6000,  ee: 300 },
+  { min: 6250,     max: 6749.99,  ms: 6500,  ee: 325 },
+  { min: 6750,     max: 7249.99,  ms: 7000,  ee: 350 },
+  { min: 7250,     max: 7749.99,  ms: 7500,  ee: 375 },
+  { min: 7750,     max: 8249.99,  ms: 8000,  ee: 400 },
+  { min: 8250,     max: 8749.99,  ms: 8500,  ee: 425 },
+  { min: 8750,     max: 9249.99,  ms: 9000,  ee: 450 },
+  { min: 9250,     max: 9749.99,  ms: 9500,  ee: 475 },
+  { min: 9750,     max: 10249.99, ms: 10000, ee: 500 },
+  { min: 10250,    max: 10749.99, ms: 10500, ee: 525 },
+  { min: 10750,    max: 11249.99, ms: 11000, ee: 550 },
+  { min: 11250,    max: 11749.99, ms: 11500, ee: 575 },
+  { min: 11750,    max: 12249.99, ms: 12000, ee: 600 },
+  { min: 12250,    max: 12749.99, ms: 12500, ee: 625 },
+  { min: 12750,    max: 13249.99, ms: 13000, ee: 650 },
+  { min: 13250,    max: 13749.99, ms: 13500, ee: 675 },
+  { min: 13750,    max: 14249.99, ms: 14000, ee: 700 },
+  { min: 14250,    max: 14749.99, ms: 14500, ee: 725 },
+  { min: 14750,    max: 15249.99, ms: 15000, ee: 750 },
+  { min: 15250,    max: 15749.99, ms: 15500, ee: 775 },
+  { min: 15750,    max: 16249.99, ms: 16000, ee: 800 },
+  { min: 16250,    max: 16749.99, ms: 16500, ee: 825 },
+  { min: 16750,    max: 17249.99, ms: 17000, ee: 850 },
+  { min: 17250,    max: 17749.99, ms: 17500, ee: 875 },
+  { min: 17750,    max: 18249.99, ms: 18000, ee: 900 },
+  { min: 18250,    max: 18749.99, ms: 18500, ee: 925 },
+  { min: 18750,    max: 19249.99, ms: 19000, ee: 950 },
+  { min: 19250,    max: 19749.99, ms: 19500, ee: 975 },
+  { min: 19750,    max: 34749.99, ms: 20000, ee: 1000 }
+];
+
+const computeSSS = (grossSalary: number) => {
+  const bracket = sssBrackets.find(b => grossSalary >= b.min && grossSalary <= b.max);
+  if (!bracket) return 1000;
+  return bracket.ee;
+};
+
+const computePagIbig = (basic: number) => {
+  const rate = basic <= 1500 ? 0.01 : 0.02;
+  const capped = Math.min(basic, 10000);
+  return capped * rate;
+};
+
+const computePhilHealth = (basic: number) => {
+  let income = basic;
+  if (income < 10000) income = 10000;
+  if (income > 100000) income = 100000;
+  return (income * 0.05) / 2;
+};
+
+const getNightDiffHours = (timeIn: Date, timeOut: Date) => {
+  let start = new Date(timeIn);
+  let end = new Date(timeOut);
+  let ndHours = 0;
+  let current = new Date(start);
+  current.setMinutes(0, 0, 0); 
+  if (current.getTime() < start.getTime()) current.setHours(current.getHours() + 1);
+
+  while (current.getTime() < end.getTime()) {
+      const h = current.getHours();
+      // Night Diff: 10PM (22) to 6AM (6)
+      if (h >= 22 || h < 6) ndHours += 1;
+      current.setHours(current.getHours() + 1);
+  }
+  return ndHours;
+};
+
 async function seed() {
   console.log("Starting database seeding...");
 
-  // 1. Clean tables (Delete in reverse order of dependency)
+  // 1. Clean tables
   console.log("Cleaning existing data...");
   await db.delete(breaks);
   await db.delete(attendance);
@@ -25,41 +100,23 @@ async function seed() {
 
   // 2. Create Users
   console.log("Creating users...");
-  const password = await hashPassword("qweqwe"); // Default password for all
+  const password = await hashPassword("qweqwe"); 
 
-  // Admin
   const [admin] = await db.insert(users).values({
     username: "admin",
     password,
     email: "admin@essence.com",
-    firstName: "Admin",
-    lastName: "User",
+    firstName: "System",
+    lastName: "Admin",
     role: "admin",
     department: "IT",
     position: "System Administrator",
     employeeId: "ADM-001",
     hireDate: new Date("2023-01-01"),
-    salary: 8000000, // 80k
+    salary: 8000000, 
     isActive: true
   }).returning();
 
-  // Manager
-  const [manager] = await db.insert(users).values({
-    username: "manager",
-    password,
-    email: "manager@essence.com",
-    firstName: "Sarah",
-    lastName: "Connor",
-    role: "manager",
-    department: "Operations",
-    position: "Operations Manager",
-    employeeId: "MAN-001",
-    hireDate: new Date("2023-02-01"),
-    salary: 6000000, // 60k
-    isActive: true
-  }).returning();
-
-  // Payroll Officer
   const [payroll] = await db.insert(users).values({
     username: "payroll",
     password,
@@ -71,285 +128,333 @@ async function seed() {
     position: "Payroll Specialist",
     employeeId: "PAY-001",
     hireDate: new Date("2023-03-01"),
-    salary: 4500000, // 45k
+    salary: 4500000, 
     isActive: true
   }).returning();
 
-  // Employees
-  const [emp1] = await db.insert(users).values({
-    username: "john",
-    password,
-    email: "john.doe@essence.com",
-    firstName: "John",
-    lastName: "Doe",
-    role: "employee",
-    department: "Operations",
-    position: "Server",
-    employeeId: "EMP-001",
-    managerId: manager.id,
-    hireDate: new Date("2024-01-15"),
-    salary: 2500000, // 25k
-    isActive: true,
-    annualLeaveBalance: 15,
-    sickLeaveBalance: 10
-  }).returning();
+  const managersData = [
+    { username: "manager1", firstName: "Sarah", lastName: "Connor", department: "Operations", position: "Operations Manager", employeeId: "MAN-001", salary: 6000000 },
+    { username: "manager2", firstName: "Gordon", lastName: "Ramsay", department: "Kitchen", position: "Head Chef", employeeId: "MAN-002", salary: 7000000 }
+  ];
 
-  const [emp2] = await db.insert(users).values({
-    username: "jane",
-    password,
-    email: "jane.smith@essence.com",
-    firstName: "Jane",
-    lastName: "Smith",
-    role: "employee",
-    department: "Kitchen",
-    position: "Chef",
-    employeeId: "EMP-002",
-    managerId: manager.id,
-    hireDate: new Date("2024-02-20"),
-    salary: 3000000, // 30k
-    isActive: true,
-    annualLeaveBalance: 12,
-    sickLeaveBalance: 8
-  }).returning();
+  const managers = [];
+  for (const m of managersData) {
+    const [created] = await db.insert(users).values({
+      ...m,
+      email: `${m.username}@essence.com`,
+      password,
+      role: "manager",
+      hireDate: new Date("2023-02-01"),
+      isActive: true
+    }).returning();
+    managers.push(created);
+  }
 
-  // 3. Holidays
-  console.log("Creating holidays...");
+  const employees = [];
+  const positions = ["Server", "Bartender", "Host", "Line Cook", "Prep Cook"];
+  
+  for (let i = 1; i <= 10; i++) {
+    const isOps = i <= 5; 
+    const manager = isOps ? managers[0] : managers[1];
+    const dept = isOps ? "Operations" : "Kitchen";
+    const pos = isOps ? positions[Math.floor(Math.random() * 3)] : positions[3 + Math.floor(Math.random() * 2)];
+
+    const [emp] = await db.insert(users).values({
+      username: `employee${i}`,
+      password,
+      email: `employee${i}@essence.com`,
+      firstName: `Employee`,
+      lastName: `${i}`,
+      role: "employee",
+      department: dept,
+      position: pos,
+      employeeId: `EMP-${String(i).padStart(3, '0')}`,
+      managerId: manager.id,
+      hireDate: new Date("2024-01-15"),
+      salary: 2500000 + (Math.floor(Math.random() * 10) * 100000), 
+      isActive: true,
+      annualLeaveBalance: 15,
+      sickLeaveBalance: 10
+    }).returning();
+    employees.push(emp);
+  }
+
+  const allStaff = [...managers, ...employees]; 
+
+  // 3. Holidays & Announcements
   await db.insert(holidays).values([
     { name: "New Year's Day", date: new Date("2025-01-01"), type: "regular" },
     { name: "Labor Day", date: new Date("2025-05-01"), type: "regular" },
-    { name: "Independence Day", date: new Date("2025-06-12"), type: "regular" },
-    { name: "Ninoy Aquino Day", date: new Date("2025-08-21"), type: "special" },
     { name: "Christmas Day", date: new Date("2025-12-25"), type: "regular" },
-    { name: "Rizal Day", date: new Date("2025-12-30"), type: "regular" },
   ]);
 
-  // 4. Announcements
-  console.log("Creating announcements...");
   await db.insert(announcements).values([
-    {
-      title: "Welcome to ESSence",
-      content: "We are excited to introduce our new Employee Self-Service portal. Please update your profiles.",
-      type: "general",
-      authorId: admin.id,
-      isActive: true,
-      targetDepartments: [],
-      createdAt: new Date()
-    },
-    {
-      title: "Holiday Schedule Update",
-      content: "Please note the updated holiday schedule for December. Operations will run on a skeletal workforce.",
-      type: "urgent",
-      authorId: admin.id,
-      isActive: true,
-      targetDepartments: ["Operations", "Kitchen"],
-      createdAt: new Date(Date.now() - 86400000) // 1 day ago
-    },
-    {
-      title: "New HR Policy",
-      content: "Updated guidelines on remote work eligibility are now available in the documents section.",
-      type: "policy",
-      authorId: manager.id,
-      isActive: true,
-      targetDepartments: [],
-      createdAt: new Date(Date.now() - 172800000) // 2 days ago
-    }
+    { title: "Welcome to ESSence", content: "We are excited to introduce our new Employee Self-Service portal.", type: "general", authorId: admin.id, isActive: true, targetDepartments: [], createdAt: new Date() },
+    { title: "Inventory Check", content: "Report breakages immediately.", type: "urgent", authorId: managers[1].id, isActive: true, targetDepartments: ["Kitchen"], createdAt: new Date() }
   ]);
 
-  // 5. Schedules (Current Week)
-  console.log("Creating schedules...");
-  const today = new Date();
-  const startOfWeek = new Date(today);
-  const dayOfWeek = today.getDay(); // 0 (Sun) - 6 (Sat)
-  const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust to Monday
-  startOfWeek.setDate(diff);
-  startOfWeek.setHours(0, 0, 0, 0);
-  
-  const shifts = [];
-  
-  // Generate shifts for Mon-Fri for both employees
-  for (let i = 0; i < 5; i++) { 
-    const shiftDate = new Date(startOfWeek);
-    shiftDate.setDate(startOfWeek.getDate() + i);
-    
-    // Skip if date is in the past (optional, but good for "upcoming" schedule view)
-    
-    // Emp1: Morning Shift (8am - 4pm)
-    const start1 = new Date(shiftDate); start1.setHours(8, 0, 0, 0);
-    const end1 = new Date(shiftDate); end1.setHours(16, 0, 0, 0);
-    
-    shifts.push({
-      userId: emp1.id,
-      date: shiftDate,
-      startTime: start1,
-      endTime: end1,
-      type: "morning",
-      title: "Morning Shift",
-      shiftRole: "server",
-      location: "Main Hall"
-    });
-
-    // Emp2: Afternoon Shift (4pm - 12am)
-    const start2 = new Date(shiftDate); start2.setHours(16, 0, 0, 0);
-    const end2 = new Date(shiftDate); 
-    end2.setDate(shiftDate.getDate() + 1); // Next day
-    end2.setHours(0, 0, 0, 0);
-
-    shifts.push({
-      userId: emp2.id,
-      date: shiftDate,
-      startTime: start2,
-      endTime: end2,
-      type: "afternoon",
-      title: "Afternoon Shift",
-      shiftRole: "kitchen",
-      location: "Kitchen"
+  // 4. Incident Reports
+  const reportTypes = [
+    { type: "incident", title: "Slippery Floor", severity: "medium", desc: "Water spill near dishwashing." },
+    { type: "breakage", title: "Broken Glassware", severity: "low", desc: "Dropped wine glasses." }
+  ];
+  const reportsData = [];
+  for (let i = 0; i < 4; i++) {
+    const reporter = employees[Math.floor(Math.random() * employees.length)];
+    const template = reportTypes[i % 2];
+    reportsData.push({
+      userId: reporter.id,
+      type: template.type,
+      title: template.title,
+      description: template.desc,
+      severity: template.severity,
+      status: "resolved",
+      location: "Kitchen",
+      resolvedBy: reporter.managerId,
+      resolvedAt: new Date(),
+      createdAt: new Date()
     });
   }
-  await db.insert(schedules).values(shifts);
+  await db.insert(reports).values(reportsData);
 
-  // 6. Attendance & Breaks (Historical Data for Analytics)
-  console.log("Creating attendance history...");
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  yesterday.setHours(0,0,0,0);
-
-  // Emp1 worked yesterday (8:00 AM - 5:00 PM)
-  const timeIn1 = new Date(yesterday); timeIn1.setHours(7, 55, 0, 0); // Early in
-  const timeOut1 = new Date(yesterday); timeOut1.setHours(17, 5, 0, 0); // Late out
+  // =========================================================================
+  // 5. ATTENDANCE & PAYSLIP LOOP
+  //    Periods: 
+  //    1. Previous Month (1-15)
+  //    2. Previous Month (16-End)
+  //    3. Current Month (1-15)
+  // =========================================================================
   
-  const [att1] = await db.insert(attendance).values({
-    userId: emp1.id,
-    date: yesterday,
-    timeIn: timeIn1,
-    timeOut: timeOut1,
-    status: "clocked_out",
-    totalBreakMinutes: 60,
-    totalWorkMinutes: 540, // 9 hours total - 1 hr break = 8 hrs
-    notes: "Regular shift"
-  }).returning();
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  
+  // Define the 3 periods
+  const prevMonthDate = new Date(currentYear, currentMonth - 1, 1);
+  const prevMonth = prevMonthDate.getMonth();
+  const prevYear = prevMonthDate.getFullYear();
+  const lastDayPrevMonth = new Date(prevYear, prevMonth + 1, 0).getDate();
 
-  await db.insert(breaks).values({
-    attendanceId: att1.id,
-    userId: emp1.id,
-    breakStart: new Date(yesterday.setHours(12, 0, 0)),
-    breakEnd: new Date(yesterday.setHours(13, 0, 0)),
-    breakMinutes: 60,
-    breakType: "lunch",
-    notes: "Lunch break"
-  });
-
-  // 7. Leave Requests
-  console.log("Creating leave requests...");
-  await db.insert(leaveRequests).values([
-    {
-      userId: emp1.id,
-      type: "annual",
-      startDate: new Date("2025-12-01"),
-      endDate: new Date("2025-12-05"),
-      days: 5,
-      reason: "Family vacation to Boracay",
-      status: "pending",
-      createdAt: new Date()
+  const periods = [
+    { 
+        label: "Prev Month 1st Half",
+        month: prevMonth, 
+        year: prevYear, 
+        startDay: 1, 
+        endDay: 15, 
+        periodNum: 1 
     },
-    {
-      userId: emp2.id,
-      type: "sick",
-      startDate: new Date("2025-10-10"),
-      endDate: new Date("2025-10-11"),
-      days: 2,
-      reason: "Flu",
-      status: "approved",
-      approvedBy: manager.id,
-      approvedAt: new Date("2025-10-09"),
-      createdAt: new Date("2025-10-09")
+    { 
+        label: "Prev Month 2nd Half",
+        month: prevMonth, 
+        year: prevYear, 
+        startDay: 16, 
+        endDay: lastDayPrevMonth, 
+        periodNum: 2 
+    },
+    { 
+        label: "Curr Month 1st Half",
+        month: currentMonth, 
+        year: currentYear, 
+        startDay: 1, 
+        endDay: 15, 
+        periodNum: 1 
     }
-  ]);
+  ];
 
-  // 8. Labor Cost Data (For Analytics Chart)
-  console.log("Creating analytics data...");
-  const currentYear = new Date().getFullYear();
-  await db.insert(laborCostData).values([
-    {
-      month: 9, // September
-      year: currentYear,
-      totalSales: 12500000, // 125k
-      totalLaborCost: 2500000, // 25k
-      laborCostPercentage: 2000, // 20%
-      status: "Excellent",
-      performanceRating: "good",
-      notes: "Strong sales month"
-    },
-    {
-      month: 10, // October
-      year: currentYear,
-      totalSales: 12500000,
-      totalLaborCost: 1200000,
-      laborCostPercentage: 960, // 9.6%
-      status: "Excellent",
-      performanceRating: "good",
-      notes: "Efficient labor usage"
-    },
-    {
-      month: 11, // November (Current/Recent)
-      year: currentYear,
-      totalSales: 8500000, // Lower sales
-      totalLaborCost: 2800000, // Higher cost
-      laborCostPercentage: 3294, // ~33%
-      status: "High",
-      performanceRating: "warning",
-      notes: "Seasonal dip"
-    }
-  ]);
+  console.log("Generating attendance and payslips for 1.5 months...");
 
-  // 9. Incident Reports
-  console.log("Creating reports...");
-  await db.insert(reports).values([
-    {
-      userId: emp1.id,
-      type: "incident",
-      title: "Slippery Floor",
-      description: "Water spill near the kitchen entrance caused a near-miss slip.",
-      severity: "high",
-      status: "investigating",
-      location: "Kitchen Entrance",
-      createdAt: new Date()
-    },
-    {
-      userId: emp2.id,
-      type: "breakage",
-      title: "Broken Plates",
-      description: "Stack of plates fell during rush hour.",
-      severity: "low",
-      status: "resolved",
-      location: "Dishwashing Area",
-      itemName: "Dinner Plate",
-      itemQuantity: 5,
-      estimatedCost: 25000, // 250 pesos
-      resolvedBy: manager.id,
-      resolvedAt: new Date(),
-      createdAt: new Date(Date.now() - 86400000)
-    }
-  ]);
+  const payslipsToInsert = [];
+  const attendanceToInsert = [];
+  const breaksToInsert = [];
 
-  // 10. Recent Activities
-  console.log("Creating activity logs...");
-  await db.insert(activities).values([
-    {
-      userId: emp1.id,
-      type: "clock_in",
-      entityType: "attendance",
-      entityId: att1.id,
-      details: { action: "clock_in", userName: "John Doe" },
-      createdAt: new Date(Date.now() - 100000000)
-    },
-    {
-      userId: manager.id,
-      type: "leave_approved",
-      entityType: "leave_request",
-      details: { action: "approve", userName: "Sarah Connor" },
-      createdAt: new Date(Date.now() - 5000000)
+  for (const emp of allStaff) {
+    
+    // Process each period for this employee
+    for (const p of periods) {
+        let periodRegHours = 0;
+        let periodOtHours = 0;
+        let periodNdHours = 0;
+
+        // Loop days in this period
+        for (let d = p.startDay; d <= p.endDay; d++) {
+            const workDate = new Date(p.year, p.month, d);
+            
+            // Skip Sundays only (6-day work week simulation)
+            if (workDate.getDay() === 0) continue;
+
+            // 90% Attendance Rate
+            if (Math.random() > 0.1) {
+                // Determine Shift
+                const isMorning = Math.random() > 0.4; // Slightly more morning shifts
+                const start = new Date(workDate);
+                start.setHours(isMorning ? 8 : 16, 0, 0, 0); // 8AM or 4PM
+                
+                const end = new Date(workDate);
+                if (isMorning) {
+                    end.setHours(17, 0, 0, 0); // 5PM
+                } else {
+                    end.setHours(1, 0, 0, 0); // 1AM next day
+                    end.setDate(end.getDate() + 1);
+                }
+
+                // Add Variance
+                const timeIn = new Date(start);
+                timeIn.setMinutes(timeIn.getMinutes() + (Math.random() * 30 - 15)); // +/- 15 mins
+                
+                const timeOut = new Date(end);
+                timeOut.setMinutes(timeOut.getMinutes() + (Math.random() * 45)); // 0-45 mins OT
+
+                // Calculate durations
+                const durationMs = timeOut.getTime() - timeIn.getTime();
+                const totalMinutes = Math.floor(durationMs / 60000);
+                const breakMinutes = 60;
+                const workMinutes = Math.max(0, totalMinutes - breakMinutes);
+
+                // Insert Attendance (We need ID for breaks, so we push to DB immediately inside loop or use UUIDs)
+                // For simplicity in bulk seed, we insert attendance one by one to get ID, 
+                // OR we can generate UUIDs in code if using uuid lib, but let's stick to db insert for safety.
+                const [att] = await db.insert(attendance).values({
+                    userId: emp.id,
+                    date: workDate,
+                    timeIn: timeIn,
+                    timeOut: timeOut,
+                    status: "clocked_out",
+                    totalBreakMinutes: breakMinutes,
+                    totalWorkMinutes: workMinutes,
+                    notes: "Regular shift"
+                }).returning();
+
+                // Break
+                await db.insert(breaks).values({
+                    attendanceId: att.id,
+                    userId: emp.id,
+                    breakStart: new Date(timeIn.getTime() + 4 * 3600000), // 4 hrs in
+                    breakEnd: new Date(timeIn.getTime() + 5 * 3600000),
+                    breakMinutes: 60,
+                    breakType: "lunch",
+                    notes: "Lunch"
+                });
+
+                // Accumulate Hours for Payslip
+                let dailyReg = 0;
+                let dailyOT = 0;
+                
+                if (workMinutes > 480) { // > 8 hours
+                    dailyReg = 480;
+                    dailyOT = workMinutes - 480;
+                } else {
+                    dailyReg = workMinutes;
+                }
+                
+                periodRegHours += (dailyReg / 60);
+                periodOtHours += (dailyOT / 60);
+                periodNdHours += getNightDiffHours(timeIn, timeOut);
+            }
+        }
+
+        // --- Calculate Payslip for this Period ---
+        const basicSalary = periodRegHours * HOURLY_RATE;
+        const overtimePay = periodOtHours * (HOURLY_RATE * OT_MULTIPLIER);
+        const nightDiffPay = periodNdHours * (HOURLY_RATE * ND_MULTIPLIER);
+        const allowanceAmount = 1000; // Fixed allowance
+
+        const grossPay = basicSalary + overtimePay + nightDiffPay + allowanceAmount;
+
+        // Deductions
+        const sss = computeSSS(grossPay);
+        const philHealth = computePhilHealth(grossPay);
+        const pagIbig = computePagIbig(grossPay);
+        
+        const totalDeductions = sss + philHealth + pagIbig;
+        const netPay = Math.max(0, grossPay - totalDeductions);
+
+        payslipsToInsert.push({
+            userId: emp.id,
+            month: p.month + 1, // JS month is 0-indexed, DB is 1-12
+            year: p.year,
+            period: p.periodNum,
+            basicSalary: Math.round(basicSalary * 100),
+            allowances: {
+                overtime: Math.round(overtimePay * 100),
+                nightDiff: Math.round(nightDiffPay * 100),
+                allowances: Math.round(allowanceAmount * 100)
+            },
+            deductions: {
+                sss: Math.round(sss * 100),
+                philHealth: Math.round(philHealth * 100),
+                pagIbig: Math.round(pagIbig * 100),
+                tax: 0
+            },
+            grossPay: Math.round(grossPay * 100),
+            netPay: Math.round(netPay * 100),
+            generatedAt: new Date()
+        });
     }
-  ]);
+  }
+
+  console.log(`Inserting ${payslipsToInsert.length} payslips...`);
+  await db.insert(payslips).values(payslipsToInsert);
+
+
+  // =========================================================================
+  // 6. SCHEDULE GENERATION (Current Week)
+  // =========================================================================
+  console.log("Generating future schedules...");
+  const startOfWeek = new Date(now);
+  const day = startOfWeek.getDay();
+  const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
+  startOfWeek.setDate(diff);
+  startOfWeek.setHours(0,0,0,0);
+
+  const shiftData = [];
+  for (const emp of allStaff) {
+    for (let d = 0; d < 6; d++) { // Mon-Sat
+      const workDate = new Date(startOfWeek);
+      workDate.setDate(startOfWeek.getDate() + d);
+      
+      const isMorning = Math.random() > 0.5;
+      const start = new Date(workDate);
+      start.setHours(isMorning ? 8 : 16, 0, 0, 0);
+      
+      const end = new Date(workDate);
+      if (isMorning) end.setHours(16, 0, 0, 0);
+      else end.setHours(23, 59, 0, 0);
+
+      shiftData.push({
+        userId: emp.id,
+        date: workDate,
+        startTime: start,
+        endTime: end,
+        type: isMorning ? "morning" : "afternoon",
+        title: isMorning ? "Morning Shift" : "Afternoon Shift",
+        shiftRole: emp.position || "Staff",
+        location: emp.department === 'Kitchen' ? 'Kitchen' : 'Main Hall'
+      });
+    }
+  }
+  await db.insert(schedules).values(shiftData);
+
+  // 7. Analytics Data
+  console.log("Generating analytics...");
+  const laborData = [];
+  const totalPayrollCents = payslipsToInsert.reduce((sum, p) => sum + p.grossPay, 0);
+  
+  // Last 3 months
+  for (let i = 0; i < 3; i++) {
+     const monthSales = (totalPayrollCents / 100) * 4; // 25% cost ratio
+     laborData.push({
+       month: (currentMonth + 1) - i,
+       year: currentYear,
+       totalSales: Math.round(monthSales * 100),
+       totalLaborCost: Math.round(totalPayrollCents / 3), // avg per month
+       laborCostPercentage: 2500, // 25%
+       status: "Excellent",
+       performanceRating: "A",
+       notes: "Seed Data"
+     });
+  }
+  await db.insert(laborCostData).values(laborData);
 
   console.log("Seed completed successfully!");
 }

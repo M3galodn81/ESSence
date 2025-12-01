@@ -36,7 +36,7 @@ const navigationItems = [
   { path: "/attendance", label: "Attendance Logs", icon: FileText, roles: ["employee"] },
   { path: "/leave-management", label: "Leave Requests", icon: Calendar, roles: ["employee", "manager", "admin"] },
   { path: "/payslips", label: "My Payslips", icon: PhilippinePeso, roles: ["employee"] },
-  { path: "/salary-computation", label: "Salary Calculator", icon: layersIconWrapper(PhilippinePeso), roles: ["employee"] },
+  // { path: "/salary-computation", label: "Salary Calculator", icon: layersIconWrapper(PhilippinePeso), roles: ["employee"] },
   { path: "/schedules", label: "My Schedule", icon: Clock, roles: ["employee"] },
   { path: "/reports", label: "Incidents", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
   { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "admin", "payroll_officer"] },
@@ -50,10 +50,10 @@ const managementItems = [
 ];
 
 const payrollItems = [
-  { path: "/payslip-history", label: "Payslip History", icon: FileText, roles: ["payroll_officer"] },
+  { path: "/payslip-history", label: "Payslip Management", icon: FileText, roles: ["payroll_officer"] },
   { path: "/payroll-management", label: "Payroll Generator", icon: PhilippinePeso, roles: ["payroll_officer"] },
-  // { path: "/admin-attendance", label: "Employee Attendance", icon: FileText, roles: ["payroll_officer"] },
-  // { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, roles: ["payroll_officer"] },
+  { path: "/admin-attendance", label: "Employee Attendance", icon: FileText, roles: ["payroll_officer"] },
+  { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, roles: ["payroll_officer"] },
 ];
 
 // Helper to ensure icon types match if strict

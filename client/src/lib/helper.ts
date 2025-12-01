@@ -59,3 +59,7 @@ export const computePhilHealth = (basic: number) => {
     if (income > 100000) income = 100000;
     return (income * 0.05) / 2; // Employee Share
   };
+
+export const HOURLY_RATE = 58.75;
+export const OT_MULTIPLIER = 1.25;
+export const ND_MULTIPLIER = 1.1; 
