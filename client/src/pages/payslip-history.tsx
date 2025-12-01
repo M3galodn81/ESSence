@@ -18,7 +18,6 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Pencil, Trash2, ChevronDown, ChevronRight, Eye, Filter, Search } from "lucide-react";
 import type { Payslip } from "@shared/schema";
 import { computeSSS, computePhilHealth, computePagIbig, HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER } from "@/lib/helper";
-import { BentoCard } from "@/components/custom/bento-card";
 import {
   Select,
   SelectContent,
@@ -27,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-
+// Helper for display rounding
 const round2 = (num: number) => Math.round(num * 100) / 100;
 
 export default function PayslipHistory() {
@@ -77,11 +76,19 @@ export default function PayslipHistory() {
     }
   });
 
-  const { data: teamMembers } = useQuery({ queryKey: ["/api/team"] });
+  // FIX: Added queryFn to fetch team members
+  const { data: teamMembers } = useQuery({ 
+    queryKey: ["/api/team"],
+    queryFn: async () => {
+        const res = await fetch("/api/team");
+        if (!res.ok) throw new Error("Failed to fetch team members");
+        return res.json();
+    }
+  });
 
   // --- Mutations ---
   const updatePayslipMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
       const res = await fetch(`/api/payslips/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -101,7 +108,7 @@ export default function PayslipHistory() {
   });
 
   const deletePayslipMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async (id: number) => {
       const res = await fetch(`/api/payslips/${id}`, { method: "DELETE" });
       if(!res.ok) throw new Error("Failed to delete");
       return res.json();
@@ -117,17 +124,18 @@ export default function PayslipHistory() {
   });
 
   // --- Helpers ---
-  const calculateGrossPay = (basic: number, allowancesObj: any) => parseFloat((basic || 0).toString()) + Object.values(allowancesObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
-  const calculateTotalDeductions = (deductionsObj: any) => Object.values(deductionsObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
-  const calculateNetPay = (gross: number, totalDeductions: number) => Math.max(0, gross - totalDeductions);
-
   const getEmployeeName = (id: string) => {
-    if (user && user.id === id) return `${user.firstName} ${user.lastName} (You)`;
-    const emp = teamMembers?.find((m: any) => m.id === id);
-    return emp ? `${emp.firstName} ${emp.lastName}` : id;
+    // If it's the current user
+    if (user && String(user.id) === String(id)) return `${user.firstName} ${user.lastName} (You)`;
+    
+    // Look up in team members
+    const emp = teamMembers?.find((m: any) => String(m.id) === String(id));
+    return emp ? `${emp.firstName} ${emp.lastName}` : `User ${id}`;
   };
 
   // --- Auto-Calculation Effect for Edit ---
+  // This ensures that when you change hours/bonuses in the UI, the gross/net/deductions update automatically
+  
   useEffect(() => {
     if (!isEditOpen) return;
 
@@ -137,11 +145,13 @@ export default function PayslipHistory() {
     
     const grossPay = round2(basicSalary + overtimePay + nightDiffPay + editForm.bonuses + editForm.otherAllowances);
 
+    // Re-calculate government deductions based on new basic salary
     const sss = round2(computeSSS(basicSalary)); 
     const philHealth = round2(computePhilHealth(basicSalary)); 
     const pagIbig = round2(computePagIbig(basicSalary)); 
     
-    const tax = 0; 
+    // Default tax to 0 or keep existing logic (simplified here)
+    const tax = editForm.tax; 
 
     const totalDeductions = round2(sss + philHealth + pagIbig + tax + editForm.otherDeductions);
     const netPay = Math.max(0, round2(grossPay - totalDeductions));
@@ -155,7 +165,6 @@ export default function PayslipHistory() {
       sss,
       philHealth,
       pagIbig,
-      tax,
       netPay
     }));
   }, [
@@ -165,6 +174,7 @@ export default function PayslipHistory() {
     editForm.bonuses, 
     editForm.otherAllowances, 
     editForm.otherDeductions,
+    editForm.tax,
     isEditOpen
   ]);
 
@@ -175,6 +185,7 @@ export default function PayslipHistory() {
     const allowances = payslip.allowances || {};
     const deductions = payslip.deductions || {};
 
+    // Convert from cents (Integers) to Currency (Floats) for the form
     const basicVal = payslip.basicSalary / 100;
     const otVal = (allowances.overtime || 0) / 100;
     const ndVal = (allowances.nightDiff || 0) / 100;
@@ -211,6 +222,7 @@ export default function PayslipHistory() {
   const handleSaveEdit = () => {
     if(!selectedPayslip) return;
     
+    // Pack data back into cents (Integers) for the API
     const payload = {
         basicSalary: Math.round(editForm.basicSalary * 100),
         allowances: {
@@ -248,12 +260,12 @@ export default function PayslipHistory() {
     const filtered = payslips.filter((slip: Payslip) => {
         const matchMonth = filterMonth === "all" || slip.month.toString() === filterMonth;
         const matchYear = filterYear === "all" || slip.year.toString() === filterYear;
-        const name = getEmployeeName(slip.userId).toLowerCase();
+        const name = getEmployeeName(String(slip.userId)).toLowerCase();
         const matchSearch = name.includes(searchTerm.toLowerCase());
         return matchMonth && matchYear && matchSearch;
     });
 
-    // 2. Group
+    // 2. Group by User+Month+Year
     const groups: Record<string, any> = {};
 
     filtered.forEach((slip: Payslip) => {
@@ -415,8 +427,6 @@ export default function PayslipHistory() {
                                                 <span className="font-medium text-slate-700 text-right">₱{(group.deductions.philHealth / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                                 <span className="text-slate-500">Pag-IBIG:</span>
                                                 <span className="font-medium text-slate-700 text-right">₱{(group.deductions.pagIbig / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                {/* <span className="text-slate-500">Tax:</span> */}
-                                                {/* <span className="font-medium text-slate-700 text-right">₱{(group.deductions.tax / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span> */}
                                                 {group.deductions.others > 0 && (
                                                     <>
                                                         <span className="text-slate-500">Others:</span>
@@ -457,7 +467,7 @@ export default function PayslipHistory() {
                             ))}
                         </>
                     )}
-                </React.Fragment>
+                  </React.Fragment>
               ))}
               {(!groupedPayslips || groupedPayslips.length === 0) && (
                 <TableRow>
@@ -478,7 +488,7 @@ export default function PayslipHistory() {
             <DialogHeader>
                 <DialogTitle>Payslip Details</DialogTitle>
                 <DialogDescription>
-                   Detailed breakdown for {selectedPayslip && getEmployeeName(selectedPayslip.userId)}
+                   Detailed breakdown for {selectedPayslip && getEmployeeName(String(selectedPayslip.userId))}
                 </DialogDescription>
             </DialogHeader>
             {selectedPayslip && (
@@ -498,13 +508,12 @@ export default function PayslipHistory() {
                    <div>
                       <h3 className="font-medium text-sm text-slate-500 uppercase tracking-wider border-b pb-2 mb-3">Deductions</h3>
                       <div className="space-y-2 text-sm">
-                         <div className="flex justify-between"><span className="text-slate-600">SSS</span><span className="font-medium">₱{((selectedPayslip.deductions?.sss || 0) / 100).toLocaleString()}</span></div>
-                         <div className="flex justify-between"><span className="text-slate-600">PhilHealth</span><span className="font-medium">₱{((selectedPayslip.deductions?.philHealth || 0) / 100).toLocaleString()}</span></div>
-                         <div className="flex justify-between"><span className="text-slate-600">Pag-IBIG</span><span className="font-medium">₱{((selectedPayslip.deductions?.pagIbig || 0) / 100).toLocaleString()}</span></div>
-                         {/* <div className="flex justify-between"><span className="text-slate-600">Tax</span><span className="font-medium">₱{((selectedPayslip.deductions?.tax || 0) / 100).toLocaleString()}</span></div> */}
-                         {selectedPayslip.deductions?.others > 0 && <div className="flex justify-between"><span className="text-slate-600">Others</span><span className="font-medium">₱{((selectedPayslip.deductions?.others || 0) / 100).toLocaleString()}</span></div>}
-                         <div className="pt-2 border-t flex justify-between font-bold text-rose-600"><span>Total Deductions</span><span>-₱{((selectedPayslip.grossPay - selectedPayslip.netPay) / 100).toLocaleString()}</span></div>
-                      </div>
+                          <div className="flex justify-between"><span className="text-slate-600">SSS</span><span className="font-medium">₱{((selectedPayslip.deductions?.sss || 0) / 100).toLocaleString()}</span></div>
+                          <div className="flex justify-between"><span className="text-slate-600">PhilHealth</span><span className="font-medium">₱{((selectedPayslip.deductions?.philHealth || 0) / 100).toLocaleString()}</span></div>
+                          <div className="flex justify-between"><span className="text-slate-600">Pag-IBIG</span><span className="font-medium">₱{((selectedPayslip.deductions?.pagIbig || 0) / 100).toLocaleString()}</span></div>
+                          {selectedPayslip.deductions?.others > 0 && <div className="flex justify-between"><span className="text-slate-600">Others</span><span className="font-medium">₱{((selectedPayslip.deductions?.others || 0) / 100).toLocaleString()}</span></div>}
+                          <div className="pt-2 border-t flex justify-between font-bold text-rose-600"><span>Total Deductions</span><span>-₱{((selectedPayslip.grossPay - selectedPayslip.netPay) / 100).toLocaleString()}</span></div>
+                       </div>
                    </div>
                 </div>
                 <div className="flex justify-between items-center p-4 bg-green-50 border border-green-100 rounded-xl">
@@ -558,6 +567,10 @@ export default function PayslipHistory() {
                                 <Label className="text-xs text-slate-500">Other Deductions</Label>
                                 <Input type="number" className="rounded-xl border-slate-200" value={editForm.otherDeductions} onChange={e => setEditForm({...editForm, otherDeductions: Math.max(0, parseFloat(e.target.value) || 0)})} />
                             </div>
+                             <div className="col-span-2">
+                                <Label className="text-xs text-slate-500">Tax</Label>
+                                <Input type="number" className="rounded-xl border-slate-200" value={editForm.tax} onChange={e => setEditForm({...editForm, tax: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                            </div>
                         </div>
                     </div>
 
@@ -574,7 +587,7 @@ export default function PayslipHistory() {
                                 <div className="flex justify-between text-xs text-rose-600"><span>SSS:</span><span>-{editForm.sss.toLocaleString()}</span></div>
                                 <div className="flex justify-between text-xs text-rose-600"><span>PhilHealth:</span><span>-{editForm.philHealth.toLocaleString()}</span></div>
                                 <div className="flex justify-between text-xs text-rose-600"><span>Pag-IBIG:</span><span>-{editForm.pagIbig.toLocaleString()}</span></div>
-                                {/* <div className="flex justify-between text-xs text-rose-600"><span>Tax:</span><span>-{editForm.tax.toLocaleString()}</span></div> */}
+                                <div className="flex justify-between text-xs text-rose-600"><span>Tax:</span><span>-{editForm.tax.toLocaleString()}</span></div>
                                 <div className="flex justify-between text-xs text-rose-600"><span>Other Ded:</span><span>-{editForm.otherDeductions.toLocaleString()}</span></div>
                             </div>
 
@@ -598,7 +611,7 @@ export default function PayslipHistory() {
             <AlertDialogHeader>
                 <AlertDialogTitle>Delete Payslip?</AlertDialogTitle>
                 <AlertDialogDescription>
-                    This action cannot be undone. The record for <strong>{selectedPayslip && getEmployeeName(selectedPayslip.userId)}</strong> will be permanently removed.
+                    This action cannot be undone. The record for <strong>{selectedPayslip && getEmployeeName(String(selectedPayslip.userId))}</strong> will be permanently removed.
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

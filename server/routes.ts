@@ -574,7 +574,7 @@ export function registerRoutes(app: Express): Server {
     res.json(teamMembers);
   });
 
-    app.get("/api/activities", async (req, res) => {
+  app.get("/api/activities", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
@@ -850,8 +850,6 @@ export function registerRoutes(app: Express): Server {
       res.status(500).json({ message: "Failed to get attendance records" });
     }
   });
-
-  
 
   // Get All Attendance (Filtered by Date)
   app.get("/api/attendance/all", async (req, res) => {

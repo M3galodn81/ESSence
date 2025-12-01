@@ -53,7 +53,7 @@ const payrollItems = [
   { path: "/payslip-history", label: "Payslip Management", icon: FileText, roles: ["payroll_officer"] },
   { path: "/payroll-management", label: "Payroll Generator", icon: PhilippinePeso, roles: ["payroll_officer"] },
   { path: "/admin-attendance", label: "Employee Attendance", icon: FileText, roles: ["payroll_officer"] },
-  { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, roles: ["payroll_officer"] },
+  // { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, roles: ["payroll_officer"] },
 ];
 
 // Helper to ensure icon types match if strict
