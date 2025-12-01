@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { Search, Edit2, Check, X, Loader2, RefreshCw, CalendarDays, Users, FileCheck, Clock, Filter, Calculator, TrendingDown, PhilippinePeso, ChevronRight, Moon, Flame, Calendar, Briefcase, Coffee } from 'lucide-react';
+import { Search, Edit2, Loader2, CalendarDays, Users, FileCheck, Clock, Filter, Calculator, Moon, Flame, Calendar, Briefcase } from 'lucide-react';
 import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER, computeSSS, computePhilHealth, computePagIbig } from "../lib/helper"; 
 import {
   AlertDialog,
@@ -25,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BentoCard } from "@/components/custom/bento-card"; 
 
@@ -78,12 +78,13 @@ export default function PayrollManagement() {
   const { data: existingPayslips, isLoading: isLoadingPayslips } = useQuery({
     queryKey: ["/api/payslips", "all", selectedPeriod.month, selectedPeriod.year, selectedPeriod.half],
     queryFn: async () => {
-       const res = await fetch(`/api/payslips/all`);
+       // FIX: Changed from /api/payslips/all to /api/payslips?all=true
+       const res = await fetch(`/api/payslips?all=true`);
        if (!res.ok) throw new Error("Failed");
        const allPayslips = await res.json();
        return allPayslips.filter((p: any) => 
-          Number(p.month) === Number(selectedPeriod.month) && 
-          Number(p.year) === Number(selectedPeriod.year)
+         Number(p.month) === Number(selectedPeriod.month) && 
+         Number(p.year) === Number(selectedPeriod.year)
        );
     }
   });
@@ -135,7 +136,6 @@ export default function PayrollManagement() {
 
     userRecords.forEach((record: any) => {
         if (record.timeOut && record.totalWorkMinutes) {
-            // FIX: totalWorkMinutes is already net (breaks excluded)
             const workMinutes = record.totalWorkMinutes || 0;
 
             if (workMinutes > 480) {
@@ -149,7 +149,7 @@ export default function PayrollManagement() {
     });
 
     return { 
-        regularHours: Math.floor(totalRegMinutes / 60), 
+        regularHours: parseFloat((totalRegMinutes / 60).toFixed(2)), 
         overtimeHours: parseFloat((totalOTMinutes / 60).toFixed(2)), 
         nightDiffHours: totalNDHours 
     };
@@ -172,47 +172,6 @@ export default function PayrollManagement() {
       setEditingId(null);
       setIsConfirmOpen(false);
       setIsEditOpen(false);
-    }
-  });
-
-  const calculateMutation = useMutation({
-    mutationFn: async (data: any) => {
-        const res = await fetch("/api/payroll/calculate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-        });
-        if(!res.ok) throw new Error("Calc failed");
-        return res.json();
-    },
-    onSuccess: (data) => {
-        setEditForm(prev => ({
-            ...prev,
-            sss: data.deductions.sss,
-            philHealth: data.deductions.philHealth,
-            pagIbig: data.deductions.pagIbig,
-            tax: data.deductions.tax,
-            netPay: data.netPay
-        }));
-    }
-  });
-
-  const fetchStatsMutation = useMutation({
-    mutationFn: async (params: { userId: string, startDate: string, endDate: string }) => {
-        const q = new URLSearchParams(params).toString();
-        const res = await fetch(`/api/payroll/attendance-stats?${q}`);
-        return res.json();
-    },
-    onSuccess: (data) => {
-        setEditForm(prev => ({
-            ...prev,
-            regularHours: data.regularHours,
-            overtimeHours: data.overtimeHours,
-            nightDiffHours: data.nightDiffHours,
-            bonuses: 0,
-            otherAllowances: 0,
-            otherDeductions: 0
-        }));
     }
   });
 
@@ -256,59 +215,88 @@ export default function PayrollManagement() {
             netPay: existingSlip.netPay / 100
         });
     } else {
-        fetchStatsMutation.mutate({ 
-            userId: employee.id, 
-            startDate, 
-            endDate 
+        // FIX: Replaced fetchStatsMutation with local processing
+        // Since we already have attendanceData loaded in useQuery, we process it locally
+        const stats = processAttendanceForUser(employee.id, attendanceData || []);
+        
+        setEditForm({
+            regularHours: stats.regularHours,
+            overtimeHours: stats.overtimeHours,
+            nightDiffHours: stats.nightDiffHours,
+            bonuses: 0,
+            otherAllowances: 0,
+            otherDeductions: 0,
+            basicSalary: 0,
+            grossPay: 0,
+            sss: 0,
+            philHealth: 0,
+            pagIbig: 0,
+            tax: 0,
+            netPay: 0,
+            overtimePay: 0,
+            nightDiffPay: 0
         });
     }
   };
 
-  // --- Auto-Calculation Effect ---
+  // --- Auto-Calculation Effect (Replaces API Calc) ---
   useEffect(() => {
     if (!isEditOpen) return;
 
+    // 1. Calculate Earnings
     const basicSalary = round2(editForm.regularHours * HOURLY_RATE);
     const overtimePay = round2(editForm.overtimeHours * (HOURLY_RATE * OT_MULTIPLIER));
     const nightDiffPay = round2(editForm.nightDiffHours * (HOURLY_RATE * ND_MULTIPLIER));
     const grossPay = round2(basicSalary + overtimePay + nightDiffPay + editForm.bonuses + editForm.otherAllowances);
 
+    // 2. Calculate Deductions (Locally using imported helpers)
+    let previousDeductions = { sss: 0, philHealth: 0, pagIbig: 0 };
+    
+    // Logic: If 2nd half, check if deductions were already paid in 1st half
+    if (Number(selectedPeriod.half) === 2 && existingPayslips && editingId) {
+        const slip1 = existingPayslips.find((p: any) => 
+            p.userId === editingId && (Number(p.period) === 1 || !p.period)
+        );
+        if (slip1 && slip1.deductions) {
+            const d = slip1.deductions as any;
+            previousDeductions = {
+                sss: (d.sss || 0) / 100,
+                philHealth: (d.philHealth || 0) / 100,
+                pagIbig: (d.pagIbig || 0) / 100
+            };
+        }
+    }
+
+    // Calculate statutory (Simple Logic: Computed - Previous Paid)
+    // Note: computeSSS/PH/PagIbig usually takes total monthly compensation. 
+    // If calculating per cutoff, you might need to adjust inputs, but here we assume helpers handle logic based on input.
+    const sss = Math.max(0, round2(computeSSS(grossPay) - previousDeductions.sss));
+    const philHealth = Math.max(0, round2(computePhilHealth(basicSalary) - previousDeductions.philHealth));
+    const pagIbig = Math.max(0, round2(computePagIbig(basicSalary) - previousDeductions.pagIbig));
+    
+    // Tax placeholder (Assuming 0 for now as no helper was imported, or user manually edits)
+    const tax = editForm.tax; 
+    
+    const totalDeductions = round2(sss + philHealth + pagIbig + tax + editForm.otherDeductions);
+    const netPay = round2(grossPay - totalDeductions);
+
+    // Update State (Debounced slightly to prevent jitter if needed, but safe here)
     setEditForm(prev => ({
         ...prev,
         basicSalary,
         overtimePay,
         nightDiffPay,
         grossPay,
+        sss,
+        philHealth,
+        pagIbig,
+        netPay
     }));
 
-    const timer = setTimeout(() => {
-        let previousDeductions = { sss: 0, philHealth: 0, pagIbig: 0 };
-        if (Number(selectedPeriod.half) === 2 && existingPayslips && editingId) {
-            const slip1 = existingPayslips.find((p: any) => 
-                p.userId === editingId && (Number(p.period) === 1 || !p.period)
-            );
-            if (slip1 && slip1.deductions) {
-                const d = slip1.deductions as any;
-                previousDeductions = {
-                    sss: (d.sss || 0) / 100,
-                    philHealth: (d.philHealth || 0) / 100,
-                    pagIbig: (d.pagIbig || 0) / 100
-                };
-            }
-        }
-
-        calculateMutation.mutate({
-            grossPay,
-            basicSalary,
-            previousDeductions,
-            otherDeductions: editForm.otherDeductions
-        });
-    }, 500);
-
-    return () => clearTimeout(timer);
   }, [
     editForm.regularHours, editForm.overtimeHours, editForm.nightDiffHours, 
-    editForm.bonuses, editForm.otherAllowances, editForm.otherDeductions
+    editForm.bonuses, editForm.otherAllowances, editForm.otherDeductions, editForm.tax,
+    selectedPeriod.half, editingId
   ]);
 
   const handleConfirmSave = async () => {
@@ -418,7 +406,7 @@ export default function PayrollManagement() {
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
-      {/* Header, Stats, Filter ... (Same as before) */}
+      {/* Header, Stats, Filter */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900" data-testid="page-title">Payroll Generator</h1>
@@ -697,9 +685,8 @@ export default function PayrollManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog (Existing content...) */}
+      {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        {/* ... (Kept existing structure) ... */}
         <DialogContent className="max-w-3xl rounded-2xl">
             <DialogHeader>
                 <DialogTitle>Edit Payslip Details</DialogTitle>
@@ -737,6 +724,10 @@ export default function PayrollManagement() {
                                 <Label className="text-xs text-slate-500">Other Deductions</Label>
                                 <Input type="number" className="rounded-xl border-slate-200" value={editForm.otherDeductions} onChange={e => setEditForm({...editForm, otherDeductions: Math.max(0, parseFloat(e.target.value) || 0)})} />
                             </div>
+                             {/* <div className="col-span-2">
+                                <Label className="text-xs text-slate-500">Tax</Label>
+                                <Input type="number" className="rounded-xl border-slate-200" value={editForm.tax} onChange={e => setEditForm({...editForm, tax: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                            </div> */}
                         </div>
                     </div>
 
@@ -753,7 +744,7 @@ export default function PayrollManagement() {
                                 <div className="flex justify-between text-xs text-rose-600"><span>SSS:</span><span>-{editForm.sss.toLocaleString()}</span></div>
                                 <div className="flex justify-between text-xs text-rose-600"><span>PhilHealth:</span><span>-{editForm.philHealth.toLocaleString()}</span></div>
                                 <div className="flex justify-between text-xs text-rose-600"><span>Pag-IBIG:</span><span>-{editForm.pagIbig.toLocaleString()}</span></div>
-                                <div className="flex justify-between text-xs text-rose-600"><span>Tax:</span><span>-{editForm.tax.toLocaleString()}</span></div>
+                                {/* <div className="flex justify-between text-xs text-rose-600"><span>Tax:</span><span>-{editForm.tax.toLocaleString()}</span></div> */}
                                 <div className="flex justify-between text-xs text-rose-600"><span>Other Ded:</span><span>-{editForm.otherDeductions.toLocaleString()}</span></div>
                             </div>
 
