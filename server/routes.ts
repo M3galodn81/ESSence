@@ -10,7 +10,9 @@ import {
   insertLaborCostDataSchema,
   insertHolidaySchema,
   payslips,
-  holidays
+  holidays,
+  laborCostData,
+  reports
 } from "@shared/schema";
 import { z } from "zod";
 import { ZodError } from "zod";
@@ -450,8 +452,75 @@ export function registerRoutes(app: Express): Server {
   });
 
   // --- Reports & Analytics ---
-  app.get("/api/dashboard-stats", async (req, res) => {
+
+  app.get("/api/reports", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user!;
+    try {
+      let result;
+      // Admin & Manager see all (or you could filter by department)
+      if (['admin', 'manager'].includes(user.role)) {
+        result = await db.select().from(reports).orderBy(desc(reports.createdAt));
+      } else {
+        // Employees only see their own reports
+        result = await db.select().from(reports).where(eq(reports.userId, user.id)).orderBy(desc(reports.createdAt));
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch reports" });
+    }
+  });
+
+  // Create Report
+  app.post("/api/reports", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    try {
+      const data = insertReportSchema.parse({
+        ...req.body,
+        userId: req.user!.id,
+        // Ensure status is defaults
+        status: "pending",
+        createdAt: new Date(),
+      });
+      const report = await db.insert(reports).values(data).returning();
+      res.json(report[0]);
+    } catch (error) {
+      res.status(400).json({ message: "Invalid report data" });
+    }
+  });
+
+  // Resolve/Update Report
+  app.patch("/api/reports/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user!;
+    
+    // Only Managers/Admins can resolve
+    if (!['admin', 'manager'].includes(user.role)) {
+       return res.status(403).json({ message: "Access denied" });
+    }
+
+    try {
+      const { status, resolutionNotes } = req.body;
+      const updated = await db.update(reports)
+        .set({ 
+          status, 
+          notes: resolutionNotes,
+          resolvedBy: user.id,
+          resolvedAt: status === 'resolved' ? new Date() : null
+        })
+        .where(eq(reports.id, req.params.id))
+        .returning();
+      
+      res.json(updated[0]);
+    } catch (error) {
+      res.status(400).json({ message: "Failed to update report" });
+    }
+  });
+
+  // --- Reports & Analytics (Existing + New Labor Cost) ---
+  app.get("/api/dashboard-stats", async (req, res) => {
+    // ... [Keep existing dashboard-stats code] ...
+     if (!req.isAuthenticated()) return res.sendStatus(401);
     const user = req.user!;
     const leaveRequests = await storage.getLeaveRequestsByUser(user.id);
     const approvedLeaves = leaveRequests.filter(req => req.status === 'approved');
@@ -478,6 +547,22 @@ export function registerRoutes(app: Express): Server {
     }, 0);
     res.json({ leaveBalance: `${leaveBalance} days`, weeklyHours: `${weeklyHours.toFixed(1)} hrs`, pendingApprovals });
   });
+
+  // NEW ROUTE: Labor Cost Analytics
+  app.get("/api/labor-cost", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user!;
+    if (!['admin', 'manager', 'payroll_officer'].includes(user.role)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    try {
+      const data = await db.select().from(laborCostData).orderBy(laborCostData.year, laborCostData.month);
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch analytics" });
+    }
+  });
+  
 
   app.get("/api/team", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -717,6 +802,56 @@ export function registerRoutes(app: Express): Server {
       res.status(500).json({ message: "Failed to get attendance" });
     }
   });
+
+  app.get("/api/attendance", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const user = req.user!;
+    
+    try {
+      const { startDate, endDate } = req.query;
+      const start = startDate ? new Date(startDate as string) : undefined;
+      const end = endDate ? new Date(endDate as string) : undefined;
+
+      const conditions = [eq(attendance.userId, user.id)];
+      if (start) conditions.push(gte(attendance.date, start));
+      if (end) conditions.push(lte(attendance.date, end));
+
+      const records = await db.query.attendance.findMany({
+        where: and(...conditions),
+        orderBy: [desc(attendance.date)]
+      });
+      res.json(records);
+    } catch (error) {
+      console.error("Get attendance history error:", error);
+      res.status(500).json({ message: "Failed to fetch attendance records" });
+    }
+  });
+
+  app.get("/api/attendance/all", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).send("Not authenticated");
+    const user = req.user!;
+   
+    try {
+      const { startDate, endDate } = req.query;
+      const start = startDate ? new Date(startDate as string) : undefined;
+      const end = endDate ? new Date(endDate as string) : undefined;
+
+      const conditions = [];
+      if (start) conditions.push(gte(attendance.date, start));
+      if (end) conditions.push(lte(attendance.date, end));
+
+      const attendanceRecords = await db.query.attendance.findMany({
+         where: conditions.length > 0 ? and(...conditions) : undefined,
+         orderBy: [desc(attendance.date)]
+      });
+      res.json(attendanceRecords);
+    } catch (error) {
+      console.error("Get all attendance error:", error);
+      res.status(500).json({ message: "Failed to get attendance records" });
+    }
+  });
+
+  
 
   // Get All Attendance (Filtered by Date)
   app.get("/api/attendance/all", async (req, res) => {

@@ -5,15 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { FileText, Eye, TrendingUp, DollarSign, Calendar, Wallet, TrendingDown, Clock } from "lucide-react";
+import { FileText, Eye, TrendingUp, DollarSign, Calendar, Wallet, TrendingDown, Clock, ChevronDown } from "lucide-react";
 import type { Payslip } from "@shared/schema";
 import { BentoCard } from "@/components/custom/bento-card";
 import { Loader2 } from "lucide-react";
-
-// Constants for reverse calculation of hours (Must match PayrollManagement)
-const HOURLY_RATE = 58.75;
-const OT_RATE = HOURLY_RATE * 1.25;
-const ND_RATE = HOURLY_RATE * 1.1; // Standard night diff is usually 10%, adjusted if your config is different
+import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER } from "@/lib/helper";
 
 export default function PayslipsEnhanced() {
   const { user } = useAuth();
@@ -86,8 +82,8 @@ export default function PayslipsEnhanced() {
     const otherAllowances = allowances.allowances || allowances.otherAllowances || 0;
 
     const basicHours = (basic / 100) / HOURLY_RATE;
-    const overtimeHours = (overtime / 100) / OT_RATE;
-    const nightDiffHours = (nightDiff / 100) / ND_RATE;
+    const overtimeHours = (overtime / 100) / OT_MULTIPLIER;
+    const nightDiffHours = (nightDiff / 100) / ND_MULTIPLIER;
 
     return [
         { label: "Basic Salary", amount: basic, hours: basicHours, hasHours: true },

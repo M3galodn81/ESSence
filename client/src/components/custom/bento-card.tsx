@@ -41,6 +41,13 @@ const variants = {
     iconBg: "bg-amber-100",
     iconColor: "text-amber-600",
   },
+  indigo: {
+    card: "bg-amber-50/50 border-indigo-100/60",
+    title: "text-indigo-600",
+    value: "text-indigo-800",
+    iconBg: "bg-indigo-100",
+    iconColor: "text-indigo-600",
+  },
 };
 
 export function BentoCard({ title, value, icon: Icon, variant = "default", testIdPrefix }: BentoCardProps) {

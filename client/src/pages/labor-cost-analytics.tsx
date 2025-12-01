@@ -41,9 +41,9 @@ export default function LaborCostAnalytics() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { data: laborCostData, isLoading } = useQuery({
-    queryKey: ["/api/labor-cost-data", selectedYear],
+    queryKey: ["/api/labor-cost", selectedYear],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/labor-cost-data?year=${selectedYear}`);
+      const res = await apiRequest("GET", `/api/labor-cost`);
       return await res.json();
     },
   });

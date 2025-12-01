@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Pencil, Trash2, ChevronDown, ChevronRight, Eye, Filter, Search } from "lucide-react";
 import type { Payslip } from "@shared/schema";
-import { computeSSS, computePhilHealth, computePagIbig } from "@/lib/helper";
+import { computeSSS, computePhilHealth, computePagIbig, HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER } from "@/lib/helper";
 import { BentoCard } from "@/components/custom/bento-card";
 import {
   Select,
@@ -27,10 +27,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// --- Constants ---
-const HOURLY_RATE = 58.75;
-const OT_MULTIPLIER = 1.25;
-const ND_MULTIPLIER = 0.1; 
 
 const round2 = (num: number) => Math.round(num * 100) / 100;
 

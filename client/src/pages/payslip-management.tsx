@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Edit2, Check, X, Loader2, RefreshCw, CalendarDays, Users, FileCheck, Clock, Filter, Calculator, TrendingDown, PhilippinePeso } from 'lucide-react';
-import { computeSSS, computePhilHealth, computePagIbig } from '@/lib/helper';
+import { format } from "date-fns";
+import { Search, Edit2, Check, X, Loader2, RefreshCw, CalendarDays, Users, FileCheck, Clock, Filter, Calculator, TrendingDown, PhilippinePeso, ChevronRight, Moon, Flame, Calendar, Briefcase, Coffee } from 'lucide-react';
+import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER, computeSSS, computePhilHealth, computePagIbig } from "../lib/helper"; 
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,14 +25,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BentoCard } from "@/components/custom/bento-card"; 
-
-// --- Constants ---
-const HOURLY_RATE = 58.75;
-const OT_MULTIPLIER = 1.25;
-const ND_MULTIPLIER = 0.1;
 
 // Helper for consistent rounding
 const round2 = (num: number) => Math.round(num * 100) / 100;
@@ -47,14 +43,15 @@ export default function PayrollManagement() {
   const [selectedPeriod, setSelectedPeriod] = useState({ 
     month: new Date().getMonth() + 1, 
     year: currentYear,
-    half: 1 // 1 = 1st Half (1-15), 2 = 2nd Half (16-End)
+    half: 1 
   });
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  
+  const [attendanceViewerId, setAttendanceViewerId] = useState<string | null>(null);
 
-  // Edit Form State
   const [editForm, setEditForm] = useState({
     regularHours: 0,
     overtimeHours: 0,
@@ -62,7 +59,6 @@ export default function PayrollManagement() {
     bonuses: 0,
     otherAllowances: 0,
     otherDeductions: 0,
-    // Calculated fields
     basicSalary: 0,
     grossPay: 0,
     sss: 0,
@@ -70,25 +66,21 @@ export default function PayrollManagement() {
     pagIbig: 0,
     tax: 0,
     netPay: 0,
-    // Breakdowns for display
     overtimePay: 0,
     nightDiffPay: 0
   });
 
-  // --- Real API Data Fetching ---
+  // --- Data Fetching ---
   const { data: teamMembers, isLoading: isLoadingTeam } = useQuery({
     queryKey: ["/api/team"],
   });
 
   const { data: existingPayslips, isLoading: isLoadingPayslips } = useQuery({
-    // Include specific params in query key to ensure refetch on change
     queryKey: ["/api/payslips", "all", selectedPeriod.month, selectedPeriod.year, selectedPeriod.half],
     queryFn: async () => {
        const res = await fetch(`/api/payslips/all`);
        if (!res.ok) throw new Error("Failed");
        const allPayslips = await res.json();
-       
-       // Robust filtering: convert everything to numbers to be safe
        return allPayslips.filter((p: any) => 
           Number(p.month) === Number(selectedPeriod.month) && 
           Number(p.year) === Number(selectedPeriod.year)
@@ -96,12 +88,10 @@ export default function PayrollManagement() {
     }
   });
 
-  // --- Date Range Calculation Logic ---
   const { startDate, endDate } = useMemo(() => {
     const year = Number(selectedPeriod.year);
     const monthIndex = Number(selectedPeriod.month) - 1; 
     let start, end;
-
     if (Number(selectedPeriod.half) === 1) {
         start = new Date(year, monthIndex, 1);
         end = new Date(year, monthIndex, 15, 23, 59, 59);
@@ -109,7 +99,6 @@ export default function PayrollManagement() {
         start = new Date(year, monthIndex, 16);
         end = new Date(year, monthIndex + 1, 0, 23, 59, 59);
     }
-
     return { startDate: start.toISOString(), endDate: end.toISOString() };
   }, [selectedPeriod]);
 
@@ -122,7 +111,7 @@ export default function PayrollManagement() {
     } 
   });
 
-  // --- Core Calculation Logic ---
+  // --- Logic Helpers ---
   const getNightDiffHours = (timeIn: string | number, timeOut: string | number) => {
     let start = new Date(timeIn);
     let end = new Date(timeOut);
@@ -146,7 +135,9 @@ export default function PayrollManagement() {
 
     userRecords.forEach((record: any) => {
         if (record.timeOut && record.totalWorkMinutes) {
-            const workMinutes = record.totalWorkMinutes;
+            // FIX: totalWorkMinutes is already net (breaks excluded)
+            const workMinutes = record.totalWorkMinutes || 0;
+
             if (workMinutes > 480) {
                 totalRegMinutes += 480;
                 totalOTMinutes += (workMinutes - 480);
@@ -164,10 +155,6 @@ export default function PayrollManagement() {
     };
   };
 
-  const calculateGrossPay = (basic: number, allowancesObj: any) => parseFloat((basic || 0).toString()) + Object.values(allowancesObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
-  const calculateTotalDeductions = (deductionsObj: any) => Object.values(deductionsObj).reduce((acc: number, curr: any) => acc + (parseFloat(curr) || 0), 0);
-  const calculateNetPay = (gross: number, totalDeductions: number) => Math.max(0, gross - totalDeductions);
-
   // --- Mutations ---
   const savePayslipMutation = useMutation({
     mutationFn: async ({ url, method, data }: { url: string, method: string, data: any }) => {
@@ -181,7 +168,6 @@ export default function PayrollManagement() {
     },
     onSuccess: () => {
       toast({ title: "Success", description: "Payslip processed successfully." });
-      // Invalidate the general payslips query to refresh the list
       queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
       setEditingId(null);
       setIsConfirmOpen(false);
@@ -189,7 +175,47 @@ export default function PayrollManagement() {
     }
   });
 
-  // --- Match Payslip Helper ---
+  const calculateMutation = useMutation({
+    mutationFn: async (data: any) => {
+        const res = await fetch("/api/payroll/calculate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+        if(!res.ok) throw new Error("Calc failed");
+        return res.json();
+    },
+    onSuccess: (data) => {
+        setEditForm(prev => ({
+            ...prev,
+            sss: data.deductions.sss,
+            philHealth: data.deductions.philHealth,
+            pagIbig: data.deductions.pagIbig,
+            tax: data.deductions.tax,
+            netPay: data.netPay
+        }));
+    }
+  });
+
+  const fetchStatsMutation = useMutation({
+    mutationFn: async (params: { userId: string, startDate: string, endDate: string }) => {
+        const q = new URLSearchParams(params).toString();
+        const res = await fetch(`/api/payroll/attendance-stats?${q}`);
+        return res.json();
+    },
+    onSuccess: (data) => {
+        setEditForm(prev => ({
+            ...prev,
+            regularHours: data.regularHours,
+            overtimeHours: data.overtimeHours,
+            nightDiffHours: data.nightDiffHours,
+            bonuses: 0,
+            otherAllowances: 0,
+            otherDeductions: 0
+        }));
+    }
+  });
+
   const getExistingPayslip = (userId: string) => {
       if (!existingPayslips) return undefined;
       return existingPayslips.find((p: any) => 
@@ -198,7 +224,6 @@ export default function PayrollManagement() {
       );
   };
 
-  // --- Handlers ---
   const handleEdit = (employee: any) => {
     setEditingId(employee.id);
     setIsEditOpen(true);
@@ -209,8 +234,6 @@ export default function PayrollManagement() {
         const basic = existingSlip.basicSalary / 100;
         const allowances = existingSlip.allowances || {};
         const deductions = existingSlip.deductions || {};
-
-        // Reverse calculate hours
         const regHours = basic / HOURLY_RATE;
         const otHours = (allowances.overtime || 0) / 100 / (HOURLY_RATE * OT_MULTIPLIER);
         const ndHours = (allowances.nightDiff || 0) / 100 / (HOURLY_RATE * ND_MULTIPLIER);
@@ -222,7 +245,6 @@ export default function PayrollManagement() {
             bonuses: (allowances.bonuses || 0) / 100,
             otherAllowances: (allowances.otherAllowances || allowances.allowances || 0) / 100,
             otherDeductions: (deductions.others || 0) / 100,
-            // Initial State
             basicSalary: basic,
             overtimePay: (allowances.overtime || 0) / 100,
             nightDiffPay: (allowances.nightDiff || 0) / 100,
@@ -234,46 +256,38 @@ export default function PayrollManagement() {
             netPay: existingSlip.netPay / 100
         });
     } else {
-        const { regularHours, overtimeHours, nightDiffHours } = processAttendanceForUser(employee.id, attendanceData);
-        setEditForm({
-            regularHours,
-            overtimeHours,
-            nightDiffHours,
-            bonuses: 0,
-            otherAllowances: 0,
-            otherDeductions: 0,
-            basicSalary: 0,
-            overtimePay: 0,
-            nightDiffPay: 0,
-            grossPay: 0,
-            sss: 0, philHealth: 0, pagIbig: 0, tax: 0, netPay: 0
+        fetchStatsMutation.mutate({ 
+            userId: employee.id, 
+            startDate, 
+            endDate 
         });
     }
   };
 
-  // --- Auto-Calculation Effect for Edit Form ---
+  // --- Auto-Calculation Effect ---
   useEffect(() => {
     if (!isEditOpen) return;
 
-    // 1. Calculate Earnings from Hours
     const basicSalary = round2(editForm.regularHours * HOURLY_RATE);
     const overtimePay = round2(editForm.overtimeHours * (HOURLY_RATE * OT_MULTIPLIER));
     const nightDiffPay = round2(editForm.nightDiffHours * (HOURLY_RATE * ND_MULTIPLIER));
-    
     const grossPay = round2(basicSalary + overtimePay + nightDiffPay + editForm.bonuses + editForm.otherAllowances);
 
-    // 2. Calculate Deductions (with 2nd Half Differential Logic)
-    let calculationBase = grossPay; 
-    let previousDeductions = { sss: 0, philHealth: 0, pagIbig: 0 };
+    setEditForm(prev => ({
+        ...prev,
+        basicSalary,
+        overtimePay,
+        nightDiffPay,
+        grossPay,
+    }));
 
-    if (Number(selectedPeriod.half) === 2 && existingPayslips) {
-        const slip1 = existingPayslips.find((p: any) => 
-            p.userId === editingId && 
-            (Number(p.period) === 1 || !p.period)
-        );
-        if (slip1) {
-            calculationBase = grossPay + (slip1.grossPay / 100);
-            if (slip1.deductions) {
+    const timer = setTimeout(() => {
+        let previousDeductions = { sss: 0, philHealth: 0, pagIbig: 0 };
+        if (Number(selectedPeriod.half) === 2 && existingPayslips && editingId) {
+            const slip1 = existingPayslips.find((p: any) => 
+                p.userId === editingId && (Number(p.period) === 1 || !p.period)
+            );
+            if (slip1 && slip1.deductions) {
                 const d = slip1.deductions as any;
                 previousDeductions = {
                     sss: (d.sss || 0) / 100,
@@ -282,41 +296,23 @@ export default function PayrollManagement() {
                 };
             }
         }
-    }
 
-    const totalSSS = computeSSS(calculationBase);
-    const totalPH = computePhilHealth(calculationBase);
-    const totalHDMF = computePagIbig(calculationBase);
+        calculateMutation.mutate({
+            grossPay,
+            basicSalary,
+            previousDeductions,
+            otherDeductions: editForm.otherDeductions
+        });
+    }, 500);
 
-    const sss = Math.max(0, round2(totalSSS - previousDeductions.sss));
-    const philHealth = Math.max(0, round2(totalPH - previousDeductions.philHealth));
-    const pagIbig = Math.max(0, round2(totalHDMF - previousDeductions.pagIbig));
-    const tax = 0; 
-
-    const totalDeductions = round2(sss + philHealth + pagIbig + tax + editForm.otherDeductions);
-    const netPay = Math.max(0, round2(grossPay - totalDeductions));
-
-    setEditForm(prev => ({
-        ...prev,
-        basicSalary,
-        overtimePay,
-        nightDiffPay,
-        grossPay,
-        sss,
-        philHealth,
-        pagIbig,
-        tax,
-        netPay
-    }));
+    return () => clearTimeout(timer);
   }, [
     editForm.regularHours, editForm.overtimeHours, editForm.nightDiffHours, 
-    editForm.bonuses, editForm.otherAllowances, editForm.otherDeductions,
-    isEditOpen, editingId, existingPayslips, selectedPeriod.half
+    editForm.bonuses, editForm.otherAllowances, editForm.otherDeductions
   ]);
 
   const handleConfirmSave = async () => {
     if (!editingId) return;
-
     const payload = {
       userId: editingId,
       month: selectedPeriod.month,
@@ -330,7 +326,7 @@ export default function PayrollManagement() {
         bonuses: Math.round(editForm.bonuses * 100),
       },
       deductions: {
-        tax: 0,
+        tax: Math.round(editForm.tax * 100),
         sss: Math.round(editForm.sss * 100),
         philHealth: Math.round(editForm.philHealth * 100),
         pagIbig: Math.round(editForm.pagIbig * 100),
@@ -341,7 +337,6 @@ export default function PayrollManagement() {
     };
 
     const existingSlip = getExistingPayslip(editingId);
-
     if (existingSlip) {
         savePayslipMutation.mutate({ url: `/api/payslips/${existingSlip.id}`, method: "PATCH", data: payload });
     } else {
@@ -349,11 +344,9 @@ export default function PayrollManagement() {
     }
   };
 
-  // --- Derived State ---
   const processedEmployees = useMemo(() => {
     if (!teamMembers) return [];
     const onlyEmployees = teamMembers.filter((m: any) => m.role === 'employee' ); 
-    
     return onlyEmployees.map((emp: any) => {
       const slip = getExistingPayslip(emp.id);
       return { ...emp, payslipStatus: slip ? 'generated' : 'pending', lastPay: slip };
@@ -376,16 +369,56 @@ export default function PayrollManagement() {
     return emp ? `${emp.firstName} ${emp.lastName}` : "Employee";
   }, [editingId, teamMembers]);
 
+  // Viewer Logic
+  const viewingEmployeeData = useMemo(() => {
+    if (!attendanceViewerId || !teamMembers) return null;
+    return teamMembers.find((m:any) => m.id === attendanceViewerId);
+  }, [attendanceViewerId, teamMembers]);
+
+  const viewingEmployeeRecords = useMemo(() => {
+    if (!attendanceViewerId || !attendanceData) return [];
+    return attendanceData.filter((r: any) => r.userId === attendanceViewerId)
+        .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [attendanceViewerId, attendanceData]);
+
+  // FIX: Don't subtract break again, totalWorkMinutes is already net
+  const viewerTotals = useMemo(() => {
+      return viewingEmployeeRecords.reduce((acc: any, record: any) => {
+          const workMinutes = record.totalWorkMinutes || 0;
+          const breakMinutes = record.totalBreakMinutes || 0;
+          
+          const otMins = Math.max(0, workMinutes - 480);
+          const regMins = workMinutes - otMins;
+          const ndHrs = getNightDiffHours(record.timeIn, record.timeOut);
+          
+          return {
+              regMinutes: acc.regMinutes + regMins,
+              otMinutes: acc.otMinutes + otMins,
+              ndHours: acc.ndHours + ndHrs,
+              breakMinutes: acc.breakMinutes + breakMinutes,
+              totalMinutes: acc.totalMinutes + workMinutes
+          };
+      }, { regMinutes: 0, otMinutes: 0, ndHours: 0, breakMinutes: 0, totalMinutes: 0 });
+  }, [viewingEmployeeRecords]);
+
   const currentNetPay = useMemo(() => {
     return editForm.netPay;
   }, [editForm]);
+
+  const formatTime = (ts: number) => format(new Date(ts), "h:mm a");
+  const formatDate = (ts: number) => format(new Date(ts), "MMM d");
+  const formatDuration = (minutes: number | null) => {
+    if (minutes === null || minutes === undefined) return "-";
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
 
   if (isLoadingTeam || isLoadingAttendance || isLoadingPayslips) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
-      
-      {/* Glass Header */}
+      {/* Header, Stats, Filter ... (Same as before) */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900" data-testid="page-title">Payroll Generator</h1>
@@ -421,14 +454,12 @@ export default function PayrollManagement() {
         </div>
       </div>
 
-      {/* Bento Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <BentoCard title="Total Employees" value={stats.totalEmployees} icon={Users} variant="default" testIdPrefix="stat-total" />
         <BentoCard title="Generated" value={stats.generated} icon={FileCheck} variant="emerald" testIdPrefix="stat-generated" />
         <BentoCard title="Pending" value={stats.pending} icon={Clock} variant="amber" testIdPrefix="stat-pending" />
       </div>
 
-      {/* Glass Table Card */}
       <Card className="bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden">
         <CardHeader className="px-6 py-4 border-b border-slate-100 bg-white/50">
              <div className="relative w-full max-w-sm">
@@ -447,7 +478,7 @@ export default function PayrollManagement() {
               <thead className="bg-slate-50/50 border-b border-slate-200/60">
                 <tr>
                   <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs">Employee</th>
-                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-center">Hours</th>
+                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-center">Hours Detail</th>
                   <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right">Gross</th>
                   <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right">Deductions</th>
                   <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right">Net Pay</th>
@@ -456,60 +487,41 @@ export default function PayrollManagement() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredEmployees.map((employee: any) => {
-                  
-                  // View Mode Data Calculation
                   let computed = processAttendanceForUser(employee.id, attendanceData || []);
-                  let viewBasic = 0;
-                  let viewOT = 0;
-                  let viewND = 0;
-                  
-                  let viewGross = 0;
-                  let viewNet = 0;
-                  let viewTotalDeductions = 0;
+                  let viewBasic = 0, viewOT = 0, viewND = 0, viewGross = 0, viewNet = 0, viewTotalDeductions = 0;
 
                   if (employee.lastPay) {
-                     const lp = employee.lastPay;
-                     const allowances = lp.allowances || {};
-                     // Reverse calc for display
-                     viewBasic = lp.basicSalary / 100 / HOURLY_RATE;
-                     viewOT = (allowances.overtime || 0) / 100 / (HOURLY_RATE * OT_MULTIPLIER);
-                     viewND = (allowances.nightDiff || 0) / 100 / (HOURLY_RATE * ND_MULTIPLIER);
-
-                     viewGross = lp.grossPay / 100;
-                     viewNet = lp.netPay / 100;
-                     viewTotalDeductions = (lp.grossPay - lp.netPay) / 100;
+                      const lp = employee.lastPay;
+                      const allowances = lp.allowances || {};
+                      viewBasic = lp.basicSalary / 100 / HOURLY_RATE;
+                      viewOT = (allowances.overtime || 0) / 100 / (HOURLY_RATE * OT_MULTIPLIER);
+                      viewND = (allowances.nightDiff || 0) / 100 / (HOURLY_RATE * ND_MULTIPLIER);
+                      viewGross = lp.grossPay / 100;
+                      viewNet = lp.netPay / 100;
+                      viewTotalDeductions = (lp.grossPay - lp.netPay) / 100;
                   } else {
-                     // Computed values (Preview)
-                     viewBasic = computed.regularHours;
-                     viewOT = computed.overtimeHours;
-                     viewND = computed.nightDiffHours;
-
-                     let viewCalcBase = round2((viewBasic * HOURLY_RATE) + (viewOT * HOURLY_RATE * OT_MULTIPLIER) + (viewND * HOURLY_RATE * ND_MULTIPLIER));
-                     viewGross = viewCalcBase;
-                     
-                     // 2nd Half Consolidated Logic (Preview)
-                     let prevDeduc = { sss: 0, philHealth: 0, pagIbig: 0 };
-                     if (selectedPeriod.half === 2 && existingPayslips) {
-                         const slip1 = existingPayslips.find((p: any) => p.userId === employee.id && (Number(p.period) === 1 || !p.period));
-                         if (slip1) {
-                             viewCalcBase += (slip1.grossPay / 100);
-                             if (slip1.deductions) {
-                                 const d = slip1.deductions as any;
-                                 prevDeduc = {
-                                     sss: (d.sss || 0) / 100,
-                                     philHealth: (d.philHealth || 0) / 100,
-                                     pagIbig: (d.pagIbig || 0) / 100
-                                 };
-                             }
-                         }
-                     }
-
-                     const vSSS = Math.max(0, round2(computeSSS(viewCalcBase) - prevDeduc.sss));
-                     const vPH = Math.max(0, round2(computePhilHealth(viewCalcBase) - prevDeduc.philHealth));
-                     const vHDMF = Math.max(0, round2(computePagIbig(viewCalcBase) - prevDeduc.pagIbig));
-
-                     viewTotalDeductions = vSSS + vPH + vHDMF;
-                     viewNet = Math.max(0, viewGross - viewTotalDeductions);
+                      viewBasic = computed.regularHours;
+                      viewOT = computed.overtimeHours;
+                      viewND = computed.nightDiffHours;
+                      let viewCalcBase = round2((viewBasic * HOURLY_RATE) + (viewOT * HOURLY_RATE * OT_MULTIPLIER) + (viewND * HOURLY_RATE * ND_MULTIPLIER));
+                      viewGross = viewCalcBase;
+                      
+                      let prevDeduc = { sss: 0, philHealth: 0, pagIbig: 0 };
+                      if (selectedPeriod.half === 2 && existingPayslips) {
+                          const slip1 = existingPayslips.find((p: any) => p.userId === employee.id && (Number(p.period) === 1 || !p.period));
+                          if (slip1) {
+                              viewCalcBase += (slip1.grossPay / 100);
+                              if (slip1.deductions) {
+                                  const d = slip1.deductions as any;
+                                  prevDeduc = { sss: (d.sss || 0) / 100, philHealth: (d.philHealth || 0) / 100, pagIbig: (d.pagIbig || 0) / 100 };
+                              }
+                          }
+                      }
+                      const vSSS = Math.max(0, round2(computeSSS(viewCalcBase) - prevDeduc.sss));
+                      const vPH = Math.max(0, round2(computePhilHealth(viewCalcBase) - prevDeduc.philHealth));
+                      const vHDMF = Math.max(0, round2(computePagIbig(viewCalcBase) - prevDeduc.pagIbig));
+                      viewTotalDeductions = vSSS + vPH + vHDMF;
+                      viewNet = Math.max(0, viewGross - viewTotalDeductions);
                   }
                   
                   return (
@@ -518,33 +530,37 @@ export default function PayrollManagement() {
                         <div className="font-medium text-slate-900">{employee.firstName} {employee.lastName}</div>
                         <div className="text-xs text-slate-500">{employee.position}</div>
                       </td>
-                      <td className="px-6 py-4 text-center align-top">
-                         <div className="flex flex-col gap-1 items-center text-xs">
-                            <div title="Regular Hours" className="text-slate-600">Reg: {round2(viewBasic)}</div>
-                            {(viewOT > 0) && <div className="text-amber-600 font-medium" title="Overtime">OT: {round2(viewOT)}</div>}
-                            {(viewND > 0) && <div className="text-indigo-600 font-medium" title="Night Diff">ND: {round2(viewND)}</div>}
-                            {employee.lastPay && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">GENERATED</span>}
-                         </div>
+                      <td className="px-6 py-4 align-top">
+                          <div className="bg-slate-50 rounded-lg p-2 border border-slate-100 space-y-1.5 min-w-[140px] group-hover:border-slate-200 transition-colors relative">
+                             <div className="flex justify-between items-center text-xs">
+                                <span className="text-slate-500">Regular</span>
+                                <span className="font-mono font-medium text-slate-700">{viewBasic.toFixed(2)}h</span>
+                             </div>
+                             {(viewOT > 0) && (
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-amber-600/90 font-medium">Overtime</span>
+                                    <span className="font-mono font-bold text-amber-600">{viewOT.toFixed(2)}h</span>
+                                </div>
+                             )}
+                             {(viewND > 0) && (
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-indigo-600/90 font-medium">Night Diff</span>
+                                    <span className="font-mono font-bold text-indigo-600">{viewND.toFixed(2)}h</span>
+                                </div>
+                             )}
+                             <div className="pt-2 mt-1 border-t border-slate-100 flex justify-center">
+                                <button onClick={() => setAttendanceViewerId(employee.id)} className="text-[10px] font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1 transition-colors px-2 py-0.5 rounded hover:bg-slate-100 w-full justify-center">
+                                    <Clock className="w-3 h-3" /> View Logs
+                                </button>
+                             </div>
+                          </div>
                       </td>
-                      <td className="px-6 py-4 text-right align-top">
-                          <div className="text-sm font-bold text-slate-800">₱{viewGross.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                      </td>
-                      <td className="px-6 py-4 text-right align-top">
-                          <div className="text-sm font-bold text-rose-600">-₱{viewTotalDeductions.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                      </td>
-                      <td className="px-6 py-4 text-right font-bold text-emerald-600 text-lg align-top">
-                          {viewNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-6 py-4 text-center align-top">
-                            <button 
-                                onClick={() => handleEdit(employee)} 
-                                className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 mx-auto transition-all ${
-                                    employee.payslipStatus === 'generated' 
-                                    ? "text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200" 
-                                    : "text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 shadow-sm" 
-                                }`}
-                            >
-                                {employee.payslipStatus === 'generated' ? <Check className="w-3 h-3" /> : <Edit2 className="w-3 h-3" />}
+                      <td className="px-6 py-4 text-right align-top pt-6"><div className="text-sm font-bold text-slate-800">₱{viewGross.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div></td>
+                      <td className="px-6 py-4 text-right align-top pt-6"><div className="text-sm font-bold text-rose-600">-₱{viewTotalDeductions.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div></td>
+                      <td className="px-6 py-4 text-right font-bold text-emerald-600 text-lg align-top pt-5">{viewNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td className="px-6 py-4 text-center align-top pt-5">
+                            <button onClick={() => handleEdit(employee)} className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 mx-auto transition-all ${employee.payslipStatus === 'generated' ? "text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200" : "text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 shadow-sm" }`}>
+                                {employee.payslipStatus === 'generated' ? <Edit2 className="w-3 h-3" /> : <Calculator className="w-3 h-3" />}
                                 {employee.payslipStatus === 'generated' ? 'Update' : 'Generate'}
                             </button>
                       </td>
@@ -557,8 +573,133 @@ export default function PayrollManagement() {
         </CardContent>
       </Card>
 
-      {/* Edit Dialog */}
+      {/* Attendance Detail Dialog */}
+      <Dialog open={!!attendanceViewerId} onOpenChange={(open) => !open && setAttendanceViewerId(null)}>
+        <DialogContent className="max-w-5xl rounded-3xl p-0 overflow-hidden">
+            <div className="bg-slate-50/50 p-6 border-b border-slate-100 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <DialogTitle className="text-xl font-bold text-slate-900">
+                            {viewingEmployeeData ? `${viewingEmployeeData.firstName} ${viewingEmployeeData.lastName}` : "Attendance Logs"}
+                        </DialogTitle>
+                        <DialogDescription className="mt-1 flex items-center gap-2">
+                            <Calendar className="w-3.5 h-3.5" /> 
+                            {new Date(0, selectedPeriod.month - 1).toLocaleString('default', { month: 'long' })} {selectedPeriod.year} 
+                            <span className="text-slate-300 mx-1">|</span>
+                            <Briefcase className="w-3.5 h-3.5" />
+                            {selectedPeriod.half === 1 ? "1st Half (1-15)" : "2nd Half (16-End)"}
+                        </DialogDescription>
+                    </div>
+                    <div className="flex gap-2">
+                        <div className="px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Regular</span>
+                            <span className="text-lg font-bold text-slate-700">{(viewerTotals.regMinutes / 60).toFixed(1)}h</span>
+                        </div>
+                        <div className="px-3 py-2 bg-amber-50 border border-amber-100 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                            <span className="text-[10px] uppercase font-bold text-amber-500 tracking-wider">OT</span>
+                            <span className="text-lg font-bold text-amber-700">{(viewerTotals.otMinutes / 60).toFixed(1)}h</span>
+                        </div>
+                        <div className="px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                            <span className="text-[10px] uppercase font-bold text-indigo-500 tracking-wider">ND</span>
+                            <span className="text-lg font-bold text-indigo-700">{viewerTotals.ndHours.toFixed(1)}h</span>
+                        </div>
+                         <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Break</span>
+                            <span className="text-lg font-bold text-slate-600">{(viewerTotals.breakMinutes / 60).toFixed(1)}h</span>
+                        </div>
+                        <div className="px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                            <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">Net</span>
+                            <span className="text-lg font-bold text-emerald-700">{(viewerTotals.totalMinutes / 60).toFixed(1)}h</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+                        <tr>
+                            <th className="px-6 py-3 font-semibold text-slate-500 uppercase text-xs">Date</th>
+                            <th className="px-4 py-3 font-semibold text-slate-500 uppercase text-xs">In / Out</th>
+                            <th className="px-4 py-3 font-semibold text-slate-500 uppercase text-xs text-right">Break</th>
+                            <th className="px-4 py-3 font-semibold text-slate-500 uppercase text-xs text-right">Reg</th>
+                            <th className="px-4 py-3 font-semibold text-slate-500 uppercase text-xs text-right">OT</th>
+                            <th className="px-4 py-3 font-semibold text-slate-500 uppercase text-xs text-right">ND</th>
+                            <th className="px-4 py-3 font-semibold text-slate-500 uppercase text-xs text-right">Net Total</th>
+                            <th className="px-4 py-3 font-semibold text-slate-500 uppercase text-xs text-center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                        {viewingEmployeeRecords.length === 0 ? (
+                            <tr>
+                                <td colSpan={8} className="px-6 py-12 text-center text-slate-500 italic">No logs found for this period.</td>
+                            </tr>
+                        ) : (
+                            viewingEmployeeRecords.map((record: any) => {
+                                // FIX: totalWorkMinutes is already net in DB
+                                const workMinutes = record.totalWorkMinutes || 0;
+                                const breakMinutes = record.totalBreakMinutes || 0;
+
+                                const otMins = Math.max(0, workMinutes - 480);
+                                const regMins = workMinutes - otMins;
+                                const otHours = otMins / 60;
+                                const ndHours = getNightDiffHours(record.timeIn, record.timeOut);
+                                
+                                return (
+                                    <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-6 py-4 font-medium text-slate-700 whitespace-nowrap">{formatDate(record.date)}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap">
+                                            <div className="flex flex-col text-xs">
+                                                <span className="font-mono text-slate-600">{formatTime(record.timeIn)}</span>
+                                                <span className="font-mono text-slate-400">
+                                                    {record.timeOut ? formatTime(record.timeOut) : '--:--'}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-4 text-right text-slate-500 text-xs">
+                                            {formatDuration(breakMinutes)}
+                                        </td>
+                                        <td className="px-4 py-4 text-right font-medium text-slate-700 text-xs">
+                                            {formatDuration(regMins)}
+                                        </td>
+                                        <td className="px-4 py-4 text-right">
+                                            {otHours > 0 ? (
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
+                                                    <Flame className="w-3 h-3 mr-1" /> {otHours.toFixed(1)}h
+                                                </span>
+                                            ) : <span className="text-slate-300 text-xs">-</span>}
+                                        </td>
+                                        <td className="px-4 py-4 text-right">
+                                            {ndHours > 0 ? (
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                                    <Moon className="w-3 h-3 mr-1" /> {ndHours.toFixed(1)}h
+                                                </span>
+                                            ) : <span className="text-slate-300 text-xs">-</span>}
+                                        </td>
+                                        <td className="px-4 py-4 text-right font-bold text-slate-900 text-xs">
+                                            {formatDuration(workMinutes)}
+                                        </td>
+                                        <td className="px-4 py-4 text-center">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide 
+                                                ${record.status === 'clocked_out' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}>
+                                                {record.status === 'clocked_out' ? 'Complete' : 'Incomplete'}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                <Button onClick={() => setAttendanceViewerId(null)} className="rounded-full bg-slate-900 text-white hover:bg-slate-800">Close</Button>
+            </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog (Existing content...) */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        {/* ... (Kept existing structure) ... */}
         <DialogContent className="max-w-3xl rounded-2xl">
             <DialogHeader>
                 <DialogTitle>Edit Payslip Details</DialogTitle>
