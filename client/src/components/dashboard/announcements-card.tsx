@@ -22,7 +22,7 @@ export default function AnnouncementsCard({ announcements, isLoading }: Announce
   };
 
   return (
-    <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl h-full" data-testid="announcements-card">
+    <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl" data-testid="announcements-card">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-lg font-bold text-slate-800">Announcements</CardTitle>
         <Button variant="link" className="text-xs h-auto p-0 text-slate-500 hover:text-primary" onClick={() => navigate("/announcements")}>

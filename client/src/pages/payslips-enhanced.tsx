@@ -9,7 +9,7 @@ import { FileText, Eye, TrendingUp, DollarSign, Calendar, Wallet, TrendingDown, 
 import type { Payslip } from "@shared/schema";
 import { BentoCard } from "@/components/custom/bento-card";
 import { Loader2 } from "lucide-react";
-import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER } from "@/lib/helper";
+import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER } from "@/utils/salary_computation";
 
 export default function PayslipsEnhanced() {
   const { user } = useAuth();

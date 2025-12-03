@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Pencil, Trash2, ChevronDown, ChevronRight, Eye, Filter, Search } from "lucide-react";
 import type { Payslip } from "@shared/schema";
-import { computeSSS, computePhilHealth, computePagIbig, HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER } from "@/lib/helper";
+import { computeSSS, computePhilHealth, computePagIbig, HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER } from "@/utils/salary_computation";
 import {
   Select,
   SelectContent,

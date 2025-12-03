@@ -17,7 +17,7 @@ import { insertAnnouncementSchema } from "@shared/schema";
 import { z } from "zod";
 import { Megaphone, Plus, Filter, Bell, AlertCircle, Clock, Eye } from "lucide-react";
 import type { Announcement } from "@shared/schema";
-import { canManageAnnouncements } from "@/lib/permissions";
+import { canManageAnnouncements } from "@/utils/permissions";
 
 // Refactored Components
 import { BentoCard } from "@/components/custom/bento-card";
@@ -36,7 +36,7 @@ export default function Announcements() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   const [filterType, setFilterType] = useState<string>("all");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("active");
 
   const canManage = canManageAnnouncements(user);
 

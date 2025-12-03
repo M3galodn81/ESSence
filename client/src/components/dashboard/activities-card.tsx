@@ -40,7 +40,6 @@ export default function ActivitiesCard() {
   };
 
   const getUserName = (activity: Activity) => {
-    // Use the name stored in details to avoid fetching full user list (which requires admin)
     const details = activity.details as any;
     return details?.userName || "System";
   };
@@ -60,7 +59,7 @@ export default function ActivitiesCard() {
   };
 
   return (
-    <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl h-full flex flex-col" data-testid="activities-card">
+    <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl flex flex-col" data-testid="activities-card">
       <CardHeader className="pb-3 border-b border-slate-100/50">
         <CardTitle className="text-lg font-bold text-slate-800 flex items-center gap-2">
            <CalendarClock className="w-5 h-5 text-primary" />
