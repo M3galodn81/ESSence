@@ -21,7 +21,7 @@ import {
   Briefcase
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { canAccessManagementTab, canAccessPayslipManagement } from "@/lib/permissions";
+import { canAccessManagementTab, canAccessPayslipManagement } from "@/utils/permissions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 

@@ -6,7 +6,7 @@ import ScheduleCard from "@/components/dashboard/schedule-card";
 import QuickActionsCard from "@/components/dashboard/quick-actions-card";
 import PendingTasksCard from "@/components/dashboard/pending-tasks-card";
 import { Calendar, Clock, AlertTriangle, GraduationCap } from "lucide-react";
-import { canViewDashoardHoursThisWeek, canViewDashoardLeaveBalance, canViewDashoardWeekSchedule } from "@/lib/permissions";
+import { canViewDashoardHoursThisWeek, canViewDashoardLeaveBalance, canViewDashoardWeekSchedule } from "@/utils/permissions";
 import { useAuth } from "@/hooks/use-auth";
 
 export default function Dashboard() {

@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { Search, Edit2, Loader2, CalendarDays, Users, FileCheck, Clock, Filter, Calculator, Moon, Flame, Calendar, Briefcase } from 'lucide-react';
-import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER, computeSSS, computePhilHealth, computePagIbig } from "../lib/helper"; 
+import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER, computeSSS, computePhilHealth, computePagIbig } from "../utils/salary_computation"; 
 import {
   AlertDialog,
   AlertDialogAction,
