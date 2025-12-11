@@ -29,19 +29,21 @@ import { default as setupScheduleRoutes } from "./routes/schedule";
 import { default as setupAnnouncementRoutes } from "./routes/announcements";
 import { default as setupReportRoutes } from "./routes/reports";
 import { default as setupAttendanceRoutes } from "./routes/attendance";
+import {default as setupLaborCostRoutes} from "./routes/labor-cost";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
-  app.use("api/setup", setupSetupRoutes);
-  app.use("api/users", setupUserRoutes);
-  app.use("api/holidays", setupHolidayRoutes);
-  app.use("api/leave-management", setupLeaveManagementRoutes);
-  app.use("api/payslips", setupPayslipRoutes);
-  app.use("api/schedules", setupScheduleRoutes);
-  app.use("api/announcements", setupAnnouncementRoutes);
-  app.use("api/reports", setupReportRoutes);
-  app.use("api/attendance", setupAttendanceRoutes);
+  app.use("/api/setup", setupSetupRoutes);
+  app.use("/api/users", setupUserRoutes);
+  app.use("/api/holidays", setupHolidayRoutes);
+  app.use("/api/leave-management", setupLeaveManagementRoutes);
+  app.use("/api/payslips", setupPayslipRoutes);
+  app.use("/api/schedules", setupScheduleRoutes);
+  app.use("/api/announcements", setupAnnouncementRoutes);
+  app.use("/api/reports", setupReportRoutes);
+  app.use("/api/attendance", setupAttendanceRoutes);
+  app.use("/api/labor-cost", setupLaborCostRoutes);
 
   app.get("/api/dashboard-stats", async (req, res) => {
     // ... [Keep existing dashboard-stats code] ...
@@ -73,20 +75,7 @@ export function registerRoutes(app: Express): Server {
     res.json({ leaveBalance: `${leaveBalance} days`, weeklyHours: `${weeklyHours.toFixed(1)} hrs`, pendingApprovals });
   });
 
-  // NEW ROUTE: Labor Cost Analytics
-  app.get("/api/labor-cost", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const user = req.user!;
-    if (!['admin', 'manager', 'payroll_officer'].includes(user.role)) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-    try {
-      const data = await db.select().from(laborCostData).orderBy(laborCostData.year, laborCostData.month);
-      res.json(data);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch analytics" });
-    }
-  });
+
   
   // --- Team Management ---
   app.get("/api/team", async (req, res) => {
