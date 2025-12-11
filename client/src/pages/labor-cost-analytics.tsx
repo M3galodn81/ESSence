@@ -18,6 +18,7 @@ import { DollarSign, Plus, AlertCircle, CheckCircle, Lightbulb, TrendingUp, Tren
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 import type { LaborCostData } from "@shared/schema";
 import { Loader2 } from "lucide-react";
+import { canViewLaborCostAnalysis } from "@/utils/permissions";
 
 const formSchema = z.object({
   month: z.number().min(1).max(12),
@@ -101,7 +102,7 @@ export default function LaborCostAnalytics() {
     mutationFn: async (data: LaborCostForm) => {
       const metrics = calculateMetrics(data.totalSales, data.totalLaborCost);
       
-      const res = await apiRequest("POST", "/api/labor-cost-data", {
+      const res = await apiRequest("POST", "/api/labor-cost", {
         month: data.month,
         year: data.year,
         notes: data.notes,
@@ -115,7 +116,7 @@ export default function LaborCostAnalytics() {
     },
     onSuccess: () => {
       toast({ title: "Data added", description: "Labor cost data has been added successfully." });
-      queryClient.invalidateQueries({ queryKey: ["/api/labor-cost-data"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labor-cost"] });
       handleCloseDialog();
     },
     onError: (error: Error) => {
@@ -129,7 +130,7 @@ export default function LaborCostAnalytics() {
       
       const metrics = calculateMetrics(data.totalSales, data.totalLaborCost);
 
-      const res = await fetch(`/api/labor-cost-data/${editingRecord.id}`, {
+      const res = await fetch(`/api/labor-cost/${editingRecord.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -148,7 +149,7 @@ export default function LaborCostAnalytics() {
     },
     onSuccess: () => {
       toast({ title: "Data updated", description: "Record updated successfully." });
-      queryClient.invalidateQueries({ queryKey: ["/api/labor-cost-data"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labor-cost"] });
       handleCloseDialog();
     },
     onError: (error: Error) => {
@@ -159,14 +160,14 @@ export default function LaborCostAnalytics() {
   const deleteLaborCostMutation = useMutation({
     mutationFn: async (id: string) => {
        // Assuming standard REST delete endpoint exists or added
-       const res = await fetch(`/api/labor-cost-data/${id}`, { method: "DELETE" }); 
+       const res = await fetch(`/api/labor-cost/${id}`, { method: "DELETE" }); 
        // If endpoint doesn't exist yet, this will fail. Ensure backend supports it.
        if(!res.ok) throw new Error("Failed to delete");
        return res.json();
     },
     onSuccess: () => {
       toast({ title: "Deleted", description: "Record removed successfully." });
-      queryClient.invalidateQueries({ queryKey: ["/api/labor-cost-data"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labor-cost"] });
       setDeleteId(null);
     },
     onError: (error: Error) => {
@@ -259,7 +260,7 @@ export default function LaborCostAnalytics() {
     laborPercent: data.laborCostPercentage / 100,
   })) || [];
 
-  if (user?.role !== 'manager' && user?.role !== 'hr') {
+  if (!canViewLaborCostAnalysis(user)) {
     return (
       <div className="p-8 flex justify-center items-center h-screen bg-slate-50">
         <Card className="w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200 shadow-xl">
