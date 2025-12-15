@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,10 +13,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Calendar, Clock, ChevronLeft, ChevronRight, Plus, Edit, Trash2, Copy, Users, CalendarDays, Filter } from "lucide-react";
+import { Calendar, Clock, ChevronLeft, ChevronRight, Plus, Edit, Trash2, Copy, Users, CalendarDays, MapPin } from "lucide-react";
 import type { Schedule, User } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
-import { Loader2 } from "lucide-react";
 
 const shiftFormSchema = z.object({
   userId: z.string().min(1, "Employee is required"),
@@ -75,6 +74,30 @@ export default function ShiftManagement() {
   const { data: allSchedules, isLoading } = useQuery<Schedule[]>({
     queryKey: ["/api/schedules/all"],
   });
+
+  // Sort and Filter Schedules
+  const filteredSchedules = useMemo(() => {
+    if (!allSchedules) return [];
+
+    return allSchedules
+      .filter((schedule) => {
+        const scheduleDate = new Date(schedule.date);
+        const isInWeek = scheduleDate >= weekStart && scheduleDate <= weekEnd;
+        const isEmployeeMatch = selectedEmployee === "all" || schedule.userId === selectedEmployee;
+        return isInWeek && isEmployeeMatch;
+      })
+      .sort((a, b) => {
+        // Sort by Date
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) return dateA - dateB;
+
+        // Then by Start Time
+        const timeA = new Date(a.startTime).getTime();
+        const timeB = new Date(b.startTime).getTime();
+        return timeA - timeB;
+      });
+  }, [allSchedules, weekStart, weekEnd, selectedEmployee]);
 
   const createForm = useForm<ShiftForm>({
     resolver: zodResolver(shiftFormSchema),
@@ -283,31 +306,6 @@ export default function ShiftManagement() {
     setCurrentDate(newDate);
   };
 
-  const getDaysOfWeek = () => {
-    const days = [];
-    const start = new Date(weekStart);
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(start);
-      day.setDate(start.getDate() + i);
-      days.push(day);
-    }
-    return days;
-  };
-
-  const getSchedulesForDate = (date: Date, userId?: string) => {
-    if (!allSchedules) return [];
-    const targetDateString = date.toLocaleDateString('en-CA');
-    
-    return allSchedules.filter((schedule: Schedule) => {
-      const scheduleDate = new Date(schedule.date);
-      const scheduleDateStr = scheduleDate.toISOString().split('T')[0];
-      
-      const dateMatch = scheduleDateStr === targetDateString;
-      const userMatch = !userId || userId === "all" || schedule.userId === userId;
-      return dateMatch && userMatch;
-    });
-  };
-
   const getEmployeeName = (userId: string) => {
     const employee = teamMembers?.find((m: User) => m.id === userId);
     return employee ? `${employee.firstName} ${employee.lastName}` : "Unknown";
@@ -325,20 +323,11 @@ export default function ShiftManagement() {
   };
 
   const getRoleBadge = (role: string) => {
-    return <span className="text-[10px] text-slate-500 font-medium capitalize">{role}</span>;
-  };
-
-  const formatDateHeader = (date: Date) => {
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    return <span className="text-xs text-slate-600 font-medium capitalize px-2 py-0.5 bg-slate-50 rounded-full border border-slate-100">{role}</span>;
   };
 
   const formatWeekRange = () => {
     return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  };
-
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
   };
 
   return (
@@ -455,7 +444,7 @@ export default function ShiftManagement() {
          </Button>
       </div>
 
-      {/* Schedule Grid */}
+      {/* Schedule Table */}
       <Card className="bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden">
         <CardHeader className="px-6 py-4 border-b border-slate-100 bg-white/50">
           <div className="flex items-center justify-between">
@@ -471,60 +460,74 @@ export default function ShiftManagement() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-6">
-          {isLoading ? (
-             <div className="text-center py-12 text-slate-400">Loading schedules...</div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-7 gap-4">
-              {getDaysOfWeek().map((day, index) => {
-                const daySchedules = getSchedulesForDate(day, selectedEmployee);
-                const isCurrentDay = isToday(day);
-
-                return (
-                  <div key={index} className={`flex flex-col gap-3 p-3 rounded-2xl border min-h-[180px] transition-all ${isCurrentDay ? 'bg-blue-50/50 border-blue-100' : 'bg-white/60 border-slate-100 hover:border-slate-200'}`}>
-                    <div className="text-center pb-2 border-b border-slate-100/50">
-                      <h3 className={`text-sm font-bold ${isCurrentDay ? 'text-blue-600' : 'text-slate-700'}`}>{formatDateHeader(day)}</h3>
-                      {isCurrentDay && <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">Today</span>}
-                    </div>
-
-                    <div className="flex-1 space-y-2">
-                      {daySchedules.length === 0 ? (
-                        <div className="h-full flex items-center justify-center text-xs text-slate-400 italic py-4">No shifts</div>
-                      ) : (
-                        daySchedules.map((schedule: Schedule) => (
-                          <div key={schedule.id} className="p-2.5 bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow group relative">
-                            {selectedEmployee === "all" && (
-                              <p className="text-xs font-bold text-slate-800 truncate mb-1">{getEmployeeName(schedule.userId)}</p>
-                            )}
-                            
-                            <div className="flex justify-center gap-1 mb-1.5">
-                                {getShiftBadge(schedule.type)}
-                            </div>
-                            <div className="flex justify-center gap-1 mb-1.5">
-                                {schedule.shiftRole && getRoleBadge(schedule.shiftRole)}
-                            </div>
-
-                            {schedule.type !== 'off' && (
-                                <div className="flex items-center gap-1 text-[10px] text-slate-500 font-medium bg-slate-50 px-1.5 py-0.5 rounded-md w-fit">
-                                    <Clock className="w-3 h-3" />
-                                    {new Date(schedule.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - 
-                                    {new Date(schedule.endTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                                </div>
-                            )}
-                            
-                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                                <Button size="icon" variant="ghost" className="h-6 w-6 rounded-md bg-slate-100 hover:bg-white hover:text-blue-600" onClick={() => handleEdit(schedule)}><Edit className="w-3 h-3" /></Button>
-                                <Button size="icon" variant="ghost" className="h-6 w-6 rounded-md bg-slate-100 hover:bg-white hover:text-red-600" onClick={() => handleDelete(schedule)}><Trash2 className="w-3 h-3" /></Button>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-white/50 border-b border-slate-200/60">
+                <tr>
+                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs">Date</th>
+                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs">Employee</th>
+                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs">Shift Details</th>
+                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs">Time</th>
+                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs">Location</th>
+                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {isLoading ? (
+                  <tr>
+                     <td colSpan={6} className="px-6 py-12 text-center text-slate-500">Loading schedules...</td>
+                  </tr>
+                ) : filteredSchedules.length === 0 ? (
+                  <tr>
+                     <td colSpan={6} className="px-6 py-12 text-center text-slate-500 italic">No shifts assigned for this week.</td>
+                  </tr>
+                ) : (
+                  filteredSchedules.map((schedule) => (
+                    <tr key={schedule.id} className="hover:bg-white/60 transition-colors group">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="font-medium text-slate-900">{new Date(schedule.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="font-medium text-slate-900">{getEmployeeName(schedule.userId)}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                         <div className="flex items-center gap-2">
+                             {getShiftBadge(schedule.type)}
+                             {schedule.shiftRole && getRoleBadge(schedule.shiftRole)}
+                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                         {schedule.type !== 'off' ? (
+                             <div className="flex items-center gap-2 text-slate-600 font-mono text-xs">
+                                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                {new Date(schedule.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - {new Date(schedule.endTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                             </div>
+                         ) : <span className="text-slate-400 text-xs italic">Off Duty</span>}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-slate-500">
+                         {schedule.location ? (
+                             <div className="flex items-center gap-1.5 text-xs">
+                                 <MapPin className="w-3.5 h-3.5 text-slate-400" /> {schedule.location}
+                             </div>
+                         ) : <span className="text-slate-300">-</span>}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                             <Button size="icon" variant="ghost" className="h-8 w-8 hover:text-blue-600 hover:bg-blue-50 rounded-full" onClick={() => handleEdit(schedule)}>
+                                 <Edit className="w-3.5 h-3.5" />
+                             </Button>
+                             <Button size="icon" variant="ghost" className="h-8 w-8 hover:text-red-600 hover:bg-red-50 rounded-full" onClick={() => handleDelete(schedule)}>
+                                 <Trash2 className="w-3.5 h-3.5" />
+                             </Button>
+                         </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 

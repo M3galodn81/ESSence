@@ -6,10 +6,19 @@ import {
 } from "../../shared/schema";
 import { hashPassword } from "../../server/auth";
 
+// --- TOGGLE FEATURES ---
+const SHOW_HOLIDAY_FEATURES = true; // Toggle this to false to hide holiday features
+
 // --- Constants & Helpers ---
 const HOURLY_RATE = 58.75;
 const OT_MULTIPLIER = 1.25;
 const ND_MULTIPLIER = 1.1;
+
+// Holiday Rates
+const REG_HOLIDAY_MULTIPLIER = 2.0;     // 200%
+const REG_HOLIDAY_OT_MULTIPLIER = 2.5;  // 250%
+const SPL_HOLIDAY_MULTIPLIER = 1.3;     // 130%
+const SPL_HOLIDAY_OT_MULTIPLIER = 1.63; // 163%
 
 const sssBrackets = [
   { min: 0,        max: 5249.99,  ms: 5000,  ee: 250 },
@@ -79,6 +88,13 @@ const getNightDiffHours = (timeIn: Date, timeOut: Date) => {
       current.setHours(current.getHours() + 1);
   }
   return ndHours;
+};
+
+// Helper to check holiday
+const getHolidayType = (date: Date, holidayList: any[]) => {
+    const dStr = date.toISOString().split('T')[0];
+    const holiday = holidayList.find(h => h.date.toISOString().split('T')[0] === dStr);
+    return holiday ? holiday.type : null;
 };
 
 async function seed() {
@@ -182,11 +198,24 @@ async function seed() {
   const allStaff = [...managers, ...employees]; 
 
   // 3. Holidays & Announcements
-  await db.insert(holidays).values([
+  // Insert a wider range of holidays for the 12-month simulation
+  const holidayList = [
     { name: "New Year's Day", date: new Date("2025-01-01"), type: "regular" },
+    { name: "Chinese New Year", date: new Date("2025-01-29"), type: "special" },
+    { name: "EDSA Revolution", date: new Date("2025-02-25"), type: "special" },
+    { name: "Maundy Thursday", date: new Date("2025-04-17"), type: "regular" },
+    { name: "Good Friday", date: new Date("2025-04-18"), type: "regular" },
     { name: "Labor Day", date: new Date("2025-05-01"), type: "regular" },
+    { name: "Independence Day", date: new Date("2025-06-12"), type: "regular" },
+    { name: "Ninoy Aquino Day", date: new Date("2025-08-21"), type: "special" },
+    { name: "National Heroes Day", date: new Date("2025-08-25"), type: "regular" },
+    { name: "All Saints' Day", date: new Date("2025-11-01"), type: "special" },
+    { name: "Bonifacio Day", date: new Date("2025-11-30"), type: "regular" },
     { name: "Christmas Day", date: new Date("2025-12-25"), type: "regular" },
-  ]);
+    { name: "Rizal Day", date: new Date("2025-12-30"), type: "regular" },
+  ];
+  
+  await db.insert(holidays).values(holidayList);
 
   await db.insert(announcements).values([
     { title: "Welcome to ESSence", content: "We are excited to introduce our new Employee Self-Service portal.", type: "general", authorId: admin.id, isActive: true, targetDepartments: [], createdAt: new Date() },
@@ -218,56 +247,31 @@ async function seed() {
   await db.insert(reports).values(reportsData);
 
   // =========================================================================
-  // 5. ATTENDANCE & PAYSLIP LOOP
-  //    Periods: 
-  //    1. Previous Month (1-15)
-  //    2. Previous Month (16-End)
-  //    3. Current Month (1-15)
+  // 5. ATTENDANCE & PAYSLIP GENERATION (12 Months History)
   // =========================================================================
   
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
+  console.log("Generating attendance and payslips for 12 months...");
   
-  // Define the 3 periods
-  const prevMonthDate = new Date(currentYear, currentMonth - 1, 1);
-  const prevMonth = prevMonthDate.getMonth();
-  const prevYear = prevMonthDate.getFullYear();
-  const lastDayPrevMonth = new Date(prevYear, prevMonth + 1, 0).getDate();
+  const now = new Date(); // Assume running today
+  const periods = [];
 
-  const periods = [
-    { 
-        label: "Prev Month 1st Half",
-        month: prevMonth, 
-        year: prevYear, 
-        startDay: 1, 
-        endDay: 15, 
-        periodNum: 1 
-    },
-    { 
-        label: "Prev Month 2nd Half",
-        month: prevMonth, 
-        year: prevYear, 
-        startDay: 16, 
-        endDay: lastDayPrevMonth, 
-        periodNum: 2 
-    },
-    { 
-        label: "Curr Month 1st Half",
-        month: currentMonth, 
-        year: currentYear, 
-        startDay: 1, 
-        endDay: 15, 
-        periodNum: 1 
-    }
-  ];
+  // Generate 24 periods (12 months x 2 periods) going backwards
+  for (let i = 0; i < 12; i++) {
+     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+     const m = d.getMonth();
+     const y = d.getFullYear();
+     const lastDay = new Date(y, m + 1, 0).getDate();
 
-  console.log("Generating attendance and payslips for 1.5 months...");
+     // Period 2 (16-End)
+     periods.push({ month: m, year: y, startDay: 16, endDay: lastDay, periodNum: 2 });
+     // Period 1 (1-15)
+     periods.push({ month: m, year: y, startDay: 1, endDay: 15, periodNum: 1 });
+  }
+  // Reverse to insert chronologically (oldest first)
+  periods.reverse();
 
   const payslipsToInsert = [];
-  const attendanceToInsert = [];
-  const breaksToInsert = [];
-
+  
   for (const emp of allStaff) {
     
     // Process each period for this employee
@@ -275,20 +279,25 @@ async function seed() {
         let periodRegHours = 0;
         let periodOtHours = 0;
         let periodNdHours = 0;
+        
+        let periodRegHolidayHours = 0;
+        let periodRegHolidayOtHours = 0;
+        let periodSpecHolidayHours = 0;
+        let periodSpecHolidayOtHours = 0;
 
         // Loop days in this period
         for (let d = p.startDay; d <= p.endDay; d++) {
             const workDate = new Date(p.year, p.month, d);
             
-            // Skip Sundays only (6-day work week simulation)
+            // Skip Sundays only
             if (workDate.getDay() === 0) continue;
 
             // 90% Attendance Rate
             if (Math.random() > 0.1) {
                 // Determine Shift
-                const isMorning = Math.random() > 0.4; // Slightly more morning shifts
+                const isMorning = Math.random() > 0.4;
                 const start = new Date(workDate);
-                start.setHours(isMorning ? 8 : 16, 0, 0, 0); // 8AM or 4PM
+                start.setHours(isMorning ? 8 : 16, 0, 0, 0);
                 
                 const end = new Date(workDate);
                 if (isMorning) {
@@ -300,10 +309,10 @@ async function seed() {
 
                 // Add Variance
                 const timeIn = new Date(start);
-                timeIn.setMinutes(timeIn.getMinutes() + (Math.random() * 30 - 15)); // +/- 15 mins
+                timeIn.setMinutes(timeIn.getMinutes() + (Math.random() * 30 - 15));
                 
                 const timeOut = new Date(end);
-                timeOut.setMinutes(timeOut.getMinutes() + (Math.random() * 45)); // 0-45 mins OT
+                timeOut.setMinutes(timeOut.getMinutes() + (Math.random() * 45)); 
 
                 // Calculate durations
                 const durationMs = timeOut.getTime() - timeIn.getTime();
@@ -311,9 +320,7 @@ async function seed() {
                 const breakMinutes = 60;
                 const workMinutes = Math.max(0, totalMinutes - breakMinutes);
 
-                // Insert Attendance (We need ID for breaks, so we push to DB immediately inside loop or use UUIDs)
-                // For simplicity in bulk seed, we insert attendance one by one to get ID, 
-                // OR we can generate UUIDs in code if using uuid lib, but let's stick to db insert for safety.
+                // Insert Attendance (Only fetch IDs for current/recent month to save DB ops for old history if performance is key, but here we insert all)
                 const [att] = await db.insert(attendance).values({
                     userId: emp.id,
                     date: workDate,
@@ -325,31 +332,50 @@ async function seed() {
                     notes: "Regular shift"
                 }).returning();
 
-                // Break
                 await db.insert(breaks).values({
                     attendanceId: att.id,
                     userId: emp.id,
-                    breakStart: new Date(timeIn.getTime() + 4 * 3600000), // 4 hrs in
+                    breakStart: new Date(timeIn.getTime() + 4 * 3600000), 
                     breakEnd: new Date(timeIn.getTime() + 5 * 3600000),
                     breakMinutes: 60,
                     breakType: "lunch",
                     notes: "Lunch"
                 });
 
-                // Accumulate Hours for Payslip
+                // --- Hour Classification Logic ---
                 let dailyReg = 0;
                 let dailyOT = 0;
                 
-                if (workMinutes > 480) { // > 8 hours
+                if (workMinutes > 480) { 
                     dailyReg = 480;
                     dailyOT = workMinutes - 480;
                 } else {
                     dailyReg = workMinutes;
                 }
                 
-                periodRegHours += (dailyReg / 60);
-                periodOtHours += (dailyOT / 60);
-                periodNdHours += getNightDiffHours(timeIn, timeOut);
+                const ndHrs = getNightDiffHours(timeIn, timeOut);
+                periodNdHours += ndHrs;
+
+                // Check for Holiday
+                let isRegHoliday = false;
+                let isSpecHoliday = false;
+
+                if (SHOW_HOLIDAY_FEATURES) {
+                   const hType = getHolidayType(workDate, holidayList);
+                   if (hType === 'regular') isRegHoliday = true;
+                   if (hType === 'special') isSpecHoliday = true;
+                }
+
+                if (isRegHoliday) {
+                    periodRegHolidayHours += (dailyReg / 60);
+                    periodRegHolidayOtHours += (dailyOT / 60);
+                } else if (isSpecHoliday) {
+                    periodSpecHolidayHours += (dailyReg / 60);
+                    periodSpecHolidayOtHours += (dailyOT / 60);
+                } else {
+                    periodRegHours += (dailyReg / 60);
+                    periodOtHours += (dailyOT / 60);
+                }
             }
         }
 
@@ -357,28 +383,39 @@ async function seed() {
         const basicSalary = periodRegHours * HOURLY_RATE;
         const overtimePay = periodOtHours * (HOURLY_RATE * OT_MULTIPLIER);
         const nightDiffPay = periodNdHours * (HOURLY_RATE * ND_MULTIPLIER);
-        const allowanceAmount = 1000; // Fixed allowance
+        
+        let holidayPay = 0;
+        if (SHOW_HOLIDAY_FEATURES) {
+             holidayPay += (periodRegHolidayHours * HOURLY_RATE * REG_HOLIDAY_MULTIPLIER);
+             holidayPay += (periodRegHolidayOtHours * HOURLY_RATE * REG_HOLIDAY_OT_MULTIPLIER);
+             holidayPay += (periodSpecHolidayHours * HOURLY_RATE * SPL_HOLIDAY_MULTIPLIER);
+             holidayPay += (periodSpecHolidayOtHours * HOURLY_RATE * SPL_HOLIDAY_OT_MULTIPLIER);
+        }
 
-        const grossPay = basicSalary + overtimePay + nightDiffPay + allowanceAmount;
+        const allowanceAmount = 1000; 
+        const grossPay = basicSalary + overtimePay + nightDiffPay + holidayPay + allowanceAmount;
 
         // Deductions
         const sss = computeSSS(grossPay);
         const philHealth = computePhilHealth(grossPay);
         const pagIbig = computePagIbig(grossPay);
-        
         const totalDeductions = sss + philHealth + pagIbig;
         const netPay = Math.max(0, grossPay - totalDeductions);
 
         payslipsToInsert.push({
             userId: emp.id,
-            month: p.month + 1, // JS month is 0-indexed, DB is 1-12
+            month: p.month + 1,
             year: p.year,
             period: p.periodNum,
             basicSalary: Math.round(basicSalary * 100),
             allowances: {
                 overtime: Math.round(overtimePay * 100),
                 nightDiff: Math.round(nightDiffPay * 100),
-                allowances: Math.round(allowanceAmount * 100)
+                holidayPay: Math.round(holidayPay * 100),
+                allowances: Math.round(allowanceAmount * 100),
+                // Store raw hours for reference if needed
+                regHolidayHours: periodRegHolidayHours,
+                specHolidayHours: periodSpecHolidayHours
             },
             deductions: {
                 sss: Math.round(sss * 100),
@@ -393,7 +430,7 @@ async function seed() {
     }
   }
 
-  console.log(`Inserting ${payslipsToInsert.length} payslips...`);
+  // Bulk insert to avoid memory issues if too large, but 12 staff * 24 periods = ~288 records is fine
   await db.insert(payslips).values(payslipsToInsert);
 
 
@@ -435,20 +472,29 @@ async function seed() {
   }
   await db.insert(schedules).values(shiftData);
 
-  // 7. Analytics Data
+  // 7. Analytics Data (12 Months)
   console.log("Generating analytics...");
   const laborData = [];
-  const totalPayrollCents = payslipsToInsert.reduce((sum, p) => sum + p.grossPay, 0);
   
-  // Last 3 months
-  for (let i = 0; i < 3; i++) {
-     const monthSales = (totalPayrollCents / 100) * 4; // 25% cost ratio
+  // Aggregate payslips by month/year
+  const payrollByMonth = payslipsToInsert.reduce((acc: any, p: any) => {
+      const key = `${p.year}-${p.month}`;
+      if (!acc[key]) acc[key] = 0;
+      acc[key] += p.grossPay;
+      return acc;
+  }, {});
+
+  for (const [key, totalCost] of Object.entries(payrollByMonth)) {
+     const [y, m] = key.split('-');
+     const laborCents = totalCost as number;
+     const monthSales = (laborCents / 100) * 4; // 25% cost ratio
+     
      laborData.push({
-       month: (currentMonth + 1) - i,
-       year: currentYear,
+       month: parseInt(m),
+       year: parseInt(y),
        totalSales: Math.round(monthSales * 100),
-       totalLaborCost: Math.round(totalPayrollCents / 3), // avg per month
-       laborCostPercentage: 2500, // 25%
+       totalLaborCost: laborCents,
+       laborCostPercentage: 2500,
        status: "Excellent",
        performanceRating: "A",
        notes: "Seed Data"
