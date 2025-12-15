@@ -17,34 +17,37 @@ const router = Router();
 
   // --- Clock In---
   router.post("/clock-in", async (req, res) => {
+    // Authentication check
     if (!req.isAuthenticated()) return res.status(401).send("Not authenticated");
     const user = req.user as any;
+    
+    // Use provided date or current time
     const clockInTime = req.body.date ? new Date(req.body.date) : new Date();
-    // FIX: No getDayRange call yet
 
     try {
-      // 1. Check for ANY active session (clocked in, not out)
+      // Check for existing ACTIVE session
       const activeSession = await db.query.attendance.findFirst({
         where: and(eq(attendance.userId, user.id), isNull(attendance.timeOut))
       });
 
+      // If active session exists, prevent clock-in
       if (activeSession) {
         return res.status(400).json({ message: "You are already clocked in." });
-      }
-
-      const { notes } = req.body;
+      } 
       
-      // FIX: Pass Date object to insert
+      // Create new attendance record
+      const { notes } = req.body;
       const newRecord = await db.insert(attendance).values({
         userId: user.id,
-        date: clockInTime, // Date object
-        timeIn: clockInTime, // Date object
+        date: clockInTime,
+        timeIn: clockInTime,
         status: "clocked_in",
         notes: notes,
         totalBreakMinutes: 0,
         totalWorkMinutes: 0
       }).returning();
-
+      
+      // Log activity
       await db.insert(activities).values({
         userId: user.id,
         type: "clock_in",
@@ -79,9 +82,11 @@ const router = Router();
       });
       if (activeBreak) return res.status(400).json({ message: "Please end your break before clocking out" });
 
+      // Calculate total work minutes
       const durationMs = clockOutTime.getTime() - Number(currentAttendance.timeIn);
       const workMinutes = Math.floor(durationMs / 60000) - (currentAttendance.totalBreakMinutes || 0);
 
+      // Update attendance record
       const updated = await db.update(attendance)
         .set({ 
             timeOut: clockOutTime, // Date object
@@ -126,7 +131,7 @@ const router = Router();
 
       const { breakType, notes } = req.body;
       
-      // FIX: Pass Date objects for timestamps
+      // Create new break record
       const newBreak = await db.insert(breaks).values({
         attendanceId: currentAttendance.id,
         userId: user.id,

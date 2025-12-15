@@ -42,16 +42,18 @@ interface AttendanceRecord {
 }
 
 export default function AdminAttendance() {
+  // Auth Context
   const { user } = useAuth();
+  
+  // State Variables
   const [currentDate, setCurrentDate] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState("");
-  
   const [selectedPeriod, setSelectedPeriod] = useState<"1" | "2">("1"); // "1" = 1st Half, "2" = 2nd Half
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("all");
-
+  // Date Range Calculation
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-  
+  // Compute start and end dates based on selected period
   const { startDate, endDate } = useMemo(() => {
     let start, end;
     if (selectedPeriod === "1") {
@@ -64,8 +66,10 @@ export default function AdminAttendance() {
     return { startDate: start.toISOString(), endDate: end.toISOString() };
   }, [year, month, selectedPeriod]);
 
+  // Get Team Members
   const { data: teamMembers } = useQuery({ queryKey: ["/api/team"] });
 
+  // Get Attendance Records based on date range
   const { data: records, isLoading } = useQuery<AttendanceRecord[]>({
     queryKey: ["/api/attendance/all", startDate, endDate],
     queryFn: async () => {
@@ -89,11 +93,13 @@ export default function AdminAttendance() {
         .sort((a: any, b: any) => a.firstName.localeCompare(b.firstName));
   }, [teamMembers, records]);
 
+  // Helper to get employee name by ID
   const getEmployeeName = (id: string) => {
     const emp = teamMembers?.find((m: any) => m.id === id);
     return emp ? `${emp.firstName} ${emp.lastName}` : "Unknown User";
   };
 
+  // Navigation Handlers
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
   const resetToToday = () => {
@@ -101,9 +107,11 @@ export default function AdminAttendance() {
       setSelectedPeriod(new Date().getDate() <= 15 ? "1" : "2");
   };
 
+  // Formatting Helpers
   const formatTime = (ts: number) => format(new Date(ts), "h:mm a");
   const formatDate = (ts: number) => format(new Date(ts), "MMM d, yyyy");
   
+  // Helper for Duration Formatting
   const formatDuration = (minutes: number | null) => {
     if (minutes === null || minutes === undefined) return "-";
     const h = Math.floor(minutes / 60);
@@ -158,11 +166,13 @@ export default function AdminAttendance() {
     return acc;
   }, { totalMinutes: 0, otMinutes: 0, ndHours: 0 });
 
+  // Derived Stats
   const totalWorkHours = stats.totalMinutes / 60;
   const totalOTHours = stats.otMinutes / 60;
   const avgHours = filteredRecords.length > 0 ? (totalWorkHours / filteredRecords.length) : 0;
   const presentCount = new Set(filteredRecords.map(r => r.userId + r.date)).size;
 
+  // Access Control: Only admins and managers allowed
   if (user?.role === 'employee') {
     return <div className="p-6 text-center">Access Denied</div>;
   }
