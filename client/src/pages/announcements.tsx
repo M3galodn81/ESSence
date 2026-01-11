@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +17,7 @@ import { z } from "zod";
 import { Megaphone, Plus, Filter, Bell, AlertCircle, Clock, Eye } from "lucide-react";
 import type { Announcement } from "@shared/schema";
 import { canManageAnnouncements } from "@/utils/permissions";
+import { toast } from "sonner";
 
 // Refactored Components
 import { BentoCard } from "@/components/custom/bento-card";
@@ -31,7 +31,6 @@ type AnnouncementForm = z.infer<typeof announcementFormSchema>;
 
 export default function Announcements() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
@@ -61,14 +60,16 @@ export default function Announcements() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Announcement created", description: "Your announcement has been published successfully." });
+      toast.success("Announcement created", {
+        description: "Your announcement has been published successfully."
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/announcements"] });
       setIsDialogOpen(false);
       form.reset();
       setEditingAnnouncement(null);
     },
     onError: (error: Error) => {
-      toast({ title: "Creation failed", description: error.message, variant: "destructive" });
+      toast.error("Creation failed",{ description: error.message });
     },
   });
 
@@ -82,11 +83,11 @@ export default function Announcements() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Announcement updated", description: "The announcement has been updated successfully." });
+      toast.success( "Announcement updated",{ description: "The announcement has been updated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/announcements"] });
     },
     onError: (error: Error) => {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+      toast.error("Update failed",{ description: error.message });
     },
   });
 

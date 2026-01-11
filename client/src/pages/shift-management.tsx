@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,6 @@ type ShiftForm = z.infer<typeof shiftFormSchema>;
 
 export default function ShiftManagement() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -159,20 +158,13 @@ export default function ShiftManagement() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({
-        title: "Shift created",
-        description: "The shift has been assigned successfully.",
-      });
+      toast.success("Shift created", { description: "The shift has been assigned successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] });
       setIsCreateDialogOpen(false);
       createForm.reset();
     },
     onError: (error: Error) => {
-      toast({
-        title: "Failed to create shift",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast.error("Failed to create shift", { description: error.message });
     },
   });
 
@@ -213,13 +205,13 @@ export default function ShiftManagement() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Shift updated", description: "The shift has been updated successfully." });
+      toast.success("Shift updated", { description: "The shift has been updated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] });
       setIsEditDialogOpen(false);
       setSelectedSchedule(null);
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to update shift", description: error.message, variant: "destructive" });
+      toast.error("Failed to update shift", { description: error.message });
     },
   });
 
@@ -229,13 +221,13 @@ export default function ShiftManagement() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Shift deleted", description: "The shift has been removed successfully." });
+      toast.success("Shift deleted", { description: "The shift has been removed successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] });
       setIsDeleteDialogOpen(false);
       setSelectedSchedule(null);
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to delete shift", description: error.message, variant: "destructive" });
+      toast.error("Failed to delete shift", { description: error.message });
     },
   });
 
@@ -248,11 +240,11 @@ export default function ShiftManagement() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Schedule copied", description: "Previous week's schedule has been copied successfully." });
+      toast.success("Schedule copied", { description: "Previous week's schedule has been copied successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] });
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to copy schedule", description: error.message, variant: "destructive" });
+      toast.error("Failed to copy schedule", { description: error.message });
     },
   });
 

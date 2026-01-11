@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,6 @@ type ReportForm = z.infer<typeof reportFormSchema>;
 
 export default function Reports() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [reportType, setReportType] = useState<"incident" | "breakage">("incident");
@@ -54,13 +53,13 @@ export default function Reports() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Report submitted", description: "Your report has been submitted successfully." });
+      toast.success("Report submitted", { description: "Your report has been submitted successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
       setIsDialogOpen(false);
       form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Submission failed", description: error.message, variant: "destructive" });
+      toast.error("Submission failed", { description: error.message });
     },
   });
 
@@ -70,11 +69,11 @@ export default function Reports() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Report updated", description: "The report has been updated successfully." });
+      toast.success("Report updated", { description: "The report has been updated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
     },
     onError: (error: Error) => {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+      toast.error("Update failed", { description: error.message });
     },
   });
 

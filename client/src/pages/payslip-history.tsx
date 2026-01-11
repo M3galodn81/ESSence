@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { 
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from "@/components/ui/table";
@@ -31,7 +31,6 @@ const round2 = (num: number) => Math.round(num * 100) / 100;
 
 export default function PayslipHistory() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const currentYear = new Date().getFullYear();
@@ -98,12 +97,12 @@ export default function PayslipHistory() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Updated", description: "Payslip updated successfully" });
+      toast.success("Updated", { description: "Payslip updated successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
       setIsEditOpen(false);
     },
     onError: (error: Error) => {
-        toast({ title: "Update Failed", description: error.message, variant: "destructive" });
+        toast.error("Update Failed", { description: error.message });
     }
   });
 
@@ -114,12 +113,12 @@ export default function PayslipHistory() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Deleted", description: "Payslip deleted successfully" });
+      toast.success("Deleted", { description: "Payslip deleted successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
       setIsDeleteOpen(false);
     },
     onError: (error: Error) => {
-        toast({ title: "Delete Failed", description: error.message, variant: "destructive" });
+        toast.error("Delete Failed", { description: error.message });
     }
   });
 

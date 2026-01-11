@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -82,7 +82,6 @@ type ChangePasswordForm = z.infer<typeof changePasswordSchema>;
 
 export default function UserManagement() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
@@ -192,17 +191,11 @@ export default function UserManagement() {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setIsCreateDialogOpen(false);
       createForm.reset();
-      toast({
-        title: "Success",
-        description: "User created successfully",
-      });
+      toast.success("Success", { description: "User created successfully" });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast.error("Error", { description: error.message });
+      
     },
   });
 
@@ -243,17 +236,10 @@ export default function UserManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setIsEditDialogOpen(false);
-      toast({
-        title: "Success",
-        description: "User updated successfully",
-      });
+      toast.success("Success", { description: "User updated successfully" });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast.error("Error", { description: error.message });
     },
   });
 
@@ -276,17 +262,10 @@ export default function UserManagement() {
     onSuccess: () => {
       setIsPasswordDialogOpen(false);
       passwordForm.reset();
-      toast({
-        title: "Success",
-        description: "Password changed successfully",
-      });
+      toast.success("Success", { description: "Password changed successfully" });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast.error("Error", { description: error.message });
     },
   });
 
@@ -307,17 +286,10 @@ export default function UserManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       setIsDeleteDialogOpen(false);
-      toast({
-        title: "Success",
-        description: "User deleted successfully",
-      });
+      toast.success("Success", { description: "User deleted successfully" });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast.error("Error", { description: error.message });
     },
   });
 

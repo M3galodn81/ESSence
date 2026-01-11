@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; 
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Clock, Coffee, LogIn, LogOut, Timer, AlertCircle, CalendarCheck, History } from "lucide-react";
 import { format, differenceInMinutes, addMinutes, subMinutes, isWithinInterval } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +50,6 @@ interface TodayAttendance {
 }
 
 export default function TimeClock() {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [notes, setNotes] = useState("");
@@ -79,10 +78,10 @@ export default function TimeClock() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance/today"] });
-      toast({ title: "Clocked In", description: "You have successfully clocked in." });
+      toast.success("Clocked In", { description: "You have successfully clocked in." });
       setNotes("");
     },
-    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
+    onError: (error: Error) => toast.error("Error", { description: error.message }),
   });
 
   const clockOutMutation = useMutation({
@@ -96,9 +95,9 @@ export default function TimeClock() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance/today"] });
-      toast({ title: "Clocked Out", description: "You have successfully clocked out." });
+      toast.success("Clocked Out", { description: "You have successfully clocked out." });
     },
-    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
+    onError: (error: Error) => toast.error("Error", { description: error.message }),
   });
 
   const startBreakMutation = useMutation({
@@ -113,10 +112,10 @@ export default function TimeClock() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance/today"] });
-      toast({ title: "Break Started", description: "Your break has started." });
+      toast.success("Break Started", { description: "Your break has started." });
       setBreakNotes("");
     },
-    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
+    onError: (error: Error) => toast.error("Error", { description: error.message }),
   });
 
   const endBreakMutation = useMutation({
@@ -130,9 +129,9 @@ export default function TimeClock() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/attendance/today"] });
-      toast({ title: "Break Ended", description: "Your break has ended." });
+      toast.success("Break Ended", { description: "Your break has ended." });
     },
-    onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
+    onError: (error: Error) => toast.error("Error", { description: error.message }),
   });
 
   // --- Logic Helpers ---

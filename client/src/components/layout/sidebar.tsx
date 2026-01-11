@@ -59,8 +59,6 @@ const payrollItems = [
 // Helper to ensure icon types match if strict
 function layersIconWrapper(Icon: any) { return Icon; }
 
-
-
 export default function Sidebar({ className }: SidebarProps) {
   const { user, logoutMutation } = useAuth();
   const [location, navigate] = useLocation();

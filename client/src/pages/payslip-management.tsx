@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { Search, Edit2, Loader2, CalendarDays, Users, FileCheck, Clock, Filter, Calculator, Moon, Flame, Calendar, Briefcase } from 'lucide-react';
 import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER, computeSSS, computePhilHealth, computePagIbig } from "../utils/salary_computation"; 
@@ -34,7 +34,6 @@ const round2 = (num: number) => Math.round(num * 100) / 100;
 
 export default function PayrollManagement() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   // --- State ---
@@ -167,7 +166,7 @@ export default function PayrollManagement() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Success", description: "Payslip processed successfully." });
+      toast.success("Success", { description: "Payslip processed successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
       setEditingId(null);
       setIsConfirmOpen(false);

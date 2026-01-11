@@ -172,8 +172,15 @@ export class DbStorage implements IStorage {
     return await db.select().from(users);
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
+  async createUser(insertUser: InsertUser, userId?: string): Promise<User> {
     const result = await db.insert(users).values(insertUser).returning();
+
+    await this.createActivity({
+      userId: userId,
+      type: "user_created",
+      description: `User ${insertUser.firstName} ${insertUser.lastName} created`,
+    });
+
     return result[0];
   }
 

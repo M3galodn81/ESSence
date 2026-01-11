@@ -59,8 +59,6 @@ export function registerRoutes(app: Express): Server {
     res.json({ leaveBalance: `${leaveBalance} days`, weeklyHours: `${weeklyHours.toFixed(1)} hrs`, pendingApprovals });
   });
 
-
-  
   // --- Get Team Members ---
   app.get("/api/team", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
