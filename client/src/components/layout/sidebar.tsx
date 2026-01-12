@@ -38,7 +38,7 @@ const navigationItems = [
   { path: "/payslips", label: "My Payslips", icon: PhilippinePeso, roles: ["employee"] },
   // { path: "/salary-computation", label: "Salary Calculator", icon: layersIconWrapper(PhilippinePeso), roles: ["employee"] },
   { path: "/schedules", label: "My Schedule", icon: Clock, roles: ["employee"] },
-  { path: "/reports", label: "Incidents", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
+  { path: "/reports", label: "Reports", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
   { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "admin", "payroll_officer"] },
 ];
 

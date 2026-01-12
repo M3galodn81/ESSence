@@ -118,29 +118,44 @@ export const activities = sqliteTable("activities", {
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
 });
 
+// shared/schema.ts
 
 export const reports = sqliteTable("reports", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id").notNull().references(() => users.id),
-  type: text("type").notNull(), 
+  userId: text("user_id").notNull().references(() => users.id), // The reporter
+  
+  // New granular categories
+  category: text("category").notNull().default("accident"), // 'customer', 'employee', 'accident', 'security', 'medical', 'property'
+  
   title: text("title").notNull(),
   description: text("description").notNull(),
   severity: text("severity").default("low"), 
   status: text("status").default("pending"), 
-  location: text("location"),
+  location: text("location").notNull(),
+
+  // "Real Life" Form Fields
+  dateOccurred: integer("date_occurred", { mode: 'timestamp_ms' }).notNull(),
+  timeOccurred: text("time_occurred").notNull(), // e.g., "14:30"
+  partiesInvolved: text("parties_involved"), // Names of people involved (Guest names, Staff names)
+  witnesses: text("witnesses"), // Names/Contacts of witnesses
+  actionTaken: text("action_taken"), // What did you do immediately? (e.g. "Called police", "Applied First Aid")
   
-  itemName: text("item_name"),
-  itemQuantity: integer("item_quantity"),
-  estimatedCost: integer("estimated_cost"),
+  // Specific Details (JSON for flexibility)
+  // For Property: { itemName, estimatedCost }
+  // For Medical: { injuryType, hospitalName }
+  // For Security: { policeReportNumber, stolenItems }
+  details: json<Record<string, any>>("details"),
   
+  images: json<string[]>("images"), // For evidence photos
+
   assignedTo: text("assigned_to").references(() => users.id),
   resolvedBy: text("resolved_by").references(() => users.id),
   resolvedAt: integer("resolved_at", { mode: 'timestamp_ms' }),
-  notes: text("notes"),
-  attachments: json<string[]>("attachments"),
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: 'timestamp_ms' }).$onUpdateFn(() => new Date()),
 });
+
+
 
 export const laborCostData = sqliteTable("labor_cost_data", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
