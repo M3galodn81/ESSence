@@ -90,3 +90,23 @@
     transition: transform 0.3s ease-in-out;
   }
 }
+
+@layer components {
+  /* Typography */
+  
+  /* Header Title */
+  .header-title{
+    @apply text-2xl font-bold tracking-tight text-slate-900;
+  }
+
+  .header-subtitle{
+    @apply text-sm font-medium text-slate-500;
+  }
+
+  /* Cards */
+  .glass-card{
+    @apply bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden;
+  }
+
+  
+}

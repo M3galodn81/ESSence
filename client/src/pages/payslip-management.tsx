@@ -447,7 +447,7 @@ export default function PayrollManagement() {
         <BentoCard title="Pending" value={stats.pending} icon={Clock} variant="amber" testIdPrefix="stat-pending" />
       </div>
 
-      <Card className="bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden">
+      <Card className="glass-card">
         <CardHeader className="px-6 py-4 border-b border-slate-100 bg-white/50">
              <div className="relative w-full max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />

@@ -363,7 +363,7 @@ export default function PayslipHistory() {
         </div>
       </div>
 
-      <Card className="bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden">
+      <Card className="glass-card">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">

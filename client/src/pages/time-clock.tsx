@@ -462,7 +462,7 @@ export default function TimeClock() {
             </Card>
 
             {/* Break History */}
-            <Card className="bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl h-fit">
+            <Card className="glass-card">
                 <CardHeader className="pb-2">
                     <CardTitle className="text-lg text-slate-800 flex items-center gap-2">
                         <History className="w-5 h-5 text-slate-500" />

@@ -29,10 +29,10 @@ export default function Header({ title, subtitle }: HeaderProps) {
         {/* Title Section */}
         <div className="flex items-center space-x-4 ml-12 lg:ml-0">
           <div className="space-y-1">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900" data-testid="page-title">
+            <h2 className="header-title" data-testid="page-title">
               {title}
             </h2>
-            <p className="text-sm font-medium text-slate-500" data-testid="page-subtitle">
+            <p className="header-subtitle" data-testid="page-subtitle">
               {subtitle || `${getGreeting()}, ${user?.firstName || "User"}!`}
             </p>
           </div>

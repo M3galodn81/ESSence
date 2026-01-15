@@ -214,7 +214,7 @@ export default function Announcements() {
       </div>
 
       {/* Main Content Area */}
-      <Card className="bg-white/40 backdrop-blur-sm border-none shadow-none">
+      <Card className="glass-card">
         <CardHeader className="px-0 pt-0 pb-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-4 rounded-2xl border border-slate-200/60 shadow-sm">
             <div className="flex items-center gap-3">
