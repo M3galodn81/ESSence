@@ -15,10 +15,10 @@ const OT_MULTIPLIER = 1.25;
 const ND_MULTIPLIER = 1.1;
 
 // Holiday Rates
-const REG_HOLIDAY_MULTIPLIER = 2.0;     // 200%
-const REG_HOLIDAY_OT_MULTIPLIER = 2.5;  // 250%
-const SPL_HOLIDAY_MULTIPLIER = 1.3;     // 130%
-const SPL_HOLIDAY_OT_MULTIPLIER = 1.63; // 163%
+const REG_HOLIDAY_MULTIPLIER = 2.0;
+const REG_HOLIDAY_OT_MULTIPLIER = 2.5;
+const SPL_HOLIDAY_MULTIPLIER = 1.3;
+const SPL_HOLIDAY_OT_MULTIPLIER = 1.63;
 
 // SSS Contribution Table (Simplified 2025)
 const sssBrackets = [
@@ -84,14 +84,12 @@ const getNightDiffHours = (timeIn: Date, timeOut: Date) => {
 
   while (current.getTime() < end.getTime()) {
       const h = current.getHours();
-      // Night Diff: 10PM (22) to 6AM (6)
       if (h >= 22 || h < 6) ndHours += 1;
       current.setHours(current.getHours() + 1);
   }
   return ndHours;
 };
 
-// Helper to check holiday
 const getHolidayType = (date: Date, holidayList: any[]) => {
     const dStr = date.toISOString().split('T')[0];
     const holiday = holidayList.find(h => h.date.toISOString().split('T')[0] === dStr);
@@ -120,7 +118,6 @@ const mapPositionToShiftRole = (position: string): string => {
 };
 
 // --- SHIFT GENERATOR HELPER ---
-// Uses the specific position for time logic, but returns data compatible with the schema
 const getRandomShift = (role: string, date: Date) => {
     const rand = Math.random();
     let type = "morning";
@@ -300,35 +297,95 @@ async function seed() {
     { title: "Inventory Procedures", content: "Follow breakage protocols.", type: "urgent", authorId: mainManager.id, isActive: true, targetDepartments: ["Kitchen"], createdAt: new Date() }
   ]);
 
-  // 4. Incident Reports
+  // 4. Incident Reports - SIMULATED 1 YEAR HISTORY
+  console.log("Generating 1 year of incident reports...");
   const reportTemplates = [
-    { 
-      category: "customer", 
-      title: "Intoxicated Guest", 
-      severity: "high", 
-      desc: "Guest refused service.",
-      location: "Bar",
-      actionTaken: "Security called.",
-      witnesses: "Liam Smith",
-      details: {}
-    },
-    // ... add more if needed
+    // Customer Issues
+    { category: "customer", title: "Intoxicated Guest Harassment", severity: "high", desc: "Guest at Table 5 became belligerent after being cut off.", location: "Dining Hall", actionTaken: "Security called, guest removed.", details: { policeReportNumber: "N/A" } },
+    { category: "customer", title: "Dine and Dash", severity: "medium", desc: "Party of 4 left without paying $200 bill.", location: "Patio", actionTaken: "Police report filed.", details: { policeReportNumber: "PR-2025-042" } },
+    { category: "customer", title: "Noise Complaint", severity: "low", desc: "Table 2 complained about music volume.", location: "Bar", actionTaken: "Volume lowered.", details: {} },
+    
+    // Employee Issues
+    { category: "employee", title: "No Call No Show", severity: "medium", desc: "Employee failed to report for scheduled shift.", location: "N/A", actionTaken: "Written warning issued.", details: {} },
+    { category: "employee", title: "Uniform Violation", severity: "low", desc: "Staff member wearing open-toed shoes.", location: "Kitchen", actionTaken: "Sent home to change.", details: {} },
+    { category: "employee", title: "Insubordination", severity: "high", desc: "Staff refused direct order from manager.", location: "Prep Area", actionTaken: "Meeting scheduled with HR.", details: {} },
+
+    // Accidents
+    { category: "accident", title: "Slip and Fall", severity: "medium", desc: "Prep cook slipped on wet floor near dish pit.", location: "Dish Pit", actionTaken: "First aid applied, area cleaned.", details: { injuryType: "Contusion", medicalAction: "Ice pack" } },
+    { category: "accident", title: "Minor Burn", severity: "low", desc: "Line cook touched hot pan handle.", location: "Hot Line", actionTaken: "Burn cream applied.", details: { injuryType: "1st Degree Burn" } },
+    { category: "accident", title: "Glass Cut", severity: "medium", desc: "Bartender cut hand on broken glass in ice bin.", location: "Bar", actionTaken: "Bandaged, ice bin burned and refilled.", details: { injuryType: "Laceration" } },
+
+    // Security
+    { category: "security", title: "Backdoor Lock Tampered", severity: "high", desc: "Scratch marks found on delivery entrance lock.", location: "Back Door", actionTaken: "Locksmith called, police notified.", details: { policeReportNumber: "PR-2025-889" } },
+    { category: "security", title: "Lost Item", severity: "low", desc: "Guest left iPhone 14 at bar.", location: "Bar", actionTaken: "Placed in safe.", details: { itemName: "iPhone 14" } },
+    { category: "security", title: "Vandalism", severity: "medium", desc: "Graffiti found in men's restroom.", location: "Restroom", actionTaken: "Cleaned immediately.", details: {} },
+
+    // Medical
+    { category: "medical", title: "Guest Allergic Reaction", severity: "critical", desc: "Guest had reaction to peanuts.", location: "Table 12", actionTaken: "EpiPen administered, ambulance called.", details: { injuryType: "Anaphylaxis", medicalAction: "Ambulance" } },
+    { category: "medical", title: "Staff Fainting", severity: "high", desc: "Server fainted due to heat exhaustion.", location: "Server Station", actionTaken: "Given water and rest.", details: { medicalAction: "Rest" } },
+
+    // Property
+    { category: "property", title: "Broken POS Terminal", severity: "medium", desc: "Screen cracked after being knocked over.", location: "Bar POS", actionTaken: "IT notified for replacement.", details: { itemName: "iPad Pro", estimatedCost: 1200 } },
+    { category: "property", title: "Leaking Sink", severity: "low", desc: "Handwash sink leaking onto floor.", location: "Kitchen", actionTaken: "Plumber called.", details: { itemName: "Sink Pipe", estimatedCost: 300 } },
+    { category: "property", title: "Broken Plate", severity: "low", desc: "Stack of dinner plates dropped.", location: "Dish Pit", actionTaken: "Cleaned up.", details: { itemName: "Dinner Plates (5)", estimatedCost: 50 } },
   ];
   
-  // (Simplified Reports Insert for brevity - Logic intact)
-  await db.insert(reports).values(reportTemplates.map(t => ({
+  const reportsData = [];
+  const TOTAL_REPORTS = 65; // Generate 65 reports over the year
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+  for (let i = 0; i < TOTAL_REPORTS; i++) {
+    const template = reportTemplates[Math.floor(Math.random() * reportTemplates.length)];
+    const reporter = employees[Math.floor(Math.random() * employees.length)];
+    
+    // Random date within last 365 days
+    const randomTime = oneYearAgo.getTime() + Math.random() * (new Date().getTime() - oneYearAgo.getTime());
+    const dateOccurred = new Date(randomTime);
+
+    // Random time of day (10am - 11pm)
+    const hour = 10 + Math.floor(Math.random() * 13);
+    const minute = Math.floor(Math.random() * 60);
+    const timeOccurred = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    
+    reportsData.push({
+      userId: reporter.id,
+      category: template.category,
+      title: template.title,
+      description: template.desc,
+      severity: template.severity,
+      status: Math.random() > 0.3 ? "resolved" : (Math.random() > 0.5 ? "investigating" : "pending"), // Mix of statuses
+      location: template.location,
+      dateOccurred: dateOccurred,
+      timeOccurred: timeOccurred,
+      partiesInvolved: "Staff/Guests",
+      witnesses: `${employees[Math.floor(Math.random() * employees.length)].firstName} ${employees[Math.floor(Math.random() * employees.length)].lastName}`,
+      actionTaken: template.actionTaken,
+      details: template.details || {},
+      resolvedBy: template.severity === "low" || Math.random() > 0.5 ? mainManager.id : null,
+      resolvedAt: template.severity === "low" || Math.random() > 0.5 ? new Date(dateOccurred.getTime() + 86400000) : null, // Resolved next day
+      createdAt: dateOccurred // Created at occurrence time
+    });
+  }
+  // Add a few for "Today" specifically
+  reportsData.push({
       userId: employees[0].id,
-      category: t.category,
-      title: t.title,
-      description: t.desc,
-      severity: t.severity,
+      category: "property",
+      title: "Broken Wine Glass",
+      description: "Dropped tray during lunch rush.",
+      severity: "low",
       status: "pending",
-      location: t.location,
+      location: "Main Dining",
       dateOccurred: new Date(),
-      timeOccurred: "20:00",
-      details: {},
+      timeOccurred: "12:30",
+      partiesInvolved: "N/A",
+      witnesses: "N/A",
+      actionTaken: "Cleaned up.",
+      details: { itemName: "Red Wine Glass", estimatedCost: 10 },
       createdAt: new Date()
-  })));
+  });
+
+  await db.insert(reports).values(reportsData);
 
 
   // =========================================================================

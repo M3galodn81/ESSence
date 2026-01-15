@@ -50,13 +50,13 @@ export default function ShiftManagement() {
   const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"roster" | "kanban" | "list">("roster");
-  
+   
   // Dialogs
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
-  
+   
   // Filter State
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
 
@@ -91,6 +91,14 @@ export default function ShiftManagement() {
   const getEmployeeName = (userId: string) => {
     const emp = teamMembers?.find((m) => m.id === userId);
     return emp ? `${emp.firstName} ${emp.lastName}` : "Unknown";
+  };
+  
+  // FIX: Helper for robust time formatting (HH:mm)
+  const formatTimeForInput = (dateInput: string | number | Date) => {
+    const date = new Date(dateInput);
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
   };
 
   const navigate = (direction: 'prev' | 'next') => {
@@ -130,10 +138,36 @@ export default function ShiftManagement() {
   const createForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema), defaultValues: { shiftType: "morning", shiftRole: "server" } });
   const editForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema) });
 
+  // 1. MODIFIED: Only sets the label/color, does NOT force the time anymore
   const handleShiftTypeChange = (val: string, form: any) => {
     form.setValue("shiftType", val);
-    const preset = SHIFT_PRESETS[val as keyof typeof SHIFT_PRESETS];
-    if (preset) { form.setValue("startTime", preset.start); form.setValue("endTime", preset.end); }
+    // Removed the lines that set startTime/endTime based on the preset
+  };
+
+  // 2. NEW: Automatically sets End Time to Start Time + 9 Hours
+  const onStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>, form: any) => {
+    const newStartTime = e.target.value;
+    
+    // Update the start time field immediately
+    form.setValue("startTime", newStartTime);
+
+    if (newStartTime) {
+      const [hours, minutes] = newStartTime.split(':').map(Number);
+      
+      // Create a date object to handle the math (including crossing midnight)
+      const date = new Date();
+      date.setHours(hours);
+      date.setMinutes(minutes);
+      
+      // Add 9 hours
+      date.setHours(date.getHours() + 9);
+      
+      // Format back to HH:mm
+      const newEndHour = date.getHours().toString().padStart(2, '0');
+      const newEndMinute = date.getMinutes().toString().padStart(2, '0');
+      
+      form.setValue("endTime", `${newEndHour}:${newEndMinute}`);
+    }
   };
 
   const createShiftMutation = useMutation({
@@ -193,9 +227,20 @@ export default function ShiftManagement() {
   const handleEdit = (schedule: Schedule) => {
     setSelectedSchedule(schedule);
     const dateStr = new Date(schedule.date).toISOString().split('T')[0];
-    const startStr = new Date(schedule.startTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    const endStr = new Date(schedule.endTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    editForm.reset({ userId: schedule.userId, date: dateStr, shiftType: schedule.type as any, shiftRole: schedule.shiftRole as any, startTime: startStr, endTime: endStr, location: schedule.location || "" });
+    
+    // FIX: Use manual extraction for accurate HH:mm for HTML inputs
+    const startStr = formatTimeForInput(schedule.startTime);
+    const endStr = formatTimeForInput(schedule.endTime);
+
+    editForm.reset({ 
+        userId: schedule.userId, 
+        date: dateStr, 
+        shiftType: schedule.type as any, 
+        shiftRole: schedule.shiftRole as any, 
+        startTime: startStr, 
+        endTime: endStr, 
+        location: schedule.location || "" 
+    });
     setIsEditDialogOpen(true);
   };
 
@@ -394,7 +439,7 @@ export default function ShiftManagement() {
               <div className="space-y-2"><Label>Role</Label><Select onValueChange={(v) => createForm.setValue("shiftRole", v as any)} defaultValue="server"><SelectTrigger className="rounded-xl capitalize"><SelectValue /></SelectTrigger><SelectContent>{ROLES.map(r => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-xl">
-              <div className="space-y-1"><Label className="text-xs">Start Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("startTime")} /></div>
+              <div className="space-y-1"><Label className="text-xs">Start Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("startTime")} onChange={(e) => onStartTimeChange(e, createForm)}/></div>
               <div className="space-y-1"><Label className="text-xs">End Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("endTime")} /></div>
             </div>
             <div className="space-y-2"><Label>Location</Label><Input className="rounded-xl" placeholder="e.g. Main Hall" {...createForm.register("location")} /></div>
@@ -402,12 +447,21 @@ export default function ShiftManagement() {
           </form>
         </DialogContent>
       </Dialog>
-      
-      {/* (Edit & Delete Dialogs are included but hidden for brevity - same logic as before) */}
+       
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-lg rounded-2xl">
             <DialogHeader><DialogTitle>Edit Shift</DialogTitle></DialogHeader>
             <form onSubmit={editForm.handleSubmit((d) => selectedSchedule && updateShiftMutation.mutate({ id: selectedSchedule.id, data: d }))} className="space-y-4 mt-2">
+                
+                {/* --- FIX: Display Employee Name --- */}
+                <div className="space-y-2">
+                    <Label>Employee</Label>
+                    <div className="flex items-center px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-medium">
+                        <Users className="w-4 h-4 mr-2 opacity-50"/>
+                        {selectedSchedule ? getEmployeeName(selectedSchedule.userId) : "Loading..."}
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2"><Label>Date</Label><Input type="date" className="rounded-xl" {...editForm.register("date")} /></div>
                     <div className="space-y-2">
@@ -426,7 +480,7 @@ export default function ShiftManagement() {
                     </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-xl">
-                    <div className="space-y-1"><Label className="text-xs">Start Time</Label><Input type="time" className="bg-white h-8" {...editForm.register("startTime")} /></div>
+                    <div className="space-y-1"><Label className="text-xs">Start Time</Label><Input type="time" className="bg-white h-8" {...editForm.register("startTime")} onChange={(e) => onStartTimeChange(e, editForm)}/></div>
                     <div className="space-y-1"><Label className="text-xs">End Time</Label><Input type="time" className="bg-white h-8" {...editForm.register("endTime")} /></div>
                 </div>
                 <div className="space-y-2"><Label>Location</Label><Input {...editForm.register("location")} className="rounded-xl" /></div>

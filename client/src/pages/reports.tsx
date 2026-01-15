@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,22 +13,45 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { useForm } from "react-hook-form";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertReportSchema } from "@shared/schema";
+import { insertReportSchema, type User as UserType } from "@shared/schema";
 import { z } from "zod";
 import { 
   AlertTriangle, ShieldAlert, UserX, Stethoscope, 
   Hammer, FileWarning, Plus, Calendar as CalendarIcon, Clock, 
-  Eye, FileText, MapPin, CheckCircle2, AlertCircle, Filter, ArrowUpDown, X
+  Eye, FileText, MapPin, CheckCircle2, AlertCircle, Filter, ArrowUpDown, X, Users, Minus,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, PieChart as PieChartIcon,
+  List as ListIcon
 } from "lucide-react";
-import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
+import { format, isWithinInterval, startOfDay, endOfDay, subMonths } from "date-fns";
 import { cn } from "@/lib/utils";
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
+  PieChart, Pie, Cell, Legend 
+} from 'recharts';
 
-// Extend the schema to handle the nested JSON 'details' field in the form
-const reportFormSchema = insertReportSchema.omit({ userId: true }).extend({
+// --- Schema & Types ---
+// Enhanced schema to support lists of items and people and enforce required fields
+const reportFormSchema = insertReportSchema.omit({ userId: true, partiesInvolved: true }).extend({
+    // Override dateOccurred to accept Date objects from the form state
+    dateOccurred: z.coerce.date({ required_error: "Date is required" }),
+    
+    // Make fields explicitly required with custom messages
+    title: z.string().min(1, "Title is required"),
+    description: z.string().min(1, "Description is required"),
+    location: z.string().min(1, "Location is required"),
+    timeOccurred: z.string().min(1, "Time is required"),
+    actionTaken: z.string().min(1, "Action taken is required"),
+    witnesses: z.string().min(1, "Witnesses field is required (enter 'None' if applicable)"),
+
+    involvedPeople: z.array(z.string()).min(1, "At least one person must be involved"), 
     details: z.object({
-        itemName: z.string().optional(),
+        items: z.array(z.object({
+            name: z.string().min(1, "Item name required"),
+            quantity: z.number().min(1),
+            cost: z.number().min(0)
+        })).optional(),
         policeReportNumber: z.string().optional(),
         injuryType: z.string().optional(),
         medicalAction: z.string().optional()
@@ -41,98 +64,174 @@ export default function Reports() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [view, setView] = useState<"list" | "analytics">("list");
   
-  // --- Filter States ---
+  // Filter States
   const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
 
-  // Real-life categories
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+
+  const [newItem, setNewItem] = useState({ name: "", quantity: 1, cost: 0 });
+  const [newPerson, setNewPerson] = useState("");
+
   const categories = [
-    { id: "customer", label: "Customer Incident", icon: UserX, color: "bg-orange-100 text-orange-600", desc: "Fights, harassment, intoxicated guests" },
-    { id: "employee", label: "Employee Incident", icon: FileWarning, color: "bg-blue-100 text-blue-600", desc: "Staff injury, misconduct, rule violations" },
-    { id: "accident", label: "Accident Report", icon: AlertTriangle, color: "bg-yellow-100 text-yellow-600", desc: "Slips, falls, broken glass, burns" },
-    { id: "security", label: "Security Incident", icon: ShieldAlert, color: "bg-red-100 text-red-600", desc: "Theft, vandalism, trespassing" },
-    { id: "medical", label: "Medical Incident", icon: Stethoscope, color: "bg-rose-100 text-rose-600", desc: "Guest or staff illness/injury requiring aid" },
-    { id: "property", label: "Property Damage", icon: Hammer, color: "bg-slate-100 text-slate-600", desc: "Damaged furniture, equipment, facilities" },
+    { id: "customer", label: "Customer Incident", icon: UserX, color: "bg-orange-100 text-orange-600", fill: "#f97316" },
+    { id: "employee", label: "Employee Incident", icon: FileWarning, color: "bg-blue-100 text-blue-600", fill: "#3b82f6" },
+    { id: "accident", label: "Accident Report", icon: AlertTriangle, color: "bg-yellow-100 text-yellow-600", fill: "#eab308" },
+    { id: "security", label: "Security Incident", icon: ShieldAlert, color: "bg-red-100 text-red-600", fill: "#ef4444" },
+    { id: "medical", label: "Medical Incident", icon: Stethoscope, color: "bg-rose-100 text-rose-600", fill: "#f43f5e" },
+    { id: "property", label: "Property Damage", icon: Hammer, color: "bg-slate-100 text-slate-600", fill: "#64748b" },
   ];
 
   const { data: reports, isLoading } = useQuery({ queryKey: ["/api/reports"] });
+  const { data: teamMembers } = useQuery<UserType[]>({ queryKey: ["/api/team"] });
 
-  // --- Filtering Logic ---
+  useEffect(() => { setCurrentPage(1); }, [statusFilter, categoryFilter, dateRange, sortOrder]);
+
   const filteredReports = useMemo(() => {
     if (!reports) return [];
-
     return reports.filter((r: any) => {
-        // 1. Status Filter
         if (statusFilter !== "all" && r.status !== statusFilter) return false;
-
-        // 2. Category Filter
         if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
-
-        // 3. Date Range Filter
         if (dateRange.from && dateRange.to && r.dateOccurred) {
             const reportDate = new Date(r.dateOccurred);
-            // Ensure comparison covers the whole day
-            if (!isWithinInterval(reportDate, { start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) })) {
-                return false;
-            }
+            if (!isWithinInterval(reportDate, { start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) })) return false;
         }
         return true;
     }).sort((a: any, b: any) => {
-        // 4. Sort (Date + Time)
-        // Combine date and time string to compare properly
-        const getDateObj = (dateStr: string | Date, timeStr: string) => {
-            const d = new Date(dateStr);
-            const [hours, minutes] = timeStr.split(':').map(Number);
-            d.setHours(hours || 0, minutes || 0);
-            return d.getTime();
-        };
-
-        const timeA = getDateObj(a.dateOccurred, a.timeOccurred);
-        const timeB = getDateObj(b.dateOccurred, b.timeOccurred);
-
+        const timeA = new Date(a.dateOccurred).getTime();
+        const timeB = new Date(b.dateOccurred).getTime();
         return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
     });
   }, [reports, statusFilter, categoryFilter, dateRange, sortOrder]);
 
+  const paginatedReports = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredReports.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredReports, currentPage]);
+
+  const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
+
+  const stats = useMemo(() => {
+    if (!reports) return { monthly: [], byCategory: [], mostInvolved: [] };
+    const months: Record<string, number> = {};
+    for (let i = 5; i >= 0; i--) { months[format(subMonths(new Date(), i), "MMM yyyy")] = 0; }
+    
+    reports.forEach((r: any) => {
+        const key = format(new Date(r.dateOccurred), "MMM yyyy");
+        if (months.hasOwnProperty(key)) months[key]++;
+    });
+    
+    const catCounts: Record<string, number> = {};
+    reports.forEach((r: any) => { catCounts[r.category] = (catCounts[r.category] || 0) + 1; });
+    
+    const peopleCounts: Record<string, number> = {};
+    reports.forEach((r: any) => {
+        if (r.partiesInvolved) {
+            r.partiesInvolved.split(',').forEach((name: string) => {
+                const n = name.trim();
+                if (n && n !== 'N/A') peopleCounts[n] = (peopleCounts[n] || 0) + 1;
+            });
+        }
+    });
+
+    return { 
+        monthly: Object.entries(months).map(([name, count]) => ({ name, count })),
+        byCategory: Object.entries(catCounts).map(([id, value]) => {
+            const cat = categories.find(c => c.id === id);
+            return { name: cat?.label || id, value, fill: cat?.fill || "#cbd5e1" };
+        }),
+        mostInvolved: Object.entries(peopleCounts).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    };
+  }, [reports]);
 
   const form = useForm<ReportForm>({
     resolver: zodResolver(reportFormSchema),
     defaultValues: {
-      category: "customer",
-      severity: "low",
-      dateOccurred: new Date(), 
-      timeOccurred: format(new Date(), "HH:mm"),
-      details: {}
+      category: "customer", severity: "low", dateOccurred: new Date(), timeOccurred: format(new Date(), "HH:mm"),
+      involvedPeople: [], details: { items: [] }
     },
   });
 
   const selectedCategory = form.watch("category");
+  const currentPeople = form.watch("involvedPeople");
+  const currentItems = form.watch("details.items") || [];
 
   const createReportMutation = useMutation({
     mutationFn: async (data: ReportForm) => {
-      const res = await apiRequest("POST", "/api/reports", data);
+      const { involvedPeople, ...cleanData } = data;
+      const payload = {
+          ...cleanData,
+          partiesInvolved: involvedPeople.join(", "),
+          userId: user?.id,
+          // Convert Date object to timestamp (number) for SQLite integer column
+          dateOccurred: new Date(data.dateOccurred).getTime(),
+          witnesses: cleanData.witnesses || "", 
+          images: [],
+      };
+      const res = await apiRequest("POST", "/api/reports", payload);
       return await res.json();
     },
     onSuccess: () => {
-      toast.success("Report Filed Successfully", { description: "The incident has been logged and notified to management." });
+      toast.success("Report Filed Successfully");
       queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
       setIsDialogOpen(false);
-      form.reset();
+      form.reset({ category: "customer", severity: "low", dateOccurred: new Date(), timeOccurred: format(new Date(), "HH:mm"), involvedPeople: [], details: { items: [] } });
     },
     onError: (err) => toast.error("Failed to file report", { description: err.message })
   });
 
-  // View Details Modal State
+  // Validation Error Handler
+  const onInvalid = (errors: FieldErrors<ReportForm>) => {
+    const firstErrorKey = Object.keys(errors)[0];
+    const errorMessage = errors[firstErrorKey as keyof ReportForm]?.message;
+    toast.error("Validation Error", { description: errorMessage ? String(errorMessage) : "Please check the form fields." });
+    console.log("Form Validation Errors:", errors);
+  };
+
+  // Helpers
+  const addPerson = () => {
+      if (!newPerson.trim()) return;
+      const current = form.getValues("involvedPeople");
+      if (!current.includes(newPerson)) {
+          const newPeople = [...current, newPerson];
+          form.setValue("involvedPeople", newPeople);
+          form.trigger("involvedPeople");
+      }
+      setNewPerson("");
+  };
+  const addStaffFromSelect = (name: string) => {
+      const current = form.getValues("involvedPeople");
+      if (!current.includes(name)) {
+          const newPeople = [...current, name];
+          form.setValue("involvedPeople", newPeople);
+          form.trigger("involvedPeople");
+      }
+  };
+  const removePerson = (index: number) => {
+      const current = form.getValues("involvedPeople");
+      const newPeople = current.filter((_, i) => i !== index);
+      form.setValue("involvedPeople", newPeople);
+      form.trigger("involvedPeople");
+  };
+  const addItem = () => {
+      if (!newItem.name.trim()) return;
+      const current = form.getValues("details.items") || [];
+      form.setValue("details.items", [...current, newItem]);
+      setNewItem({ name: "", quantity: 1, cost: 0 });
+  };
+  const removeItem = (index: number) => {
+      const current = form.getValues("details.items") || [];
+      form.setValue("details.items", current.filter((_, i) => i !== index));
+  };
+
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
-  
-  const handleViewReport = (report: any) => {
-    setSelectedReport(report);
-    setIsViewOpen(true);
-  };
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
@@ -142,378 +241,258 @@ export default function Reports() {
           <h1 className="text-3xl font-bold text-slate-900">Incident Reporting</h1>
           <p className="text-slate-500 mt-1">Official documentation for workplace incidents</p>
         </div>
-        
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800">
-              <Plus className="w-4 h-4 mr-2" /> File Official Report
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl">
-             {/* ... (Existing Create Form Code) ... */}
-             {/* I am hiding the create form internals for brevity since they didn't change, 
-                 but in your real file keep the form code here. */}
-             <DialogHeader className="border-b border-slate-100 pb-4">
-              <DialogTitle className="text-xl font-bold">File Incident Report</DialogTitle>
-              <p className="text-sm text-slate-500">Please provide factual, objective details.</p>
-            </DialogHeader>
-              
-            <form onSubmit={form.handleSubmit((d) => createReportMutation.mutate(d))} className="space-y-6 pt-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                      <Label>Report Category</Label>
-                      <Select value={selectedCategory} onValueChange={(val) => form.setValue("category", val)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                              {categories.map((cat) => (
-                                  <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
-                              ))}
-                          </SelectContent>
-                      </Select>
-                  </div>
-                  <div className="space-y-2">
-                      <Label>Severity</Label>
-                      <Select onValueChange={(val) => form.setValue("severity", val)} defaultValue="low">
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                              <SelectItem value="low">Low</SelectItem>
-                              <SelectItem value="medium">Medium</SelectItem>
-                              <SelectItem value="high">High</SelectItem>
-                              <SelectItem value="critical">Critical</SelectItem>
-                          </SelectContent>
-                      </Select>
-                  </div>
-              </div>
+        <div className="flex items-center gap-2">
+            <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+                <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => setView("list")}
+                    className={cn("text-xs", view === "list" && "bg-white shadow-sm text-slate-900")}
+                >
+                    <ListIcon className="w-4 h-4 mr-2" /> Reports
+                </Button>
+                <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => setView("analytics")}
+                    className={cn("text-xs", view === "analytics" && "bg-white shadow-sm text-slate-900")}
+                >
+                    <BarChart3 className="w-4 h-4 mr-2" /> Analytics
+                </Button>
+            </div>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800 ml-2">
+                  <Plus className="w-4 h-4 mr-2" /> File Report
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl">
+                <DialogHeader className="border-b border-slate-100 pb-4">
+                  <DialogTitle>File Incident Report</DialogTitle>
+                  <DialogDescription>Please provide factual, objective details.</DialogDescription>
+                </DialogHeader>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                      <Label>Date</Label>
-                      <Input type="date" {...form.register("dateOccurred", { valueAsDate: true })} />
-                  </div>
-                  <div className="space-y-2">
-                      <Label>Time</Label>
-                      <Input type="time" {...form.register("timeOccurred")} />
-                  </div>
-                  <div className="space-y-2">
-                      <Label>Location</Label>
-                      <Input placeholder="e.g. Kitchen" {...form.register("location")} />
-                  </div>
-              </div>
-
-              <div className="space-y-2">
-                  <Label>Title</Label>
-                  <Input placeholder="Brief summary" {...form.register("title")} />
-              </div>
-              <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea placeholder="Detailed description..." {...form.register("description")} />
-              </div>
-              <div className="space-y-2">
-                  <Label>Action Taken</Label>
-                  <Textarea placeholder="Immediate actions..." {...form.register("actionTaken")} />
-              </div>
-              
-              {/* Conditional Fields */}
-              {selectedCategory === 'property' && (
-                  <div className="bg-slate-50 p-4 rounded-lg space-y-4">
-                      <h4 className="font-medium">Property Details</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                          <Input placeholder="Item Name" {...form.register("details.itemName")} />
+                <form onSubmit={form.handleSubmit((d) => createReportMutation.mutate(d), onInvalid)} className="space-y-6 pt-4">
+                  {/* Classification */}
+                  <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                          <Label>Category</Label>
+                          <Select value={selectedCategory} onValueChange={(val) => form.setValue("category", val)}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                  {categories.map((cat) => (
+                                      <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
+                                  ))}
+                              </SelectContent>
+                          </Select>
+                      </div>
+                      <div className="space-y-2">
+                          <Label>Severity</Label>
+                          <Select onValueChange={(val) => form.setValue("severity", val)} defaultValue="low">
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value="low">Low</SelectItem>
+                                  <SelectItem value="medium">Medium</SelectItem>
+                                  <SelectItem value="high">High</SelectItem>
+                                  <SelectItem value="critical">Critical</SelectItem>
+                              </SelectContent>
+                          </Select>
                       </div>
                   </div>
-              )}
-              {selectedCategory === 'security' && (
-                  <div className="bg-red-50 p-4 rounded-lg">
-                      <Label>Police Report #</Label>
-                      <Input placeholder="PR-XXXX" {...form.register("details.policeReportNumber")} />
-                  </div>
-              )}
-              {selectedCategory === 'medical' && (
-                  <div className="bg-rose-50 p-4 rounded-lg">
-                      <Label>Injury Type</Label>
-                      <Input placeholder="e.g. Burn" {...form.register("details.injuryType")} />
-                  </div>
-              )}
 
-              <DialogFooter>
-                <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                <Button type="submit">Submit Report</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                  {/* Time & Location */}
+                  <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                          <Label>Date</Label>
+                          <Input 
+                              type="date" 
+                              value={format(new Date(form.watch("dateOccurred")), "yyyy-MM-dd")} 
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value) form.setValue("dateOccurred", new Date(value), { shouldValidate: true });
+                              }} 
+                          />
+                          {form.formState.errors.dateOccurred && <p className="text-xs text-red-500">{form.formState.errors.dateOccurred.message}</p>}
+                      </div>
+                      <div className="space-y-2">
+                          <Label>Time</Label>
+                          <Input type="time" {...form.register("timeOccurred")} />
+                          {form.formState.errors.timeOccurred && <p className="text-xs text-red-500">{form.formState.errors.timeOccurred.message}</p>}
+                      </div>
+                      <div className="space-y-2">
+                          <Label>Location</Label>
+                          <Input placeholder="e.g. Kitchen" {...form.register("location")} />
+                          {form.formState.errors.location && <p className="text-xs text-red-500">{form.formState.errors.location.message}</p>}
+                      </div>
+                  </div>
+
+                  {/* Narrative */}
+                  <div className="space-y-2">
+                      <Label>Title</Label>
+                      <Input placeholder="Brief summary" {...form.register("title")} />
+                      {form.formState.errors.title && <p className="text-xs text-red-500">{form.formState.errors.title.message}</p>}
+                  </div>
+                  <div className="space-y-2">
+                      <Label>Description</Label>
+                      <Textarea placeholder="Detailed description..." {...form.register("description")} />
+                      {form.formState.errors.description && <p className="text-xs text-red-500">{form.formState.errors.description.message}</p>}
+                  </div>
+                  
+                  {/* ADDED: Witnesses & Action Taken Row */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>Action Taken</Label>
+                        <Textarea placeholder="Immediate actions..." {...form.register("actionTaken")} />
+                        {form.formState.errors.actionTaken && <p className="text-xs text-red-500">{form.formState.errors.actionTaken.message}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Witnesses</Label>
+                        <Textarea placeholder="Names/Contacts..." {...form.register("witnesses")} />
+                        {form.formState.errors.witnesses && <p className="text-xs text-red-500">{form.formState.errors.witnesses.message}</p>}
+                    </div>
+                  </div>
+
+                  {/* Dynamic People List */}
+                  <div className="space-y-3 p-4 bg-slate-50/50 rounded-lg border border-slate-100">
+                      <Label>People Involved <span className="text-red-500">*</span></Label>
+                      <div className="flex flex-col gap-3">
+                          {/* Staff Dropdown */}
+                          <div className="flex flex-col gap-1.5">
+                              <span className="text-xs text-slate-500 font-medium">Add Staff Member</span>
+                              <Select onValueChange={addStaffFromSelect}>
+                                  <SelectTrigger className="bg-white border-slate-200">
+                                      <SelectValue placeholder="Select from team..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                      {teamMembers?.filter(m => m.role !== 'admin').map((member) => (
+                                          <SelectItem key={member.id} value={`${member.firstName} ${member.lastName}`}>
+                                              {member.firstName} {member.lastName} <span className="text-xs text-slate-400 ml-1">({member.position})</span>
+                                          </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                              </Select>
+                          </div>
+
+                          {/* Manual Input */}
+                          <div className="flex flex-col gap-1.5">
+                              <span className="text-xs text-slate-500 font-medium">Add Guest / Other</span>
+                              <div className="flex gap-2">
+                                  <Input 
+                                      value={newPerson} 
+                                      onChange={(e) => setNewPerson(e.target.value)} 
+                                      placeholder="Type name manually..." 
+                                      className="bg-white"
+                                      onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); addPerson(); } }}
+                                  />
+                                  <Button type="button" onClick={addPerson} variant="outline" className="bg-white">Add</Button>
+                              </div>
+                          </div>
+                      </div>
+
+                      {currentPeople.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-200/60">
+                              {currentPeople.map((p, i) => (
+                                  <Badge key={i} variant="secondary" className="pl-2 pr-1 py-1 flex items-center gap-1 bg-white border border-slate-200">
+                                      {p} <button type="button" onClick={() => removePerson(i)} className="hover:bg-slate-100 rounded-full p-0.5"><X className="w-3 h-3 text-slate-400 hover:text-red-500" /></button>
+                                  </Badge>
+                              ))}
+                          </div>
+                      )}
+                      {form.formState.errors.involvedPeople && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {form.formState.errors.involvedPeople.message}</p>}
+                  </div>
+
+                  {/* Property Details */}
+                  {selectedCategory === 'property' && (
+                      <div className="bg-slate-50 p-4 rounded-lg space-y-4 border border-slate-200">
+                          <h4 className="font-medium text-sm text-slate-900">Damaged Items</h4>
+                          <div className="grid grid-cols-12 gap-2 items-end">
+                              <div className="col-span-6"><Label className="text-xs">Item Name</Label><Input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Plate" /></div>
+                              <div className="col-span-2"><Label className="text-xs">Qty</Label><Input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: +e.target.value})} /></div>
+                              <div className="col-span-3"><Label className="text-xs">Cost</Label><Input type="number" value={newItem.cost} onChange={e => setNewItem({...newItem, cost: +e.target.value})} /></div>
+                              <div className="col-span-1"><Button type="button" size="icon" onClick={addItem}><Plus className="w-4 h-4" /></Button></div>
+                          </div>
+                          <div className="space-y-2">{currentItems.map((item, i) => <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded border"><span>{item.quantity}x {item.name} (${item.cost})</span><button type="button" onClick={() => removeItem(i)}><X className="w-4 h-4 hover:text-red-500" /></button></div>)}</div>
+                      </div>
+                  )}
+
+                  <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+                    <Button type="submit">Submit Report</Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+        </div>
       </div>
 
-      {/* --- Filter Toolbar --- */}
-      <Card className="bg-white border-slate-200 shadow-sm rounded-xl">
-        <CardContent className="p-4">
-            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-                <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-                    
-                    {/* Category Filter */}
-                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                        <SelectTrigger className="w-full sm:w-[300px] h-10 border-slate-200 rounded-lg">
-                            <div className="flex items-center gap-2">
-                                <Filter className="w-4 h-4 text-slate-500" />
-                                <span className="text-slate-600">Category:</span>
-                                <SelectValue />
-                            </div>
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Categories</SelectItem>
-                            {categories.map(c => (
-                                <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    {/* Status Filter */}
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                        <SelectTrigger className="w-full sm:w-[200px] h-10 border-slate-200 rounded-lg">
-                            <div className="flex items-center gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-slate-500" />
-                                <span className="text-slate-600">Status:</span>
-                                <SelectValue />
-                            </div>
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Status</SelectItem>
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="resolved">Resolved</SelectItem>
-                        </SelectContent>
-                    </Select>
-
-                    {/* Date Range Filter */}
-                    <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant="outline" className={cn("h-10 justify-start text-left font-normal border-slate-200 rounded-lg w-full sm:w-[240px]", !dateRange.from && "text-muted-foreground")}>
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {dateRange.from ? (
-                                    dateRange.to ? (
-                                        <>
-                                            {format(dateRange.from, "MMM dd")} - {format(dateRange.to, "MMM dd")}
-                                        </>
-                                    ) : (
-                                        format(dateRange.from, "PPP")
-                                    )
-                                ) : (
-                                    <span>Filter by Date</span>
-                                )}
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                                initialFocus
-                                mode="range"
-                                defaultMonth={dateRange.from}
-                                selected={dateRange}
-                                onSelect={(range: any) => setDateRange(range || { from: undefined, to: undefined })}
-                                numberOfMonths={2}
-                            />
-                        </PopoverContent>
-                    </Popover>
-                </div>
-
-                {/* Sort & Reset */}
-                <div className="flex items-center gap-2 w-full lg:w-auto">
-                    <Select value={sortOrder} onValueChange={(v: any) => setSortOrder(v)}>
-                        <SelectTrigger className="w-full sm:w-[150px] h-10 border-none bg-slate-50 shadow-none rounded-lg">
-                            <ArrowUpDown className="w-3.5 h-3.5 mr-2 text-slate-500" />
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="newest">Newest First</SelectItem>
-                            <SelectItem value="oldest">Oldest First</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    
-                    {(categoryFilter !== 'all' || statusFilter !== 'all' || dateRange.from) && (
-                        <Button 
-                            variant="ghost" 
-                            size="icon"
-                            className="text-slate-500 hover:text-slate-900 h-10 w-10"
-                            onClick={() => {
-                                setCategoryFilter('all');
-                                setStatusFilter('all');
-                                setDateRange({ from: undefined, to: undefined });
-                            }}
-                            title="Reset Filters"
-                        >
-                            <X className="w-4 h-4" />
-                        </Button>
-                    )}
-                </div>
-            </div>
-        </CardContent>
-      </Card>
-
-      {/* Reports Display Grid */}
-      <div className="grid grid-cols-1 gap-4">
-        {isLoading ? (
-            <div className="text-center py-10 text-slate-400">Loading records...</div>
-        ) : filteredReports.length === 0 ? (
-            <div className="text-center py-16 bg-white border border-dashed border-slate-200 rounded-xl">
-                <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <Filter className="w-6 h-6 text-slate-300" />
-                </div>
-                <h3 className="text-sm font-medium text-slate-900">No reports found</h3>
-                <p className="text-sm text-slate-500 mt-1">Try adjusting your filters to see more results.</p>
-            </div>
-        ) : filteredReports.map((report: any) => {
-            const cat = categories.find(c => c.id === report.category) || categories[0];
-            const Icon = cat.icon;
-
-            return (
-                <Card key={report.id} className="hover:shadow-md transition-all border-slate-200">
-                    <CardContent className="p-6">
-                        <div className="flex gap-4">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${cat.color}`}>
-                                <Icon className="w-6 h-6" />
-                            </div>
-                            <div className="flex-1 space-y-3">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h3 className="font-bold text-slate-900 text-lg">{report.title}</h3>
-                                        <div className="flex items-center gap-2 text-sm text-slate-500 mt-1">
-                                            <Badge variant="outline" className="bg-slate-50 font-normal">
-                                                {cat.label}
-                                            </Badge>
-                                            <span>•</span>
-                                            <span>{format(new Date(report.dateOccurred), "MMM dd, yyyy")}</span>
-                                            <span>•</span>
-                                            <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {report.timeOccurred}</span>
-                                        </div>
-                                    </div>
-                                    <Badge className={cn("capitalize", 
-                                        report.severity === 'critical' ? "bg-red-100 text-red-700 hover:bg-red-100" :
-                                        report.severity === 'high' ? "bg-orange-100 text-orange-700 hover:bg-orange-100" :
-                                        "bg-slate-100 text-slate-700 hover:bg-slate-100"
-                                    )}>
-                                        {report.severity} Priority
-                                    </Badge>
+      {view === "list" ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="bg-white border-slate-200 shadow-sm md:col-span-2">
+                <CardContent className="p-0">
+                    <div className="flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl">
+                        <Select value={categoryFilter} onValueChange={setCategoryFilter}><SelectTrigger className="w-[180px] h-8 text-xs"><SelectValue placeholder="Category" /></SelectTrigger><SelectContent><SelectItem value="all">All Categories</SelectItem>{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}</SelectContent></Select>
+                        <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[140px] h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="resolved">Resolved</SelectItem></SelectContent></Select>
+                        <Button variant="ghost" size="sm" onClick={() => {setCategoryFilter('all'); setStatusFilter('all')}} className="h-8 text-xs">Reset</Button>
+                    </div>
+                    <div className="divide-y divide-slate-100 min-h-[300px]">
+                        {isLoading ? <div className="p-8 text-center text-slate-400">Loading...</div> : 
+                        paginatedReports.length === 0 ? <div className="p-8 text-center text-slate-400">No reports found.</div> :
+                        paginatedReports.map((report: any) => (
+                            <div key={report.id} onClick={() => { setSelectedReport(report); setIsViewOpen(true); }} className="flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors">
+                                <div className="flex items-center gap-4">
+                                    <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color)}>{(() => { const Icon = categories.find(c=>c.id===report.category)?.icon || FileText; return <Icon className="w-5 h-5" /> })()}</div>
+                                    <div><h4 className="text-sm font-bold text-slate-800">{report.title}</h4><div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5"><span>{format(new Date(report.dateOccurred), "MMM dd")}</span><span>•</span><span className="capitalize">{report.severity} Priority</span></div></div>
                                 </div>
-                                
-                                <p className="text-slate-600 text-sm line-clamp-2">
-                                    {report.description}
-                                </p>
-                                
-                                <div className="pt-2 flex justify-end">
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm" 
-                                        className="text-slate-600 gap-2 rounded-full hover:bg-slate-50 hover:text-slate-900"
-                                        onClick={() => handleViewReport(report)}
-                                    >
-                                        <FileText className="w-4 h-4" /> View Full Report
-                                    </Button>
-                                </div>
+                                <Badge variant={report.status === 'resolved' ? 'default' : 'secondary'} className="capitalize">{report.status}</Badge>
                             </div>
+                        ))}
+                    </div>
+                    {/* Pagination */}
+                    <div className="flex items-center justify-between p-3 border-t border-slate-100 bg-white rounded-b-xl">
+                        <div className="text-xs text-slate-500">Page {currentPage} of {totalPages}</div>
+                        <div className="flex gap-1">
+                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(1)} disabled={currentPage===1}><ChevronsLeft className="w-3 h-3"/></Button>
+                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(p=>Math.max(1, p-1))} disabled={currentPage===1}><ChevronLeft className="w-3 h-3"/></Button>
+                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(p=>Math.min(totalPages, p+1))} disabled={currentPage===totalPages}><ChevronRight className="w-3 h-3"/></Button>
+                            <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(totalPages)} disabled={currentPage===totalPages}><ChevronsRight className="w-3 h-3"/></Button>
                         </div>
-                    </CardContent>
-                </Card>
-            );
-        })}
-      </div>
-
-      {/* View Details Dialog */}
+                    </div>
+                </CardContent>
+            </Card>
+            <Card className="bg-white border-slate-200 shadow-sm h-fit">
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-bold text-slate-700 flex items-center gap-2"><Users className="w-4 h-4" /> Most Involved</CardTitle></CardHeader>
+                <CardContent>
+                    <div className="space-y-3">{stats.mostInvolved.map(([name, count], i) => (<div key={name} className="flex justify-between text-sm"><span>{i+1}. {name}</span><Badge variant="secondary">{count}</Badge></div>))}</div>
+                </CardContent>
+            </Card>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card><CardHeader><CardTitle>Incident Trend</CardTitle></CardHeader><CardContent><div className="h-[300px]"><ResponsiveContainer><BarChart data={stats.monthly}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="name"/><YAxis/><RechartsTooltip/><Bar dataKey="count" fill="#3b82f6"/></BarChart></ResponsiveContainer></div></CardContent></Card>
+            <Card><CardHeader><CardTitle>By Category</CardTitle></CardHeader><CardContent><div className="h-[300px]"><ResponsiveContainer><PieChart><Pie data={stats.byCategory} dataKey="value" cx="50%" cy="50%" outerRadius={80}>{stats.byCategory.map((e, i) => <Cell key={i} fill={e.fill} />)}</Pie><RechartsTooltip /><Legend /></PieChart></ResponsiveContainer></div></CardContent></Card>
+        </div>
+      )}
+      
+      {/* Detail Dialog */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             {selectedReport && (
                 <>
-                    <DialogHeader>
-                        <div className="flex items-center gap-3 mb-2">
-                            <Badge variant="outline" className="uppercase tracking-wider text-[10px]">
-                                {categories.find(c => c.id === selectedReport.category)?.label || "Report"}
-                            </Badge>
-                            <Badge className={cn("capitalize", 
-                                selectedReport.severity === 'critical' ? "bg-red-100 text-red-700 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"
-                            )}>
-                                {selectedReport.severity} Priority
-                            </Badge>
+                    <DialogHeader><DialogTitle>{selectedReport.title}</DialogTitle><DialogDescription>{format(new Date(selectedReport.dateOccurred), "PPP")} at {selectedReport.timeOccurred}</DialogDescription></DialogHeader>
+                    <div className="space-y-4">
+                        <div className="p-4 bg-slate-50 rounded-lg border">
+                            <div className="grid grid-cols-2 gap-4"><div><span className="text-xs uppercase text-slate-500">Location</span><p className="font-medium">{selectedReport.location}</p></div><div><span className="text-xs uppercase text-slate-500">Status</span><p className="font-medium capitalize">{selectedReport.status}</p></div></div>
                         </div>
-                        <DialogTitle className="text-2xl font-bold text-slate-900">{selectedReport.title}</DialogTitle>
-                        <DialogDescription className="flex items-center gap-2 text-slate-500">
-                            <CalendarIcon className="w-4 h-4" /> {format(new Date(selectedReport.dateOccurred), "MMMM dd, yyyy")} 
-                            <Clock className="w-4 h-4 ml-2" /> {selectedReport.timeOccurred}
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-6 py-4">
-                        {/* 1. Location & Context */}
-                        <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                            <div className="space-y-1">
-                                <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
-                                <div className="flex items-center gap-2 font-medium text-slate-900">
-                                    <MapPin className="w-4 h-4 text-slate-400" />
-                                    {selectedReport.location}
-                                </div>
-                            </div>
-                            <div className="space-y-1">
-                                <span className="text-xs font-semibold text-slate-400 uppercase">Status</span>
-                                <div className="flex items-center gap-2 font-medium text-slate-900 capitalize">
-                                    {selectedReport.status === 'resolved' ? 
-                                        <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : 
-                                        <AlertCircle className="w-4 h-4 text-amber-500" />
-                                    }
-                                    {selectedReport.status}
-                                </div>
-                            </div>
+                        <div><h4 className="font-bold text-sm mb-1">Description</h4><p className="text-sm text-slate-600">{selectedReport.description}</p></div>
+                        <div><h4 className="font-bold text-sm mb-1">Action Taken</h4><p className="text-sm text-slate-600">{selectedReport.actionTaken}</p></div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><h4 className="font-bold text-sm mb-1">Witnesses</h4><p className="text-sm text-slate-600">{selectedReport.witnesses}</p></div>
+                            <div><h4 className="font-bold text-sm mb-1">Parties Involved</h4><p className="text-sm text-slate-600">{selectedReport.partiesInvolved}</p></div>
                         </div>
-
-                        {/* 2. Main Narrative */}
-                        <div className="space-y-4">
-                            <div>
-                                <h4 className="text-sm font-bold text-slate-900 mb-2">Incident Description</h4>
-                                <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">
-                                    {selectedReport.description}
-                                </p>
-                            </div>
-                            <div>
-                                <h4 className="text-sm font-bold text-slate-900 mb-2">Immediate Action Taken</h4>
-                                <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">
-                                    {selectedReport.actionTaken || "No immediate action recorded."}
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* 3. People Involved */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <span className="text-xs font-semibold text-slate-400 uppercase">Witnesses</span>
-                                <p className="text-sm font-medium text-slate-900">{selectedReport.witnesses || "None listed"}</p>
-                            </div>
-                            <div className="space-y-1">
-                                <span className="text-xs font-semibold text-slate-400 uppercase">Parties Involved</span>
-                                <p className="text-sm font-medium text-slate-900">{selectedReport.partiesInvolved || "None listed"}</p>
-                            </div>
-                        </div>
-
-                        {/* 4. Specific Category Details */}
-                        {selectedReport.details && Object.keys(selectedReport.details).length > 0 && (
-                            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                                <h4 className="text-sm font-bold text-blue-900 mb-3">Additional Details</h4>
-                                <div className="grid grid-cols-2 gap-4">
-                                    {Object.entries(selectedReport.details).map(([key, value]) => (
-                                        <div key={key}>
-                                            <span className="text-xs text-blue-600/70 uppercase font-semibold block mb-1">
-                                                {key.replace(/([A-Z])/g, ' $1').trim()}
-                                            </span>
-                                            <span className="text-sm font-medium text-blue-900">
-                                                {value as string}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
+                        {selectedReport.details?.items && (
+                            <div className="border-t pt-4"><h4 className="font-bold text-sm mb-2">Items</h4>{selectedReport.details.items.map((i:any, idx:number) => <div key={idx} className="flex justify-between text-sm"><span>{i.quantity}x {i.name}</span><span>${i.cost}</span></div>)}</div>
                         )}
                     </div>
-
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsViewOpen(false)}>Close</Button>
-                        {user?.role !== 'employee' && (
-                            <Button>Mark as Resolved</Button>
-                        )}
-                    </DialogFooter>
                 </>
             )}
         </DialogContent>

@@ -59,7 +59,7 @@ export const payslips = sqliteTable("payslips", {
   userId: text("user_id").notNull().references(() => users.id),
   month: integer("month").notNull(),
   year: integer("year").notNull(),
-  period: integer("period").notNull().default(1), // Added: 1 for 1st Half, 2 for 2nd Half
+  period: integer("period").notNull().default(1), 
   basicSalary: integer("basic_salary").notNull(),
   allowances: json<Record<string, any>>("allowances"),
   deductions: json<Record<string, any>>("deductions"),
@@ -118,35 +118,25 @@ export const activities = sqliteTable("activities", {
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
 });
 
-// shared/schema.ts
-
 export const reports = sqliteTable("reports", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id").notNull().references(() => users.id), // The reporter
+  userId: text("user_id").notNull().references(() => users.id),
   
-  // New granular categories
-  category: text("category").notNull().default("accident"), // 'customer', 'employee', 'accident', 'security', 'medical', 'property'
-  
+  category: text("category").notNull().default("accident"),
   title: text("title").notNull(),
   description: text("description").notNull(),
   severity: text("severity").default("low"), 
   status: text("status").default("pending"), 
   location: text("location").notNull(),
 
-  // "Real Life" Form Fields
   dateOccurred: integer("date_occurred", { mode: 'timestamp_ms' }).notNull(),
-  timeOccurred: text("time_occurred").notNull(), // e.g., "14:30"
-  partiesInvolved: text("parties_involved"), // Names of people involved (Guest names, Staff names)
-  witnesses: text("witnesses"), // Names/Contacts of witnesses
-  actionTaken: text("action_taken"), // What did you do immediately? (e.g. "Called police", "Applied First Aid")
+  timeOccurred: text("time_occurred").notNull(),
+  partiesInvolved: text("parties_involved"), 
+  witnesses: text("witnesses"), 
+  actionTaken: text("action_taken"), 
   
-  // Specific Details (JSON for flexibility)
-  // For Property: { itemName, estimatedCost }
-  // For Medical: { injuryType, hospitalName }
-  // For Security: { policeReportNumber, stolenItems }
   details: json<Record<string, any>>("details"),
-  
-  images: json<string[]>("images"), // For evidence photos
+  images: json<string[]>("images"), 
 
   assignedTo: text("assigned_to").references(() => users.id),
   resolvedBy: text("resolved_by").references(() => users.id),
@@ -154,8 +144,6 @@ export const reports = sqliteTable("reports", {
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: 'timestamp_ms' }).$onUpdateFn(() => new Date()),
 });
-
-
 
 export const laborCostData = sqliteTable("labor_cost_data", {
   id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
@@ -177,7 +165,7 @@ export const attendance = sqliteTable("attendance", {
   date: integer("date", { mode: 'timestamp_ms' }).notNull(),
   timeIn: integer("time_in", { mode: 'timestamp_ms' }).notNull(),
   timeOut: integer("time_out", { mode: 'timestamp_ms' }),
-  status: text("status").default("clocked_in"), // clocked_in, clocked_out, on_break
+  status: text("status").default("clocked_in"), 
   totalBreakMinutes: integer("total_break_minutes").default(0),
   totalWorkMinutes: integer("total_work_minutes"),
   notes: text("notes"),
@@ -192,29 +180,23 @@ export const breaks = sqliteTable("breaks", {
   breakStart: integer("break_start", { mode: 'timestamp_ms' }).notNull(),
   breakEnd: integer("break_end", { mode: 'timestamp_ms' }),
   breakMinutes: integer("break_minutes"),
-  breakType: text("break_type").default("regular"), // regular, lunch, emergency
+  breakType: text("break_type").default("regular"), 
   notes: text("notes"),
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
 });
 
+// --- Zod Schemas ---
+
 export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, createdAt: true, updatedAt: true,
 });
 
 export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).omit({
-  id: true,
-  status: true,
-  approvedBy: true,
-  approvedAt: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, status: true, approvedBy: true, approvedAt: true, createdAt: true, updatedAt: true,
 });
 
 export const insertPayslipSchema = createInsertSchema(payslips).omit({
-  id: true,
-  generatedAt: true,
+  id: true, generatedAt: true,
 });
 
 export const insertScheduleApiSchema = z.object({
@@ -232,24 +214,21 @@ export const insertScheduleApiSchema = z.object({
 });
 
 export const insertScheduleSchema = createInsertSchema(schedules).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, createdAt: true, updatedAt: true,
 });
 
-
 export const insertAnnouncementSchema = createInsertSchema(announcements).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, createdAt: true, updatedAt: true,
 });
 
 export const insertActivitySchema = createInsertSchema(activities).omit({
-  id: true,
-  createdAt: true,
+  id: true, createdAt: true,
 });
 
-export const insertReportSchema = createInsertSchema(reports).omit({
+// UPDATED: Added date coercion to handle JSON payloads correctly
+export const insertReportSchema = createInsertSchema(reports, {
+  dateOccurred: z.number(),
+}).omit({
   id: true,
   status: true,
   assignedTo: true,
@@ -260,29 +239,19 @@ export const insertReportSchema = createInsertSchema(reports).omit({
 });
 
 export const insertLaborCostDataSchema = createInsertSchema(laborCostData).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, createdAt: true, updatedAt: true,
 });
 
 export const insertAttendanceSchema = createInsertSchema(attendance).omit({
-  id: true,
-  status: true,
-  totalBreakMinutes: true,
-  totalWorkMinutes: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, status: true, totalBreakMinutes: true, totalWorkMinutes: true, createdAt: true, updatedAt: true,
 });
 
 export const insertBreakSchema = createInsertSchema(breaks).omit({
-  id: true,
-  breakMinutes: true,
-  createdAt: true,
+  id: true, breakMinutes: true, createdAt: true,
 });
 
 export const insertHolidaySchema = createInsertSchema(holidays).omit({
-  id: true,
-  createdAt: true,
+  id: true, createdAt: true,
 });
 
 export type User = typeof users.$inferSelect;
