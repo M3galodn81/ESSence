@@ -12,6 +12,7 @@ import { default as setupAnnouncementRoutes } from "./routes/announcements";
 import { default as setupReportRoutes } from "./routes/reports";
 import { default as setupAttendanceRoutes } from "./routes/attendance";
 import {default as setupLaborCostRoutes} from "./routes/labor-cost";
+import {default as setupNotificationRoutes} from "./routes/notifications";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -27,6 +28,9 @@ export function registerRoutes(app: Express): Server {
   app.use("/api/reports", setupReportRoutes);
   app.use("/api/attendance", setupAttendanceRoutes);
   app.use("/api/labor-cost", setupLaborCostRoutes);
+  app.use("/api/notifications", setupNotificationRoutes);
+
+  
 
   // --- Get Dashboard Stats ---
   app.get("/api/dashboard-stats", async (req, res) => {

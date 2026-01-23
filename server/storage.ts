@@ -148,6 +148,20 @@ export interface IStorage {
   getLaborCostDataByMonth(month: number, year: number): Promise<LaborCostData | undefined>;
   updateLaborCostData(id: string, updates: Partial<LaborCostData>): Promise<LaborCostData | undefined>;
 
+  // Attendance methods
+  clockIn(userId: string, date: Date, notes?: string): Promise<Attendance>;
+  clockOut(attendanceId: string): Promise<Attendance | undefined>;
+  getTodayAttendance(userId: string): Promise<Attendance | undefined>;
+  getAttendanceById(id: string): Promise<Attendance | undefined>;
+  getAttendanceByUser(userId: string, startDate?: Date, endDate?: Date): Promise<Attendance[]>;
+  getAllAttendance(startDate?: Date, endDate?: Date): Promise<Attendance[]>;
+  startBreak(attendanceId: string, userId: string, breakType?: string, notes?: string): Promise<Break>;
+  endBreak(breakId: string): Promise<Break | undefined>;
+  getBreakById(id: string): Promise<Break | undefined>;
+  getBreaksByAttendance(attendanceId: string): Promise<Break[]>;
+  getActiveBreak(userId: string): Promise<Break | undefined>;
+  getEmployeesForManager(managerId: string): Promise<User[]>;
+
   sessionStore: any;
 }
 
@@ -203,7 +217,6 @@ export class DbStorage implements IStorage {
   }
 
   async getEmployeesForManager(managerId: string): Promise<User[]> {
-    
     return await db.select().from(users).where(
         and(
             eq(users.role, 'employee'),
@@ -293,14 +306,38 @@ export class DbStorage implements IStorage {
   }
 
   async getAllPayslips(): Promise<Payslip[]> {
-    return await db.select().from(payslips)
-      .orderBy(desc(payslips.generatedAt));
+    // FIX: Explicit select to avoid "no such column: period" error if DB is outdated
+    return await db.select({
+        id: payslips.id,
+        userId: payslips.userId,
+        month: payslips.month,
+        year: payslips.year,
+        basicSalary: payslips.basicSalary,
+        allowances: payslips.allowances,
+        deductions: payslips.deductions,
+        grossPay: payslips.grossPay,
+        netPay: payslips.netPay,
+        generatedAt: payslips.generatedAt
+    }).from(payslips)
+      .orderBy(desc(payslips.generatedAt)) as unknown as Payslip[];
   }
 
   async getPayslipsByUser(userId: string): Promise<Payslip[]> {
-    return await db.select().from(payslips)
+    // FIX: Explicit select to avoid "no such column: period" error if DB is outdated
+    return await db.select({
+        id: payslips.id,
+        userId: payslips.userId,
+        month: payslips.month,
+        year: payslips.year,
+        basicSalary: payslips.basicSalary,
+        allowances: payslips.allowances,
+        deductions: payslips.deductions,
+        grossPay: payslips.grossPay,
+        netPay: payslips.netPay,
+        generatedAt: payslips.generatedAt
+    }).from(payslips)
       .where(eq(payslips.userId, userId))
-      .orderBy(desc(payslips.generatedAt));
+      .orderBy(desc(payslips.generatedAt)) as unknown as Payslip[];
   }
 
   async getPayslipById(id: string): Promise<Payslip | undefined> {

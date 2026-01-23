@@ -84,6 +84,7 @@ const getNightDiffHours = (timeIn: Date, timeOut: Date) => {
 
   while (current.getTime() < end.getTime()) {
       const h = current.getHours();
+      // Night Diff: 10PM (22) to 6AM (6)
       if (h >= 22 || h < 6) ndHours += 1;
       current.setHours(current.getHours() + 1);
   }
