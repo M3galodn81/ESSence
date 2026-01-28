@@ -84,12 +84,24 @@ export default function Reports() {
 
   // --- CONFIGURATION CONSTANTS ---
   const categories = [
-    { id: "customer", label: "Customer Incident", icon: UserX, color: "bg-orange-100 text-orange-600", fill: "#f97316" },
-    { id: "employee", label: "Employee Incident", icon: FileWarning, color: "bg-blue-100 text-blue-600", fill: "#3b82f6" },
-    { id: "accident", label: "Accident Report", icon: AlertTriangle, color: "bg-yellow-100 text-yellow-600", fill: "#eab308" },
-    { id: "security", label: "Security Incident", icon: ShieldAlert, color: "bg-red-100 text-red-600", fill: "#ef4444" },
-    { id: "medical", label: "Medical Incident", icon: Stethoscope, color: "bg-rose-100 text-rose-600", fill: "#f43f5e" },
-    { id: "property", label: "Property Damage", icon: Hammer, color: "bg-slate-100 text-slate-600", fill: "#64748b" },
+    // Guest & Service
+    { id: "guest_misconduct", label: "Guest Misconduct / Behavioral Issue", icon: UserX, color: "bg-orange-100 text-orange-600", fill: "#f97316" },
+    { id: "service_dispute", label: "Service Dispute / Billing Issue", icon: FileText, color: "bg-amber-100 text-amber-600", fill: "#d97706" },
+    
+    // Staff
+    { id: "staff_conduct", label: "Staff Conduct / Policy Violation", icon: FileWarning, color: "bg-blue-100 text-blue-600", fill: "#3b82f6" },
+    { id: "staff_performance", label: "Staff Performance / Attendance", icon: Users, color: "bg-indigo-100 text-indigo-600", fill: "#4f46e5" },
+    
+    // Safety & Security
+    { id: "accident_injury", label: "Slip, Trip, Fall / Physical Injury", icon: AlertTriangle, color: "bg-red-100 text-red-600", fill: "#dc2626" },
+    { id: "medical_emergency", label: "Medical Emergency / Illness", icon: Stethoscope, color: "bg-rose-100 text-rose-600", fill: "#e11d48" },
+    { id: "security_breach", label: "Unauthorized Access / Trespassing", icon: ShieldAlert, color: "bg-slate-800 text-slate-100", fill: "#1e293b" },
+    { id: "theft_vandalism", label: "Theft / Vandalism / Property Loss", icon: Eye, color: "bg-purple-100 text-purple-600", fill: "#9333ea" },
+    
+    // Facilities
+    { id: "property_damage", label: "Property / Structural Damage", icon: Hammer, color: "bg-stone-100 text-stone-600", fill: "#57534e" },
+    { id: "equipment_failure", label: "Equipment / System Failure", icon: ArrowUpDown, color: "bg-gray-100 text-gray-600", fill: "#4b5563" },
+    { id: "hazard", label: "Safety Hazard (Fire/Water/Chemical)", icon: AlertCircle, color: "bg-yellow-100 text-yellow-600", fill: "#ca8a04" },
   ];
 
   // --- DATA FETCHING ---
@@ -231,6 +243,27 @@ export default function Reports() {
     onError: (err) => {
         console.error("Submission Error:", err);
         toast.error("Failed to file report", { description: err.message });
+    }
+  });
+
+  // Mutation to Toggle Resolve Status
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/reports/${id}`, { status });
+      return await res.json();
+    },
+    onSuccess: (updatedReport) => {
+        const newStatus = updatedReport.status;
+        toast.success(`Report marked as ${newStatus}`);
+        queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+        
+        // Update local state immediately to reflect change in the open modal
+        if (selectedReport) {
+            setSelectedReport({ ...selectedReport, status: newStatus });
+        }
+    },
+    onError: (err) => {
+        toast.error("Failed to update status", { description: err.message });
     }
   });
 
@@ -761,12 +794,36 @@ export default function Reports() {
                         )}
                     </div>
 
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsViewOpen(false)}>Close</Button>
+                     <DialogFooter className="flex-row justify-between sm:justify-between">
+                        <Button variant="ghost" onClick={() => setIsViewOpen(false)}>Close</Button>
+                        <Button 
+                            variant={selectedReport.status === 'resolved' ? "outline" : "default"}
+                            className={selectedReport.status === 'resolved' ? "border-amber-500 text-amber-600 hover:bg-amber-50" : "bg-emerald-600 hover:bg-emerald-700 text-white"}
+                            onClick={() => updateStatusMutation.mutate({ 
+                                id: selectedReport.id, 
+                                status: selectedReport.status === 'resolved' ? 'pending' : 'resolved' 
+                            })}
+                            disabled={updateStatusMutation.isPending}
+                        >
+                            {selectedReport.status === 'resolved' ? (
+                                <>
+                                    <Clock className="w-4 h-4 mr-2" /> Mark as Pending
+                                </>
+                            ) : (
+                                <>
+                                    <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as Resolved
+                                </>
+                            )}
+                        </Button>
                     </DialogFooter>
                 </>
             )}
+
+           
+
         </DialogContent>
+
+         
       </Dialog>
     </div>
   );
