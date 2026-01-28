@@ -493,7 +493,7 @@ export default function ShiftManagement() {
       </Dialog>
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent className="rounded-2xl">
-            <AlertDialogHeader><DialogTitle>Delete Shift</DialogTitle><DialogDescription>Are you sure?</DialogDescription></AlertDialogHeader>
+            <AlertDialogHeader><AlertDialogTitle>Delete Shift</AlertDialogTitle><AlertDialogDescription>Are you sure?</AlertDialogDescription></AlertDialogHeader>
             <AlertDialogFooter><AlertDialogCancel className="rounded-full">Cancel</AlertDialogCancel><AlertDialogAction onClick={() => selectedSchedule && deleteShiftMutation.mutate(selectedSchedule.id)} className="bg-rose-600 hover:bg-rose-700 rounded-full">Delete</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
