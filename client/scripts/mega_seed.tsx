@@ -6,11 +6,21 @@ import {
 } from "../../shared/schema";
 import { hashPassword } from "../../server/auth";
 
+// --- TOGGLE FEATURES ---
+const SHOW_HOLIDAY_FEATURES = true; 
+
 // --- Constants & Helpers ---
 const HOURLY_RATE = 58.75;
 const OT_MULTIPLIER = 1.25;
 const ND_MULTIPLIER = 1.1;
 
+// Holiday Rates
+const REG_HOLIDAY_MULTIPLIER = 2.0;
+const REG_HOLIDAY_OT_MULTIPLIER = 2.5;
+const SPL_HOLIDAY_MULTIPLIER = 1.3;
+const SPL_HOLIDAY_OT_MULTIPLIER = 1.63;
+
+// SSS Contribution Table (Simplified 2025)
 const sssBrackets = [
   { min: 0,        max: 5249.99,  ms: 5000,  ee: 250 },
   { min: 5250,     max: 5749.99,  ms: 5500,  ee: 275 },
@@ -81,11 +91,77 @@ const getNightDiffHours = (timeIn: Date, timeOut: Date) => {
   return ndHours;
 };
 
+const getHolidayType = (date: Date, holidayList: any[]) => {
+    const dStr = date.toISOString().split('T')[0];
+    const holiday = holidayList.find(h => h.date.toISOString().split('T')[0] === dStr);
+    return holiday ? holiday.type : null;
+};
+
+// --- NEW HELPER: Map Job Titles to "cashier", "bar", "server", "kitchen" ---
+const mapPositionToShiftRole = (position: string): string => {
+    const pos = position.toLowerCase();
+    
+    if (pos.includes("cook") || pos.includes("chef") || pos.includes("dishwasher")) {
+        return "kitchen";
+    }
+    if (pos.includes("bartender")) {
+        return "bar";
+    }
+    if (pos.includes("cashier")) {
+        return "cashier";
+    }
+    // Default Hosts and Servers to "server"
+    if (pos.includes("server") || pos.includes("host") || pos.includes("waiter")) {
+        return "server";
+    }
+    
+    return "server"; // Fallback
+};
+
+// --- SHIFT GENERATOR HELPER ---
+const getRandomShift = (role: string, date: Date) => {
+    const rand = Math.random();
+    let type = "morning";
+    let startHour = 8;
+    
+    // Logic: Customize probabilities based on granular role
+    if (role === "Bartender") {
+        if (rand < 0.1) { type = "morning"; startHour = 8; }
+        else if (rand < 0.7) { type = "afternoon"; startHour = 16; } 
+        else { type = "night"; startHour = 0; } 
+    } else if (role === "Prep Cook" || role === "Dishwasher") {
+        if (rand < 0.7) { type = "morning"; startHour = 7; } 
+        else { type = "afternoon"; startHour = 15; } 
+    } else {
+        if (rand < 0.4) { type = "morning"; startHour = 8; }
+        else if (rand < 0.8) { type = "afternoon"; startHour = 16; }
+        else { type = "night"; startHour = 0; } 
+    }
+
+    const start = new Date(date);
+    start.setHours(startHour, 0, 0, 0);
+
+    const end = new Date(date);
+    if (type === "morning") {
+        end.setHours(startHour + 8, 0, 0, 0);
+    } else if (type === "afternoon") {
+        if (startHour + 8 >= 24) {
+            end.setHours((startHour + 8) - 24, 0, 0, 0);
+            end.setDate(end.getDate() + 1);
+        } else {
+            end.setHours(startHour + 8, 0, 0, 0);
+        }
+    } else if (type === "night") {
+        end.setHours(startHour + 8, 0, 0, 0);
+    }
+
+    return { type, start, end };
+};
+
 async function seed() {
   console.log("Starting database seeding...");
 
   // 1. Clean tables
-  console.log("Cleaning existing data...");
   await db.delete(breaks);
   await db.delete(attendance);
   await db.delete(laborCostData);
@@ -102,6 +178,7 @@ async function seed() {
   console.log("Creating users...");
   const password = await hashPassword("qweqwe"); 
 
+  // Admin
   const [admin] = await db.insert(users).values({
     username: "admin",
     password,
@@ -117,12 +194,13 @@ async function seed() {
     isActive: true
   }).returning();
 
+  // Payroll
   const [payroll] = await db.insert(users).values({
-    username: "payroll",
+    username: "patricia.diaz",
     password,
-    email: "payroll@essence.com",
-    firstName: "Penny",
-    lastName: "Roll",
+    email: "patricia.diaz@essence.com",
+    firstName: "Patricia",
+    lastName: "Diaz",
     role: "payroll_officer",
     department: "Finance",
     position: "Payroll Specialist",
@@ -132,9 +210,9 @@ async function seed() {
     isActive: true
   }).returning();
 
+  // SINGLE MANAGER
   const managersData = [
-    { username: "manager1", firstName: "Sarah", lastName: "Connor", department: "Operations", position: "Operations Manager", employeeId: "MAN-001", salary: 6000000 },
-    { username: "manager2", firstName: "Gordon", lastName: "Ramsay", department: "Kitchen", position: "Head Chef", employeeId: "MAN-002", salary: 7000000 }
+    { username: "robert.chen", firstName: "Robert", lastName: "Chen", department: "Operations", position: "General Manager", employeeId: "MAN-001", salary: 7500000 },
   ];
 
   const managers = [];
@@ -145,31 +223,46 @@ async function seed() {
       password,
       role: "manager",
       hireDate: new Date("2023-02-01"),
-      isActive: true
+      isActive: true,
+      annualLeaveBalance: 20,
+      sickLeaveBalance: 15
     }).returning();
     managers.push(created);
   }
 
-  const employees = [];
-  const positions = ["Server", "Bartender", "Host", "Line Cook", "Prep Cook"];
-  
-  for (let i = 1; i <= 10; i++) {
-    const isOps = i <= 5; 
-    const manager = isOps ? managers[0] : managers[1];
-    const dept = isOps ? "Operations" : "Kitchen";
-    const pos = isOps ? positions[Math.floor(Math.random() * 3)] : positions[3 + Math.floor(Math.random() * 2)];
+  const mainManager = managers[0];
 
+  // Employees
+  const employeeProfiles = [
+    { first: "Marco", last: "Dalisay", pos: "Server", dept: "Operations" },
+    { first: "Sofia", last: "Reyes", pos: "Host", dept: "Operations" },
+    { first: "Liam", last: "Smith", pos: "Bartender", dept: "Operations" },
+    { first: "Angela", last: "Cruz", pos: "Server", dept: "Operations" },
+    { first: "Miguel", last: "Santos", pos: "Bartender", dept: "Operations" },
+    { first: "James", last: "Oliver", pos: "Line Cook", dept: "Kitchen" },
+    { first: "Elena", last: "Torres", pos: "Prep Cook", dept: "Kitchen" },
+    { first: "David", last: "Kim", pos: "Line Cook", dept: "Kitchen" },
+    { first: "Sarah", last: "Jenkins", pos: "Prep Cook", dept: "Kitchen" },
+    { first: "Carlos", last: "Rivera", pos: "Dishwasher", dept: "Kitchen" }
+  ];
+
+  const employees = [];
+  
+  for (let i = 0; i < employeeProfiles.length; i++) {
+    const profile = employeeProfiles[i];
+    const username = `${profile.first.toLowerCase()}.${profile.last.toLowerCase()}`;
+    
     const [emp] = await db.insert(users).values({
-      username: `employee${i}`,
+      username: username,
       password,
-      email: `employee${i}@essence.com`,
-      firstName: `Employee`,
-      lastName: `${i}`,
+      email: `${username}@essence.com`,
+      firstName: profile.first,
+      lastName: profile.last,
       role: "employee",
-      department: dept,
-      position: pos,
-      employeeId: `EMP-${String(i).padStart(3, '0')}`,
-      managerId: manager.id,
+      department: profile.dept,
+      position: profile.pos,
+      employeeId: `EMP-${String(i + 1).padStart(3, '0')}`,
+      managerId: mainManager.id,
       hireDate: new Date("2024-01-15"),
       salary: 2500000 + (Math.floor(Math.random() * 10) * 100000), 
       isActive: true,
@@ -182,220 +275,208 @@ async function seed() {
   const allStaff = [...managers, ...employees]; 
 
   // 3. Holidays & Announcements
-  await db.insert(holidays).values([
+  const holidayList = [
     { name: "New Year's Day", date: new Date("2025-01-01"), type: "regular" },
+    { name: "Chinese New Year", date: new Date("2025-01-29"), type: "special" },
+    { name: "EDSA Revolution", date: new Date("2025-02-25"), type: "special" },
+    { name: "Maundy Thursday", date: new Date("2025-04-17"), type: "regular" },
+    { name: "Good Friday", date: new Date("2025-04-18"), type: "regular" },
     { name: "Labor Day", date: new Date("2025-05-01"), type: "regular" },
+    { name: "Independence Day", date: new Date("2025-06-12"), type: "regular" },
+    { name: "Ninoy Aquino Day", date: new Date("2025-08-21"), type: "special" },
+    { name: "National Heroes Day", date: new Date("2025-08-25"), type: "regular" },
+    { name: "All Saints' Day", date: new Date("2025-11-01"), type: "special" },
+    { name: "Bonifacio Day", date: new Date("2025-11-30"), type: "regular" },
     { name: "Christmas Day", date: new Date("2025-12-25"), type: "regular" },
-  ]);
+    { name: "Rizal Day", date: new Date("2025-12-30"), type: "regular" },
+    { name: "New Year's Day", date: new Date("2026-01-01"), type: "regular" },
+  ];
+  await db.insert(holidays).values(holidayList);
 
   await db.insert(announcements).values([
-    { title: "Welcome to ESSence", content: "We are excited to introduce our new Employee Self-Service portal.", type: "general", authorId: admin.id, isActive: true, targetDepartments: [], createdAt: new Date() },
-    { title: "Inventory Check", content: "Report breakages immediately.", type: "urgent", authorId: managers[1].id, isActive: true, targetDepartments: ["Kitchen"], createdAt: new Date() }
+    { title: "Welcome to ESSence", content: "Portal launched.", type: "general", authorId: admin.id, isActive: true, targetDepartments: [], createdAt: new Date() },
+    { title: "Inventory Procedures", content: "Follow breakage protocols.", type: "urgent", authorId: mainManager.id, isActive: true, targetDepartments: ["Kitchen"], createdAt: new Date() }
   ]);
 
-  // 4. Incident Reports
-  const reportTypes = [
-    { type: "incident", title: "Slippery Floor", severity: "medium", desc: "Water spill near dishwashing." },
-    { type: "breakage", title: "Broken Glassware", severity: "low", desc: "Dropped wine glasses." }
+  // 4. Incident Reports - SIMULATED 1 YEAR HISTORY
+  console.log("Generating 1 year of incident reports...");
+  const reportTemplates = [
+    // Customer Issues
+    { category: "customer", title: "Intoxicated Guest Harassment", severity: "high", desc: "Guest at Table 5 became belligerent after being cut off.", location: "Dining Hall", actionTaken: "Security called, guest removed.", details: { policeReportNumber: "N/A" } },
+    { category: "customer", title: "Dine and Dash", severity: "medium", desc: "Party of 4 left without paying $200 bill.", location: "Patio", actionTaken: "Police report filed.", details: { policeReportNumber: "PR-2025-042" } },
+    { category: "customer", title: "Noise Complaint", severity: "low", desc: "Table 2 complained about music volume.", location: "Bar", actionTaken: "Volume lowered.", details: {} },
+    
+    // Employee Issues
+    { category: "employee", title: "No Call No Show", severity: "medium", desc: "Employee failed to report for scheduled shift.", location: "N/A", actionTaken: "Written warning issued.", details: {} },
+    { category: "employee", title: "Uniform Violation", severity: "low", desc: "Staff member wearing open-toed shoes.", location: "Kitchen", actionTaken: "Sent home to change.", details: {} },
+    { category: "employee", title: "Insubordination", severity: "high", desc: "Staff refused direct order from manager.", location: "Prep Area", actionTaken: "Meeting scheduled with HR.", details: {} },
+
+    // Accidents
+    { category: "accident", title: "Slip and Fall", severity: "medium", desc: "Prep cook slipped on wet floor near dish pit.", location: "Dish Pit", actionTaken: "First aid applied, area cleaned.", details: { injuryType: "Contusion", medicalAction: "Ice pack" } },
+    { category: "accident", title: "Minor Burn", severity: "low", desc: "Line cook touched hot pan handle.", location: "Hot Line", actionTaken: "Burn cream applied.", details: { injuryType: "1st Degree Burn" } },
+    { category: "accident", title: "Glass Cut", severity: "medium", desc: "Bartender cut hand on broken glass in ice bin.", location: "Bar", actionTaken: "Bandaged, ice bin burned and refilled.", details: { injuryType: "Laceration" } },
+
+    // Security
+    { category: "security", title: "Backdoor Lock Tampered", severity: "high", desc: "Scratch marks found on delivery entrance lock.", location: "Back Door", actionTaken: "Locksmith called, police notified.", details: { policeReportNumber: "PR-2025-889" } },
+    { category: "security", title: "Lost Item", severity: "low", desc: "Guest left iPhone 14 at bar.", location: "Bar", actionTaken: "Placed in safe.", details: { itemName: "iPhone 14" } },
+    { category: "security", title: "Vandalism", severity: "medium", desc: "Graffiti found in men's restroom.", location: "Restroom", actionTaken: "Cleaned immediately.", details: {} },
+
+    // Medical
+    { category: "medical", title: "Guest Allergic Reaction", severity: "critical", desc: "Guest had reaction to peanuts.", location: "Table 12", actionTaken: "EpiPen administered, ambulance called.", details: { injuryType: "Anaphylaxis", medicalAction: "Ambulance" } },
+    { category: "medical", title: "Staff Fainting", severity: "high", desc: "Server fainted due to heat exhaustion.", location: "Server Station", actionTaken: "Given water and rest.", details: { medicalAction: "Rest" } },
+
+    // Property
+    { category: "property", title: "Broken POS Terminal", severity: "medium", desc: "Screen cracked after being knocked over.", location: "Bar POS", actionTaken: "IT notified for replacement.", details: { itemName: "iPad Pro", estimatedCost: 1200 } },
+    { category: "property", title: "Leaking Sink", severity: "low", desc: "Handwash sink leaking onto floor.", location: "Kitchen", actionTaken: "Plumber called.", details: { itemName: "Sink Pipe", estimatedCost: 300 } },
+    { category: "property", title: "Broken Plate", severity: "low", desc: "Stack of dinner plates dropped.", location: "Dish Pit", actionTaken: "Cleaned up.", details: { itemName: "Dinner Plates (5)", estimatedCost: 50 } },
   ];
+  
   const reportsData = [];
-  for (let i = 0; i < 4; i++) {
+  const TOTAL_REPORTS = 65; // Generate 65 reports over the year
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+  for (let i = 0; i < TOTAL_REPORTS; i++) {
+    const template = reportTemplates[Math.floor(Math.random() * reportTemplates.length)];
     const reporter = employees[Math.floor(Math.random() * employees.length)];
-    const template = reportTypes[i % 2];
+    
+    // Random date within last 365 days
+    const randomTime = oneYearAgo.getTime() + Math.random() * (new Date().getTime() - oneYearAgo.getTime());
+    const dateOccurred = new Date(randomTime);
+
+    // Random time of day (10am - 11pm)
+    const hour = 10 + Math.floor(Math.random() * 13);
+    const minute = Math.floor(Math.random() * 60);
+    const timeOccurred = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    
     reportsData.push({
       userId: reporter.id,
-      type: template.type,
+      category: template.category,
       title: template.title,
       description: template.desc,
       severity: template.severity,
-      status: "resolved",
-      location: "Kitchen",
-      resolvedBy: reporter.managerId,
-      resolvedAt: new Date(),
-      createdAt: new Date()
+      status: Math.random() > 0.3 ? "resolved" : (Math.random() > 0.5 ? "investigating" : "pending"), // Mix of statuses
+      location: template.location,
+      dateOccurred: dateOccurred,
+      timeOccurred: timeOccurred,
+      partiesInvolved: "Staff/Guests",
+      witnesses: `${employees[Math.floor(Math.random() * employees.length)].firstName} ${employees[Math.floor(Math.random() * employees.length)].lastName}`,
+      actionTaken: template.actionTaken,
+      details: template.details || {},
+      resolvedBy: template.severity === "low" || Math.random() > 0.5 ? mainManager.id : null,
+      resolvedAt: template.severity === "low" || Math.random() > 0.5 ? new Date(dateOccurred.getTime() + 86400000) : null, // Resolved next day
+      createdAt: dateOccurred // Created at occurrence time
     });
   }
+  // Add a few for "Today" specifically
+  reportsData.push({
+      userId: employees[0].id,
+      category: "property",
+      title: "Broken Wine Glass",
+      description: "Dropped tray during lunch rush.",
+      severity: "low",
+      status: "pending",
+      location: "Main Dining",
+      dateOccurred: new Date(),
+      timeOccurred: "12:30",
+      partiesInvolved: "N/A",
+      witnesses: "N/A",
+      actionTaken: "Cleaned up.",
+      details: { itemName: "Red Wine Glass", estimatedCost: 10 },
+      createdAt: new Date()
+  });
+
   await db.insert(reports).values(reportsData);
 
-  // =========================================================================
-  // 5. ATTENDANCE & PAYSLIP LOOP
-  //    Periods: 
-  //    1. Previous Month (1-15)
-  //    2. Previous Month (16-End)
-  //    3. Current Month (1-15)
-  // =========================================================================
-  
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-  
-  // Define the 3 periods
-  const prevMonthDate = new Date(currentYear, currentMonth - 1, 1);
-  const prevMonth = prevMonthDate.getMonth();
-  const prevYear = prevMonthDate.getFullYear();
-  const lastDayPrevMonth = new Date(prevYear, prevMonth + 1, 0).getDate();
 
-  const periods = [
-    { 
-        label: "Prev Month 1st Half",
-        month: prevMonth, 
-        year: prevYear, 
-        startDay: 1, 
-        endDay: 15, 
-        periodNum: 1 
-    },
-    { 
-        label: "Prev Month 2nd Half",
-        month: prevMonth, 
-        year: prevYear, 
-        startDay: 16, 
-        endDay: lastDayPrevMonth, 
-        periodNum: 2 
-    },
-    { 
-        label: "Curr Month 1st Half",
-        month: currentMonth, 
-        year: currentYear, 
-        startDay: 1, 
-        endDay: 15, 
-        periodNum: 1 
-    }
-  ];
-
-  console.log("Generating attendance and payslips for 1.5 months...");
+  // =========================================================================
+  // 5. ATTENDANCE & PAYSLIP GENERATION (12 Months)
+  // =========================================================================
+  console.log("Generating attendance and payslips...");
+  const now = new Date(); 
+  const periods = [];
+  for (let i = 0; i < 12; i++) {
+     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+     const m = d.getMonth();
+     const y = d.getFullYear();
+     const lastDay = new Date(y, m + 1, 0).getDate();
+     periods.push({ month: m, year: y, startDay: 16, endDay: lastDay, periodNum: 2 });
+     periods.push({ month: m, year: y, startDay: 1, endDay: 15, periodNum: 1 });
+  }
+  periods.reverse();
 
   const payslipsToInsert = [];
-  const attendanceToInsert = [];
-  const breaksToInsert = [];
-
   for (const emp of allStaff) {
-    
-    // Process each period for this employee
     for (const p of periods) {
-        let periodRegHours = 0;
-        let periodOtHours = 0;
-        let periodNdHours = 0;
+        let periodRegHours = 0; let periodOtHours = 0; let periodNdHours = 0;
+        let periodRegHolidayHours = 0; let periodRegHolidayOtHours = 0;
+        let periodSpecHolidayHours = 0; let periodSpecHolidayOtHours = 0;
 
-        // Loop days in this period
         for (let d = p.startDay; d <= p.endDay; d++) {
             const workDate = new Date(p.year, p.month, d);
-            
-            // Skip Sundays only (6-day work week simulation)
-            if (workDate.getDay() === 0) continue;
+            if (workDate.getDay() === 0) continue; // Sunday off
 
-            // 90% Attendance Rate
             if (Math.random() > 0.1) {
-                // Determine Shift
-                const isMorning = Math.random() > 0.4; // Slightly more morning shifts
-                const start = new Date(workDate);
-                start.setHours(isMorning ? 8 : 16, 0, 0, 0); // 8AM or 4PM
-                
-                const end = new Date(workDate);
-                if (isMorning) {
-                    end.setHours(17, 0, 0, 0); // 5PM
-                } else {
-                    end.setHours(1, 0, 0, 0); // 1AM next day
-                    end.setDate(end.getDate() + 1);
-                }
+                const { start, end } = getRandomShift(emp.position || "Staff", workDate);
+                const timeIn = new Date(start); timeIn.setMinutes(timeIn.getMinutes() + (Math.random() * 30 - 15));
+                const timeOut = new Date(end); timeOut.setMinutes(timeOut.getMinutes() + (Math.random() * 45)); 
 
-                // Add Variance
-                const timeIn = new Date(start);
-                timeIn.setMinutes(timeIn.getMinutes() + (Math.random() * 30 - 15)); // +/- 15 mins
-                
-                const timeOut = new Date(end);
-                timeOut.setMinutes(timeOut.getMinutes() + (Math.random() * 45)); // 0-45 mins OT
-
-                // Calculate durations
                 const durationMs = timeOut.getTime() - timeIn.getTime();
                 const totalMinutes = Math.floor(durationMs / 60000);
                 const breakMinutes = 60;
                 const workMinutes = Math.max(0, totalMinutes - breakMinutes);
 
-                // Insert Attendance (We need ID for breaks, so we push to DB immediately inside loop or use UUIDs)
-                // For simplicity in bulk seed, we insert attendance one by one to get ID, 
-                // OR we can generate UUIDs in code if using uuid lib, but let's stick to db insert for safety.
                 const [att] = await db.insert(attendance).values({
-                    userId: emp.id,
-                    date: workDate,
-                    timeIn: timeIn,
-                    timeOut: timeOut,
-                    status: "clocked_out",
-                    totalBreakMinutes: breakMinutes,
-                    totalWorkMinutes: workMinutes,
-                    notes: "Regular shift"
+                    userId: emp.id, date: workDate, timeIn: timeIn, timeOut: timeOut,
+                    status: "clocked_out", totalBreakMinutes: breakMinutes, totalWorkMinutes: workMinutes, notes: "Regular shift"
                 }).returning();
 
-                // Break
                 await db.insert(breaks).values({
-                    attendanceId: att.id,
-                    userId: emp.id,
-                    breakStart: new Date(timeIn.getTime() + 4 * 3600000), // 4 hrs in
-                    breakEnd: new Date(timeIn.getTime() + 5 * 3600000),
-                    breakMinutes: 60,
-                    breakType: "lunch",
-                    notes: "Lunch"
+                    attendanceId: att.id, userId: emp.id, breakStart: new Date(timeIn.getTime() + 4 * 3600000), breakEnd: new Date(timeIn.getTime() + 5 * 3600000),
+                    breakMinutes: 60, breakType: "lunch", notes: "Lunch"
                 });
 
-                // Accumulate Hours for Payslip
-                let dailyReg = 0;
-                let dailyOT = 0;
-                
-                if (workMinutes > 480) { // > 8 hours
-                    dailyReg = 480;
-                    dailyOT = workMinutes - 480;
-                } else {
-                    dailyReg = workMinutes;
+                let dailyReg = 0; let dailyOT = 0;
+                if (workMinutes > 480) { dailyReg = 480; dailyOT = workMinutes - 480; } else { dailyReg = workMinutes; }
+                const ndHrs = getNightDiffHours(timeIn, timeOut);
+                periodNdHours += ndHrs;
+
+                let isRegHoliday = false; let isSpecHoliday = false;
+                if (SHOW_HOLIDAY_FEATURES) {
+                   const hType = getHolidayType(workDate, holidayList);
+                   if (hType === 'regular') isRegHoliday = true;
+                   if (hType === 'special') isSpecHoliday = true;
                 }
-                
-                periodRegHours += (dailyReg / 60);
-                periodOtHours += (dailyOT / 60);
-                periodNdHours += getNightDiffHours(timeIn, timeOut);
+
+                if (isRegHoliday) { periodRegHolidayHours += (dailyReg / 60); periodRegHolidayOtHours += (dailyOT / 60); } 
+                else if (isSpecHoliday) { periodSpecHolidayHours += (dailyReg / 60); periodSpecHolidayOtHours += (dailyOT / 60); } 
+                else { periodRegHours += (dailyReg / 60); periodOtHours += (dailyOT / 60); }
             }
         }
 
-        // --- Calculate Payslip for this Period ---
         const basicSalary = periodRegHours * HOURLY_RATE;
         const overtimePay = periodOtHours * (HOURLY_RATE * OT_MULTIPLIER);
         const nightDiffPay = periodNdHours * (HOURLY_RATE * ND_MULTIPLIER);
-        const allowanceAmount = 1000; // Fixed allowance
-
-        const grossPay = basicSalary + overtimePay + nightDiffPay + allowanceAmount;
-
-        // Deductions
+        let holidayPay = 0;
+        if (SHOW_HOLIDAY_FEATURES) {
+             holidayPay += (periodRegHolidayHours * HOURLY_RATE * REG_HOLIDAY_MULTIPLIER) + (periodRegHolidayOtHours * HOURLY_RATE * REG_HOLIDAY_OT_MULTIPLIER) + (periodSpecHolidayHours * HOURLY_RATE * SPL_HOLIDAY_MULTIPLIER) + (periodSpecHolidayOtHours * HOURLY_RATE * SPL_HOLIDAY_OT_MULTIPLIER);
+        }
+        const grossPay = basicSalary + overtimePay + nightDiffPay + holidayPay + 1000;
         const sss = computeSSS(grossPay);
         const philHealth = computePhilHealth(grossPay);
         const pagIbig = computePagIbig(grossPay);
-        
-        const totalDeductions = sss + philHealth + pagIbig;
-        const netPay = Math.max(0, grossPay - totalDeductions);
+        const netPay = Math.max(0, grossPay - (sss + philHealth + pagIbig));
 
         payslipsToInsert.push({
-            userId: emp.id,
-            month: p.month + 1, // JS month is 0-indexed, DB is 1-12
-            year: p.year,
-            period: p.periodNum,
+            userId: emp.id, month: p.month + 1, year: p.year, period: p.periodNum,
             basicSalary: Math.round(basicSalary * 100),
-            allowances: {
-                overtime: Math.round(overtimePay * 100),
-                nightDiff: Math.round(nightDiffPay * 100),
-                allowances: Math.round(allowanceAmount * 100)
-            },
-            deductions: {
-                sss: Math.round(sss * 100),
-                philHealth: Math.round(philHealth * 100),
-                pagIbig: Math.round(pagIbig * 100),
-                tax: 0
-            },
-            grossPay: Math.round(grossPay * 100),
-            netPay: Math.round(netPay * 100),
-            generatedAt: new Date()
+            allowances: { overtime: Math.round(overtimePay * 100), nightDiff: Math.round(nightDiffPay * 100), holidayPay: Math.round(holidayPay * 100), allowances: 100000, regHolidayHours: periodRegHolidayHours, specHolidayHours: periodSpecHolidayHours },
+            deductions: { sss: Math.round(sss * 100), philHealth: Math.round(philHealth * 100), pagIbig: Math.round(pagIbig * 100), tax: 0 },
+            grossPay: Math.round(grossPay * 100), netPay: Math.round(netPay * 100), generatedAt: new Date()
         });
     }
   }
-
-  console.log(`Inserting ${payslipsToInsert.length} payslips...`);
   await db.insert(payslips).values(payslipsToInsert);
-
 
   // =========================================================================
   // 6. SCHEDULE GENERATION (Current Week)
@@ -413,22 +494,19 @@ async function seed() {
       const workDate = new Date(startOfWeek);
       workDate.setDate(startOfWeek.getDate() + d);
       
-      const isMorning = Math.random() > 0.5;
-      const start = new Date(workDate);
-      start.setHours(isMorning ? 8 : 16, 0, 0, 0);
+      const { type, start, end } = getRandomShift(emp.position || "Staff", workDate);
       
-      const end = new Date(workDate);
-      if (isMorning) end.setHours(16, 0, 0, 0);
-      else end.setHours(23, 59, 0, 0);
+      // *** CRITICAL CHANGE: MAPPING LOGIC APPLIED HERE ***
+      const mappedRole = mapPositionToShiftRole(emp.position || "");
 
       shiftData.push({
         userId: emp.id,
         date: workDate,
         startTime: start,
         endTime: end,
-        type: isMorning ? "morning" : "afternoon",
-        title: isMorning ? "Morning Shift" : "Afternoon Shift",
-        shiftRole: emp.position || "Staff",
+        type: type,
+        title: `${type.charAt(0).toUpperCase() + type.slice(1)} Shift`,
+        shiftRole: mappedRole, // Uses strict "cashier", "bar", "server", "kitchen"
         location: emp.department === 'Kitchen' ? 'Kitchen' : 'Main Hall'
       });
     }
@@ -438,21 +516,21 @@ async function seed() {
   // 7. Analytics Data
   console.log("Generating analytics...");
   const laborData = [];
-  const totalPayrollCents = payslipsToInsert.reduce((sum, p) => sum + p.grossPay, 0);
-  
-  // Last 3 months
-  for (let i = 0; i < 3; i++) {
-     const monthSales = (totalPayrollCents / 100) * 4; // 25% cost ratio
-     laborData.push({
-       month: (currentMonth + 1) - i,
-       year: currentYear,
-       totalSales: Math.round(monthSales * 100),
-       totalLaborCost: Math.round(totalPayrollCents / 3), // avg per month
-       laborCostPercentage: 2500, // 25%
-       status: "Excellent",
-       performanceRating: "A",
-       notes: "Seed Data"
-     });
+  const payrollByMonth = payslipsToInsert.reduce((acc: any, p: any) => {
+      const key = `${p.year}-${p.month}`;
+      if (!acc[key]) acc[key] = 0;
+      acc[key] += p.grossPay;
+      return acc;
+  }, {});
+
+  for (const [key, totalCost] of Object.entries(payrollByMonth)) {
+      const [y, m] = key.split('-');
+      laborData.push({
+        month: parseInt(m), year: parseInt(y),
+        totalSales: Math.round((totalCost as number) * 0.04 * 100), // 25% cost
+        totalLaborCost: totalCost as number, laborCostPercentage: 2500,
+        status: "Excellent", performanceRating: "A", notes: "Seed Data"
+      });
   }
   await db.insert(laborCostData).values(laborData);
 

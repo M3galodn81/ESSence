@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { insertUserSchema, User as SelectUser, InsertUser } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 type AuthContextType = {
   user: SelectUser | null;
@@ -23,8 +23,7 @@ type LoginData = Pick<InsertUser, "username" | "password">;
 export const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { toast } = useToast();
-  
+
   // Existing Queries
   const {
     data: user,
@@ -62,15 +61,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ["/api/leave-requests/pending"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users/"] });
 
-      toast({
-        title: "Login successful 🎉",
+      toast.success("Login successful 🎉", {
         description: `Welcome back, ${user.firstName}!`,
       });
     },
     onError: (error: Error) => {
-      toast({
+      toast.error("Login failed", {
         title: "Login failed",
-        description: error.message,
+        description: `Invalid username or password.`,
         variant: "destructive",
       });
     },
@@ -88,10 +86,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // but you might want to invalidate other keys here too if needed.
     },
     onError: (error: Error) => {
-      toast({
-        title: "Registration failed",
+      toast.error("Registration failed", {
         description: error.message,
-        variant: "destructive",
       });
     },
   });
@@ -110,15 +106,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.resetQueries({ queryKey: ["/api/leave-requests"], exact: false });
       queryClient.resetQueries({ queryKey: ["/api/users/"], exact: false });
 
-      toast({
-        title: "Logout successful 👋",
-      });
+      toast.success("Logout successful 👋");
     },
     onError: (error: Error) => {
-      toast({
-        title: "Logout failed",
+      toast.error("Logout failed", {
         description: error.message,
-        variant: "destructive",
       });
     },
   });

@@ -4,9 +4,19 @@
 
 This is a comprehensive employee management system built as a full-stack web application. The system provides functionalities for HR management, employee self-service, leave tracking, payroll, scheduling, training, and document management. It features a modern React frontend with a Node.js/Express backend and SQLite database integration.
 
-## User Preferences
-
-Preferred communication style: Simple, everyday language.
+## Installation 
+1. Clone this repo
+```
+https://github.com/M3galodn81/ESSence.git
+```
+2. Install packages
+```
+npm install package.json
+```
+3. Run it
+```
+npm run dev
+```
 
 ## System Architecture
 

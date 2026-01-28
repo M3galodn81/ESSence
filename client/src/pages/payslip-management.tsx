@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { Search, Edit2, Loader2, CalendarDays, Users, FileCheck, Clock, Filter, Calculator, Moon, Flame, Calendar, Briefcase } from 'lucide-react';
 import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER, computeSSS, computePhilHealth, computePagIbig } from "../utils/salary_computation"; 
@@ -34,7 +34,6 @@ const round2 = (num: number) => Math.round(num * 100) / 100;
 
 export default function PayrollManagement() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   // --- State ---
@@ -167,7 +166,7 @@ export default function PayrollManagement() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Success", description: "Payslip processed successfully." });
+      toast.success("Success", { description: "Payslip processed successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
       setEditingId(null);
       setIsConfirmOpen(false);
@@ -448,7 +447,7 @@ export default function PayrollManagement() {
         <BentoCard title="Pending" value={stats.pending} icon={Clock} variant="amber" testIdPrefix="stat-pending" />
       </div>
 
-      <Card className="bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden">
+      <Card className="glass-card">
         <CardHeader className="px-6 py-4 border-b border-slate-100 bg-white/50">
              <div className="relative w-full max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />

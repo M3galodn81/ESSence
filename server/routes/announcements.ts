@@ -4,18 +4,28 @@ import { storage } from "server/storage";
 
 const router = Router();
 
-  // --- Announcements ---
+  // --- Get All Announcements ---
   router.get("/", async (req, res) => {
+    // Authentication check
     if (!req.isAuthenticated()) return res.sendStatus(401);
+
+    // Get all announcements from storage
     const announcements = await storage.getAllAnnouncements(req.user!.department);
     res.json(announcements);
   });
 
   // --- Create Announcement ---
   router.post("/", async (req, res) => {
+
+    // Authentication check
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'hr' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });
+
+    // Permission check
+    if (user.role !== 'manager' && user.role !== 'payroll_officer' && user.role !== 'admin')
+      return res.status(403).json({ message: "Access denied" });
+
+    // Validate and create announcement
     try {
       const announcementData = insertAnnouncementSchema.parse({ ...req.body, authorId: user.id });
       const announcement = await storage.createAnnouncement(announcementData);
@@ -27,9 +37,15 @@ const router = Router();
 
   // --- Edit Announcement ---
   router.patch("/:id", async (req, res) => {
+    // Authentication check
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const user = req.user!;
-    if (!["manager", "hr", "admin"].includes(user.role)) return res.status(403).json({ message: "Access denied" });
+    
+    // Permission check
+    if (!["manager", "hr", "admin"].includes(user.role)) 
+      return res.status(403).json({ message: "Access denied" });
+    
+    // Validate and update announcement
     try {
       const updateData = insertAnnouncementSchema.partial().parse(req.body);
       const updated = await storage.updateAnnouncement(req.params.id, updateData);

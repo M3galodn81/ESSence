@@ -36,7 +36,7 @@ const router = Router();
           if (!managerExists) return res.status(400).send("Invalid manager ID provided");
         }
       }
-      const newUser = await storage.createUser(userData);
+      const newUser = await storage.createUser(userData, user.id);
       res.json(newUser);
     } catch (error: any) {
       res.status(400).send(error.message || "Failed to create user");

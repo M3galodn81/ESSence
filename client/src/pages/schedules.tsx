@@ -150,7 +150,7 @@ export default function Schedules() {
       </div>
 
       {/* Schedule Grid */}
-      <Card className="bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden">
+      <Card className="glass-card">
         <CardContent className="p-6">
           {isLoading ? (
              <div className="flex flex-col items-center justify-center py-20 text-slate-400">

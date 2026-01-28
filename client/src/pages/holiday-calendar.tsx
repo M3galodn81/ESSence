@@ -9,11 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Trash2, Plus } from "lucide-react";
 import type { Holiday } from "@shared/schema";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { apiRequest } from "@/lib/queryClient";
 
 export default function HolidayCalendar() {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -30,7 +29,7 @@ export default function HolidayCalendar() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Holiday Added", description: "The holiday has been successfully added." });
+      toast("Holiday Added", { description: "The holiday has been successfully added." });
       queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
       setIsDialogOpen(false);
       setFormData({ name: "", type: "regular" });
@@ -42,7 +41,7 @@ export default function HolidayCalendar() {
       await fetch(`/api/holidays/${id}`, { method: "DELETE" });
     },
     onSuccess: () => {
-      toast({ title: "Holiday Removed", description: "The holiday has been deleted." });
+      toast("Holiday Removed", { description: "The holiday has been deleted." });
       queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
     }
   });

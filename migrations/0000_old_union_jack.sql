@@ -24,16 +24,55 @@ CREATE TABLE `announcements` (
 	FOREIGN KEY (`author_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE TABLE `documents` (
+CREATE TABLE `attendance` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
+	`date` integer NOT NULL,
+	`time_in` integer NOT NULL,
+	`time_out` integer,
+	`status` text DEFAULT 'clocked_in',
+	`total_break_minutes` integer DEFAULT 0,
+	`total_work_minutes` integer,
+	`notes` text,
+	`created_at` integer,
+	`updated_at` integer,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE TABLE `breaks` (
+	`id` text PRIMARY KEY NOT NULL,
+	`attendance_id` text NOT NULL,
+	`user_id` text NOT NULL,
+	`break_start` integer NOT NULL,
+	`break_end` integer,
+	`break_minutes` integer,
+	`break_type` text DEFAULT 'regular',
+	`notes` text,
+	`created_at` integer,
+	FOREIGN KEY (`attendance_id`) REFERENCES `attendance`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE TABLE `holidays` (
+	`id` text PRIMARY KEY NOT NULL,
+	`date` integer NOT NULL,
 	`name` text NOT NULL,
 	`type` text NOT NULL,
-	`file_name` text NOT NULL,
-	`file_path` text NOT NULL,
-	`file_size` integer,
-	`uploaded_at` integer NOT NULL,
-	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
+	`created_at` integer
+);
+--> statement-breakpoint
+CREATE TABLE `labor_cost_data` (
+	`id` text PRIMARY KEY NOT NULL,
+	`month` integer NOT NULL,
+	`year` integer NOT NULL,
+	`total_sales` integer NOT NULL,
+	`total_labor_cost` integer NOT NULL,
+	`labor_cost_percentage` integer NOT NULL,
+	`status` text,
+	`performance_rating` text,
+	`notes` text,
+	`created_at` integer,
+	`updated_at` integer
 );
 --> statement-breakpoint
 CREATE TABLE `leave_requests` (
@@ -59,6 +98,7 @@ CREATE TABLE `payslips` (
 	`user_id` text NOT NULL,
 	`month` integer NOT NULL,
 	`year` integer NOT NULL,
+	`period` integer DEFAULT 1 NOT NULL,
 	`basic_salary` integer NOT NULL,
 	`allowances` text,
 	`deductions` text,
@@ -66,6 +106,32 @@ CREATE TABLE `payslips` (
 	`net_pay` integer NOT NULL,
 	`generated_at` integer NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE TABLE `reports` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`category` text DEFAULT 'accident' NOT NULL,
+	`title` text NOT NULL,
+	`description` text NOT NULL,
+	`severity` text DEFAULT 'low',
+	`status` text DEFAULT 'pending',
+	`location` text NOT NULL,
+	`date_occurred` integer NOT NULL,
+	`time_occurred` text NOT NULL,
+	`parties_involved` text,
+	`witnesses` text,
+	`action_taken` text,
+	`details` text,
+	`images` text,
+	`assigned_to` text,
+	`resolved_by` text,
+	`resolved_at` integer,
+	`created_at` integer,
+	`updated_at` integer,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`assigned_to`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`resolved_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE TABLE `schedules` (
@@ -78,37 +144,12 @@ CREATE TABLE `schedules` (
 	`title` text NOT NULL,
 	`description` text,
 	`location` text,
+	`shift_role` text,
 	`is_all_day` integer DEFAULT false,
 	`status` text DEFAULT 'scheduled',
 	`created_at` integer,
 	`updated_at` integer,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-CREATE TABLE `trainings` (
-	`id` text PRIMARY KEY NOT NULL,
-	`title` text NOT NULL,
-	`description` text,
-	`content` text,
-	`start_date` integer,
-	`end_date` integer,
-	`duration` integer,
-	`is_mandatory` integer DEFAULT false,
-	`is_active` integer DEFAULT true,
-	`created_at` integer,
-	`updated_at` integer
-);
---> statement-breakpoint
-CREATE TABLE `user_trainings` (
-	`id` text PRIMARY KEY NOT NULL,
-	`user_id` text NOT NULL,
-	`training_id` text NOT NULL,
-	`status` text DEFAULT 'not_started',
-	`progress` integer DEFAULT 0,
-	`completed_at` integer,
-	`started_at` integer,
-	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`training_id`) REFERENCES `trainings`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE TABLE `users` (
@@ -130,6 +171,12 @@ CREATE TABLE `users` (
 	`manager_id` text,
 	`is_active` integer DEFAULT true,
 	`profile_picture` text,
+	`annual_leave_balance` integer DEFAULT 15,
+	`sick_leave_balance` integer DEFAULT 10,
+	`emergency_leave_balance` integer DEFAULT 5,
+	`annual_leave_balance_limit` integer DEFAULT 15,
+	`sick_leave_balance_limit` integer DEFAULT 10,
+	`emergency_leave_balance_limit` integer DEFAULT 5,
 	`created_at` integer,
 	`updated_at` integer,
 	FOREIGN KEY (`manager_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action

@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, Clock, Edit, Eye, EyeOff, Users } from "lucide-react";
 import type { Announcement } from "@shared/schema";
 
+// --- Announcement Feed Item ---
 interface AnnouncementFeedItemProps {
   announcement: Announcement;
   canManage: boolean;
@@ -10,8 +11,12 @@ interface AnnouncementFeedItemProps {
   onToggleActive: (announcement: Announcement) => void;
 }
 
+// Announcement Feed Item Component
 export function AnnouncementFeedItem({ announcement, canManage, onEdit, onToggleActive }: AnnouncementFeedItemProps) {
+  
+  // Type Badge
   const getTypeBadge = (type: string) => {
+    // Define styles for each type
     const styles: Record<string, string> = {
       general: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200",
       urgent: "bg-red-100 text-red-700 border-red-200 hover:bg-red-200 animate-pulse",
@@ -19,6 +24,7 @@ export function AnnouncementFeedItem({ announcement, canManage, onEdit, onToggle
       policy: "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200",
     };
 
+    // Return styled badge
     return (
       <Badge variant="outline" className={`${styles[type] || styles.general} border px-2 py-0.5 text-xs font-semibold transition-colors`}>
         {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -26,6 +32,7 @@ export function AnnouncementFeedItem({ announcement, canManage, onEdit, onToggle
     );
   };
 
+  // Icon based on type
   const getAnnouncementIcon = (type: string) => {
     switch (type) {
       case "urgent": return "🚨";
@@ -35,14 +42,17 @@ export function AnnouncementFeedItem({ announcement, canManage, onEdit, onToggle
     }
   };
 
+  // Date and Time Formatting
   const formatDate = (date: string | Date) => new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   const formatTime = (date: string | Date) => new Date(date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 
   return (
+    // Announcement Card Container
     <div 
       className={`group relative bg-white hover:bg-slate-50/50 border border-slate-200/60 hover:border-blue-200/60 rounded-2xl p-5 transition-all duration-300 hover:shadow-md hover:scale-[1.005] ${!announcement.isActive ? 'opacity-60 grayscale-[50%]' : ''}`}
       data-testid={`announcement-${announcement.id}`}
     >
+      {/* Content Wrapper */}
       <div className="flex items-start gap-5">
         {/* Icon Box */}
         <div className="flex-shrink-0 h-14 w-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-3xl shadow-sm group-hover:shadow-inner transition-shadow">

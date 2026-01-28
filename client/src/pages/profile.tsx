@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,7 +50,6 @@ type AddressForm = z.infer<typeof addressSchema>;
 
 export default function Profile() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
 
@@ -90,12 +89,12 @@ export default function Profile() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Profile updated", description: "Your profile has been updated successfully." });
+      toast.success("Profile updated", { description: "Your profile has been updated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       setIsEditing(false);
     },
     onError: (error: Error) => {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+      toast.error("Update failed", { description: error.message });
     },
   });
 
@@ -105,11 +104,11 @@ export default function Profile() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Emergency contact updated", description: "Your emergency contact has been updated successfully." });
+      toast.success("Emergency contact updated", { description: "Your emergency contact has been updated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (error: Error) => {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+      toast.error("Update failed", { description: error.message });
     },
   });
 
@@ -119,11 +118,11 @@ export default function Profile() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Address updated", description: "Your address has been updated successfully." });
+      toast.success("Address updated", { description: "Your address has been updated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (error: Error) => {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+      toast.error("Update failed", { description: error.message });
     },
   });
 

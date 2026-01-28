@@ -1,25 +1,60 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { Bell, Plus, Search } from "lucide-react";
+import { Bell, Plus, Search, Megaphone, FileCheck, Banknote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
+import { useQuery } from "@tanstack/react-query";
+import { formatDistanceToNow } from "date-fns";
 
 interface HeaderProps {
   title: string;
   subtitle?: string;
 }
 
+type Notification = {
+  id: string;
+  type: 'announcement' | 'leave' | 'payslip';
+  title: string;
+  message: string;
+  timestamp: string;
+  link?: string;
+};
+
 export default function Header({ title, subtitle }: HeaderProps) {
   const { user } = useAuth();
   const [, navigate] = useLocation();
+
+  // Fetch notifications from the new endpoint
+  const { data: notifications = [] } = useQuery<Notification[]>({
+    queryKey: ["/api/notifications"],
+    refetchInterval: 60000, // Poll every minute
+  });
 
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
     return "Good evening";
+  };
+
+  const getIcon = (type: string) => {
+    switch (type) {
+      case 'announcement': return <Megaphone className="w-4 h-4 text-purple-600" />;
+      case 'leave': return <FileCheck className="w-4 h-4 text-blue-600" />;
+      case 'payslip': return <Banknote className="w-4 h-4 text-green-600" />;
+      default: return <Bell className="w-4 h-4 text-slate-600" />;
+    }
+  };
+
+  const getBgColor = (type: string) => {
+    switch (type) {
+        case 'announcement': return "bg-purple-100";
+        case 'leave': return "bg-blue-100";
+        case 'payslip': return "bg-green-100";
+        default: return "bg-slate-100";
+    }
   };
 
   return (
@@ -29,10 +64,10 @@ export default function Header({ title, subtitle }: HeaderProps) {
         {/* Title Section */}
         <div className="flex items-center space-x-4 ml-12 lg:ml-0">
           <div className="space-y-1">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900" data-testid="page-title">
+            <h2 className="header-title" data-testid="page-title">
               {title}
             </h2>
-            <p className="text-sm font-medium text-slate-500" data-testid="page-subtitle">
+            <p className="header-subtitle" data-testid="page-subtitle">
               {subtitle || `${getGreeting()}, ${user?.firstName || "User"}!`}
             </p>
           </div>
@@ -40,15 +75,7 @@ export default function Header({ title, subtitle }: HeaderProps) {
         
         {/* Actions Section */}
         <div className="flex items-center space-x-3 md:space-x-4">
-          {/* Search Input (Visual Enhancement) */}
-          {/* <div className="hidden md:flex relative group">
-             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-primary transition-colors" />
-             <Input 
-               placeholder="Search..." 
-               className="pl-9 h-10 w-48 lg:w-64 bg-slate-100/50 border-transparent focus:bg-white focus:border-primary/20 focus:ring-2 focus:ring-primary/10 rounded-full transition-all text-sm"
-             />
-          </div> */}
-
+          
           {/* Notification Bell */}
           <Popover>
             <PopoverTrigger asChild>
@@ -59,44 +86,50 @@ export default function Header({ title, subtitle }: HeaderProps) {
                 data-testid="button-notifications"
               >
                 <Bell className="w-5 h-5" />
-                <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 border-2 border-white"></span>
-                </span>
+                {notifications.length > 0 && (
+                  <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 border-2 border-white"></span>
+                  </span>
+                )}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 p-0 border-none shadow-xl rounded-2xl overflow-hidden mr-4" align="end">
               <div className="bg-white">
                 <div className="px-4 py-3 border-b bg-slate-50/80 backdrop-blur-sm flex justify-between items-center">
                   <h4 className="font-semibold text-sm text-slate-800">Notifications</h4>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 h-5 bg-primary/10 text-primary hover:bg-primary/20">3 New</Badge>
+                  {notifications.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5 h-5 bg-primary/10 text-primary hover:bg-primary/20">{notifications.length} New</Badge>}
                 </div>
                 <div className="max-h-[300px] overflow-y-auto py-1">
-                  <div className="text-sm p-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors flex gap-3 items-start group">
-                    <div className="w-2 h-2 mt-1.5 bg-blue-500 rounded-full shrink-0 group-hover:scale-110 transition-transform" />
-                    <div>
-                      <p className="font-medium text-slate-800">Leave request approved</p>
-                      <p className="text-xs text-slate-500 mt-0.5">Your annual leave has been approved</p>
-                    </div>
-                  </div>
-                  <div className="text-sm p-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors flex gap-3 items-start group">
-                    <div className="w-2 h-2 mt-1.5 bg-purple-500 rounded-full shrink-0 group-hover:scale-110 transition-transform" />
-                    <div>
-                      <p className="font-medium text-slate-800">New announcement</p>
-                      <p className="text-xs text-slate-500 mt-0.5">Company holiday schedule updated</p>
-                    </div>
-                  </div>
-                  <div className="text-sm p-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors flex gap-3 items-start group">
-                    <div className="w-2 h-2 mt-1.5 bg-green-500 rounded-full shrink-0 group-hover:scale-110 transition-transform" />
-                    <div>
-                      <p className="font-medium text-slate-800">Payslip available</p>
-                      <p className="text-xs text-slate-500 mt-0.5">Your payslip for this month is ready</p>
-                    </div>
-                  </div>
+                  {notifications.length === 0 ? (
+                      <div className="p-8 text-center text-slate-400 text-sm">
+                          No new notifications
+                      </div>
+                  ) : (
+                      notifications.map(n => (
+                        <div 
+                            key={n.id} 
+                            className="text-sm p-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 transition-colors flex gap-3 items-start group"
+                            onClick={() => n.link && navigate(n.link)}
+                        >
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${getBgColor(n.type)} group-hover:scale-110 transition-transform`}>
+                                {getIcon(n.type)}
+                            </div>
+                            <div>
+                                <p className="font-medium text-slate-800 text-xs">{n.title}</p>
+                                <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
+                                <p className="text-[10px] text-slate-400 mt-1">
+                                    {formatDistanceToNow(new Date(n.timestamp), { addSuffix: true })}
+                                </p>
+                            </div>
+                        </div>
+                      ))
+                  )}
                 </div>
-                <div className="p-2 border-t bg-slate-50/50 text-center">
-                    <Button variant="link" className="text-xs h-auto p-0 text-slate-500 hover:text-primary">Mark all as read</Button>
-                </div>
+                {/* Footer action (optional) */}
+                {/* <div className="p-2 border-t bg-slate-50/50 text-center">
+                  <Button variant="link" className="text-xs h-auto p-0 text-slate-500 hover:text-primary">View all activity</Button>
+                </div> */}
               </div>
             </PopoverContent>
           </Popover>

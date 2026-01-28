@@ -1,25 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, hashPassword } from "./auth";
-import {
-  insertLeaveRequestSchema,
-  insertAnnouncementSchema,
-  insertScheduleApiSchema,
-  insertReportSchema,
-  insertLaborCostDataSchema,
-  insertHolidaySchema,
-  payslips,
-  holidays,
-  laborCostData,
-  reports
-} from "@shared/schema";
-import { z } from "zod";
-import { ZodError } from "zod";
-import { db } from "./db";
-import { attendance, breaks, activities } from "@shared/schema";
-import { eq, and, gte, lte, isNull, desc, inArray } from "drizzle-orm";
-
+import { setupAuth } from "./auth";
 import { default as setupSetupRoutes } from "./routes/setup";
 import { default as setupUserRoutes } from "./routes/users";
 import { default as setupHolidayRoutes } from "./routes/holiday";
@@ -30,10 +12,12 @@ import { default as setupAnnouncementRoutes } from "./routes/announcements";
 import { default as setupReportRoutes } from "./routes/reports";
 import { default as setupAttendanceRoutes } from "./routes/attendance";
 import {default as setupLaborCostRoutes} from "./routes/labor-cost";
+import {default as setupNotificationRoutes} from "./routes/notifications";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
+  // --- Modular Routes ---
   app.use("/api/setup", setupSetupRoutes);
   app.use("/api/users", setupUserRoutes);
   app.use("/api/holidays", setupHolidayRoutes);
@@ -44,7 +28,11 @@ export function registerRoutes(app: Express): Server {
   app.use("/api/reports", setupReportRoutes);
   app.use("/api/attendance", setupAttendanceRoutes);
   app.use("/api/labor-cost", setupLaborCostRoutes);
+  app.use("/api/notifications", setupNotificationRoutes);
 
+  
+
+  // --- Get Dashboard Stats ---
   app.get("/api/dashboard-stats", async (req, res) => {
     // ... [Keep existing dashboard-stats code] ...
      if (!req.isAuthenticated()) return res.sendStatus(401);
@@ -75,16 +63,23 @@ export function registerRoutes(app: Express): Server {
     res.json({ leaveBalance: `${leaveBalance} days`, weeklyHours: `${weeklyHours.toFixed(1)} hrs`, pendingApprovals });
   });
 
-
-  
-  // --- Team Management ---
+  // --- Get Team Members ---
   app.get("/api/team", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const user = req.user!;
-    if (user.role !== 'manager' && user.role !== 'admin' && user.role !== 'payroll_officer') return res.status(403).json({ message: "Access denied" });
+    
+    if (user.role !== 'manager' && user.role !== 'admin' && user.role !== 'payroll_officer')
+      {
+        return res.status(403).json({ message: "Access denied" });
+      }
     let teamMembers;
-    if (user.role === 'admin' || user.role === 'payroll_officer') teamMembers = await storage.getAllUsers();
-    else teamMembers = await storage.getEmployeesForManager(user.id);
+
+    if (user.role === 'admin' || user.role === 'payroll_officer') {
+      teamMembers = await storage.getAllUsers();
+    }
+    else {
+      teamMembers = await storage.getEmployeesForManager(user.id);
+    }  
     res.json(teamMembers);
   });
 
@@ -97,7 +92,7 @@ export function registerRoutes(app: Express): Server {
     res.json(activities);
   });
 
-  // --- All Activity Logs (Admin Only) ---
+  // --- All Activity Logs ---
   app.get("/api/activities/all", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     

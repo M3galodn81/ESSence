@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,6 @@ type LaborCostForm = z.infer<typeof formSchema>;
 
 export default function LaborCostAnalytics() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -115,12 +114,12 @@ export default function LaborCostAnalytics() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Data added", description: "Labor cost data has been added successfully." });
+      toast.success("Data added", { description: "Labor cost data has been added successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/labor-cost"] });
       handleCloseDialog();
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to add data", description: error.message, variant: "destructive" });
+      toast.error("Failed to add data", { description: error.message });
     },
   });
 
@@ -148,12 +147,12 @@ export default function LaborCostAnalytics() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Data updated", description: "Record updated successfully." });
+      toast.success("Data updated", { description: "Record updated successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/labor-cost"] });
       handleCloseDialog();
     },
     onError: (error: Error) => {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+      toast.error("Update failed", { description: error.message });
     },
   });
 
@@ -166,12 +165,12 @@ export default function LaborCostAnalytics() {
        return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Deleted", description: "Record removed successfully." });
+      toast.success("Deleted", { description: "Record removed successfully." });
       queryClient.invalidateQueries({ queryKey: ["/api/labor-cost"] });
       setDeleteId(null);
     },
     onError: (error: Error) => {
-      toast({ title: "Delete failed", description: "Could not delete record.", variant: "destructive" });
+      toast.error("Delete failed", { description: "Could not delete record." });
     }
   });
 

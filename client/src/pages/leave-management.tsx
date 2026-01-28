@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +56,6 @@ const getMinStartDate = () => {
 
 export default function LeaveManagement() {
   const { user } = useAuth();
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
@@ -128,13 +127,13 @@ export default function LeaveManagement() {
       return await res.json();
     },
     onSuccess: () => {
-      toast({ title: "Leave request submitted", description: "Your leave request has been submitted for approval." });
+      toast.success("Leave request submitted", { description: "Your leave request has been submitted for approval." });
       queryClient.invalidateQueries({ queryKey: ["/api/leave-requests"] });
       setIsDialogOpen(false);
       form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Submission failed", description: error.message, variant: "destructive" });
+      toast.error("Submission failed", { description: error.message });
     },
   });
 
@@ -144,7 +143,7 @@ export default function LeaveManagement() {
       return await res.json();
     },
     onSuccess: (data, variables) => {
-      toast({ title: `Leave request ${variables.status}`, description: `The leave request has been ${variables.status} successfully.` });
+      toast.success(`Leave request ${variables.status}`, { description: `The leave request has been ${variables.status} successfully.` });
       queryClient.invalidateQueries({ queryKey: ["/api/leave-requests/pending"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leave-requests"] });
 
@@ -155,7 +154,7 @@ export default function LeaveManagement() {
       }
     },
     onError: (error: Error) => {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+      toast.error("Update failed", { description: error.message });
     },
   });
 
