@@ -16,7 +16,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertAnnouncementSchema } from "@shared/schema";
 import { z } from "zod";
-import { Megaphone, Plus, Filter, Bell, AlertCircle, Clock, Eye, CheckCircle2, UserCheck } from "lucide-react";
+import { Megaphone, Plus, Filter, Bell, AlertCircle, Clock, Eye, CheckCircle2, UserCheck, Loader2 } from "lucide-react";
 import type { Announcement, User } from "@shared/schema";
 import { canManageAnnouncements } from "@/utils/permissions";
 import { toast } from "sonner";
@@ -26,7 +26,7 @@ import { format } from "date-fns";
 import { BentoCard } from "@/components/custom/bento-card";
 import { AnnouncementFeedItem } from "@/components/custom/announcement-feed-card";
 
-// --- NEW COMPONENT: View Details & Mark Read Dialog ---
+// --- VIEW DETAILS & MARK READ DIALOG ---
 function ViewAnnouncementDialog({ 
   announcement, 
   isOpen, 
@@ -42,23 +42,26 @@ function ViewAnnouncementDialog({
 }) {
   const queryClient = useQueryClient();
 
-  // Fetch who has read this announcement
   const { data: readers, isLoading: isLoadingReaders } = useQuery({
     queryKey: [`/api/announcements/${announcement?.id}/reads`],
-    enabled: !!announcement && isOpen, // Only fetch when dialog is open
+    enabled: !!announcement && isOpen && canManage, 
   });
 
-  // Check if current user has read it
-  const hasRead = readers?.some((r: any) => r.userId === currentUser?.id.toString());
+  const { data: myReadIds } = useQuery({
+    queryKey: ["/api/announcements/my-reads"],
+    enabled: !!currentUser,
+  });
 
-  // Mutation to mark as read
+  const isReadByMe = myReadIds?.includes(announcement?.id?.toString() || "");
+
   const markReadMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", `/api/announcements/${announcement?.id}/read`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/announcements/${announcement?.id}/reads`] });
-      toast.success("Marked as noted");
+      queryClient.invalidateQueries({ queryKey: ["/api/announcements/my-reads"] });
+      toast.success("Announcement marked as read");
     }
   });
 
@@ -77,37 +80,37 @@ function ViewAnnouncementDialog({
               {announcement.createdAt && format(new Date(announcement.createdAt), "MMM d, yyyy h:mm a")}
             </span>
           </div>
-          <DialogTitle className="text-2xl">{announcement.title}</DialogTitle>
+          <DialogTitle className="text-2xl font-bold text-slate-900">{announcement.title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto pr-2 mt-4 space-y-6">
-          {/* Content Section */}
-          <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 text-slate-700 whitespace-pre-wrap leading-relaxed">
+          <div className="bg-slate-50/50 p-6 rounded-xl border border-slate-100 text-slate-700 whitespace-pre-wrap leading-relaxed">
             {announcement.content}
           </div>
 
-          {/* Manager View: Who viewed this? */}
           {canManage && (
             <div className="border-t pt-4">
               <h4 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-900">
                 <UserCheck className="w-4 h-4" /> 
                 Read Receipts ({readers?.length || 0})
               </h4>
-              <ScrollArea className="h-[150px] w-full rounded-md border p-4 bg-white">
+              <ScrollArea className="h-[150px] w-full rounded-lg border bg-white p-0">
                 {isLoadingReaders ? (
-                  <p className="text-xs text-slate-500">Loading readers...</p>
+                  <div className="flex items-center justify-center h-full text-xs text-slate-500">
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading...
+                  </div>
                 ) : readers?.length > 0 ? (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-0 divide-y sm:divide-y-0">
                     {readers.map((r: any) => (
-                      <div key={r.userId} className="flex items-center gap-2 text-sm">
-                        <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-[10px] bg-slate-100">
+                      <div key={r.userId} className="flex items-center gap-3 p-3 hover:bg-slate-50 transition-colors">
+                        <Avatar className="h-8 w-8 border border-slate-200">
+                          <AvatarFallback className="text-[10px] bg-slate-100 text-slate-600 font-medium">
                             {r.user.firstName?.[0]}{r.user.lastName?.[0]}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="flex flex-col">
-                          <span className="text-xs font-medium">{r.user.firstName} {r.user.lastName}</span>
-                          <span className="text-[10px] text-slate-400">
+                        <div className="flex flex-col overflow-hidden">
+                          <span className="text-xs font-semibold text-slate-700 truncate">{r.user.firstName} {r.user.lastName}</span>
+                          <span className="text-[10px] text-slate-400 truncate">
                             {format(new Date(r.readAt), "MMM d, h:mm a")}
                           </span>
                         </div>
@@ -115,36 +118,49 @@ function ViewAnnouncementDialog({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-400 text-center py-4">No one has viewed this yet.</p>
+                  <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                    <Eye className="w-5 h-5 mb-1 opacity-20" />
+                    <p className="text-xs">No views yet</p>
+                  </div>
                 )}
               </ScrollArea>
             </div>
           )}
         </div>
 
-        <DialogFooter className="mt-4 pt-4 border-t flex sm:justify-between items-center">
+        <DialogFooter className="mt-4 pt-4 border-t flex sm:justify-between items-center gap-4">
           <p className="text-xs text-slate-400 hidden sm:block">
             {announcement.targetDepartments && announcement.targetDepartments.length > 0 
               ? `Target: ${announcement.targetDepartments.join(", ")}` 
               : "Target: All Company"}
           </p>
-          <div className="flex gap-2 w-full sm:w-auto justify-end">
-            <Button variant="outline" onClick={onClose}>Close</Button>
-            <Button 
-              onClick={() => markReadMutation.mutate()} 
-              disabled={hasRead || markReadMutation.isPending}
-              className={`${hasRead ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900"} text-white`}
-            >
-              {hasRead ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4 mr-2" /> Noted
-                </>
-              ) : (
-                <>
-                  <Eye className="w-4 h-4 mr-2" /> Mark as Read
-                </>
-              )}
-            </Button>
+          <div className="flex gap-3 w-full sm:w-auto justify-end">
+            <Button variant="outline" onClick={onClose} className="rounded-full">Close</Button>
+            
+            {isReadByMe ? (
+              <Button 
+                disabled 
+                variant="secondary"
+                className="bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full opacity-100 cursor-default"
+              >
+                <CheckCircle2 className="w-4 h-4 mr-2" /> 
+                Acknowledged
+              </Button>
+            ) : (
+              <Button 
+                onClick={() => markReadMutation.mutate()} 
+                disabled={markReadMutation.isPending}
+                className="bg-slate-900 hover:bg-slate-800 text-white rounded-full min-w-[140px]"
+              >
+                {markReadMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Eye className="w-4 h-4 mr-2" /> Mark as Read
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>
@@ -164,10 +180,8 @@ export default function Announcements() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   
-  // Dialog States
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [viewingAnnouncement, setViewingAnnouncement] = useState<Announcement | null>(null); // State for viewing
-  
+  const [viewingAnnouncement, setViewingAnnouncement] = useState<Announcement | null>(null);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("active");
@@ -176,6 +190,11 @@ export default function Announcements() {
 
   const { data: announcements, isLoading } = useQuery({
     queryKey: ["/api/announcements"],
+  });
+
+  const { data: myReadIds } = useQuery({
+    queryKey: ["/api/announcements/my-reads"],
+    enabled: !!user,
   });
 
   const form = useForm<AnnouncementForm>({
@@ -244,8 +263,13 @@ export default function Announcements() {
     setIsCreateDialogOpen(true);
   };
 
-  // Handler for "View Details" click
-  const handleView = (announcement: Announcement) => {
+  // Logic to prevent the View dialog from opening when clicking buttons
+  const handleView = (announcement: Announcement, e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    // If we clicked a button, SVG inside a button, or switch, don't open view
+    if (target.closest('button') || target.closest('[role="switch"]')) {
+      return;
+    }
     setViewingAnnouncement(announcement);
   };
 
@@ -411,17 +435,34 @@ export default function Announcements() {
             </div>
           ) : filteredAnnouncements.length > 0 ? (
             <div className="grid grid-cols-1 gap-4">
-              {filteredAnnouncements.map((announcement: Announcement) => (
-                <div key={announcement.id} onClick={() => handleView(announcement)} className="cursor-pointer">
-                  {/* Assuming AnnouncementFeedItem supports onClick or is wrapped here */}
-                  <AnnouncementFeedItem 
-                    announcement={announcement} 
-                    canManage={canManage} 
-                    onEdit={(e) => { e.stopPropagation(); handleEdit(announcement); }} 
-                    onToggleActive={(e) => { e.stopPropagation(); handleToggleActive(announcement); }} 
-                  />
-                </div>
-              ))}
+              {filteredAnnouncements.map((announcement: Announcement) => {
+                const isRead = myReadIds?.includes(announcement.id);
+                
+                return (
+                  <div 
+                    key={announcement.id} 
+                    onClick={(e) => handleView(announcement, e)} 
+                    // REMOVED zoom hover effect (scale) here
+                    className="relative group cursor-pointer"
+                  >
+                    {/* RED DOT INDICATOR - Positioned inside to prevent clipping */}
+                    {!isRead && (
+                      <span className="absolute top-3 right-3 z-50 flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border-2 border-white"></span>
+                      </span>
+                    )}
+
+                    <AnnouncementFeedItem 
+                      announcement={announcement} 
+                      canManage={canManage} 
+                      // REMOVED e.stopPropagation() calls to fix TypeError
+                      onEdit={() => handleEdit(announcement)} 
+                      onToggleActive={() => handleToggleActive(announcement)} 
+                    />
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-20 bg-white/50 backdrop-blur-sm rounded-3xl border border-dashed border-slate-200">

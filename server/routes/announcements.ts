@@ -1,7 +1,8 @@
-import { insertAnnouncementSchema } from "@shared/schema";
+import { announcementReads, insertAnnouncementSchema } from "@shared/schema";
 import { Router } from "express";
+import { db } from "server/db";
 import { storage } from "server/storage";
-
+import { eq } from "drizzle-orm";
 const router = Router();
 
   // --- Get All Announcements ---
@@ -77,6 +78,25 @@ const router = Router();
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch readers" });
     }
+  });
+
+  router.get("/my-reads", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+  
+      try {
+        // We need a storage method for this, or direct DB query
+        // Assuming simple DB query here matching your schema structure:
+        const reads = await db.select({
+          announcementId: announcementReads.announcementId
+        })
+        .from(announcementReads)
+        .where(eq(announcementReads.userId, req.user!.id)); // Use string or int based on your schema
+
+        const readIds = reads.map(r => r.announcementId);
+        res.json(readIds);
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch read status" });
+      }
   });
 
 export default router;
