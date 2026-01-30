@@ -185,6 +185,19 @@ export const breaks = sqliteTable("breaks", {
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
 });
 
+export const announcementReads = sqliteTable("announcement_reads", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  // Changed from integer to text to match announcements.id (UUID)
+  announcementId: text("announcement_id").notNull().references(() => announcements.id),
+  // Changed from integer to text to match users.id (UUID)
+  userId: text("user_id").notNull().references(() => users.id),
+  readAt: integer("read_at", { mode: "timestamp" }).$defaultFn(() => new Date()),
+});
+
+export const insertAnnouncementReadSchema = createInsertSchema(announcementReads);
+export type AnnouncementRead = typeof announcementReads.$inferSelect;
+export type InsertAnnouncementRead = typeof announcementReads.$inferInsert;
+
 // --- Zod Schemas ---
 
 export const insertUserSchema = createInsertSchema(users).omit({

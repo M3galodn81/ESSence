@@ -56,4 +56,27 @@ const router = Router();
     }
   });
 
+  router.post("/:id/read", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      await storage.markAnnouncementRead(req.user!.id, req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark as read" });
+    }
+  });
+
+  // --- Get Announcement Readers (Who viewed it) ---
+  router.get("/:id/reads", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      const reads = await storage.getAnnouncementReads(req.params.id);
+      res.json(reads);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch readers" });
+    }
+  });
+
 export default router;

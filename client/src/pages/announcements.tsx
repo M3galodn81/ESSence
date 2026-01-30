@@ -9,19 +9,150 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertAnnouncementSchema } from "@shared/schema";
 import { z } from "zod";
-import { Megaphone, Plus, Filter, Bell, AlertCircle, Clock, Eye } from "lucide-react";
-import type { Announcement } from "@shared/schema";
+import { Megaphone, Plus, Filter, Bell, AlertCircle, Clock, Eye, CheckCircle2, UserCheck } from "lucide-react";
+import type { Announcement, User } from "@shared/schema";
 import { canManageAnnouncements } from "@/utils/permissions";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 // Refactored Components
 import { BentoCard } from "@/components/custom/bento-card";
 import { AnnouncementFeedItem } from "@/components/custom/announcement-feed-card";
+
+// --- NEW COMPONENT: View Details & Mark Read Dialog ---
+function ViewAnnouncementDialog({ 
+  announcement, 
+  isOpen, 
+  onClose,
+  currentUser,
+  canManage 
+}: { 
+  announcement: Announcement | null, 
+  isOpen: boolean, 
+  onClose: () => void,
+  currentUser: User | null,
+  canManage: boolean
+}) {
+  const queryClient = useQueryClient();
+
+  // Fetch who has read this announcement
+  const { data: readers, isLoading: isLoadingReaders } = useQuery({
+    queryKey: [`/api/announcements/${announcement?.id}/reads`],
+    enabled: !!announcement && isOpen, // Only fetch when dialog is open
+  });
+
+  // Check if current user has read it
+  const hasRead = readers?.some((r: any) => r.userId === currentUser?.id.toString());
+
+  // Mutation to mark as read
+  const markReadMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", `/api/announcements/${announcement?.id}/read`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/announcements/${announcement?.id}/reads`] });
+      toast.success("Marked as noted");
+    }
+  });
+
+  if (!announcement) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize 
+              ${announcement.type === 'urgent' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+              {announcement.type}
+            </span>
+            <span className="text-xs text-slate-400">
+              {announcement.createdAt && format(new Date(announcement.createdAt), "MMM d, yyyy h:mm a")}
+            </span>
+          </div>
+          <DialogTitle className="text-2xl">{announcement.title}</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto pr-2 mt-4 space-y-6">
+          {/* Content Section */}
+          <div className="bg-slate-50 p-6 rounded-xl border border-slate-100 text-slate-700 whitespace-pre-wrap leading-relaxed">
+            {announcement.content}
+          </div>
+
+          {/* Manager View: Who viewed this? */}
+          {canManage && (
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2 text-slate-900">
+                <UserCheck className="w-4 h-4" /> 
+                Read Receipts ({readers?.length || 0})
+              </h4>
+              <ScrollArea className="h-[150px] w-full rounded-md border p-4 bg-white">
+                {isLoadingReaders ? (
+                  <p className="text-xs text-slate-500">Loading readers...</p>
+                ) : readers?.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {readers.map((r: any) => (
+                      <div key={r.userId} className="flex items-center gap-2 text-sm">
+                        <Avatar className="h-6 w-6">
+                          <AvatarFallback className="text-[10px] bg-slate-100">
+                            {r.user.firstName?.[0]}{r.user.lastName?.[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex flex-col">
+                          <span className="text-xs font-medium">{r.user.firstName} {r.user.lastName}</span>
+                          <span className="text-[10px] text-slate-400">
+                            {format(new Date(r.readAt), "MMM d, h:mm a")}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400 text-center py-4">No one has viewed this yet.</p>
+                )}
+              </ScrollArea>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="mt-4 pt-4 border-t flex sm:justify-between items-center">
+          <p className="text-xs text-slate-400 hidden sm:block">
+            {announcement.targetDepartments && announcement.targetDepartments.length > 0 
+              ? `Target: ${announcement.targetDepartments.join(", ")}` 
+              : "Target: All Company"}
+          </p>
+          <div className="flex gap-2 w-full sm:w-auto justify-end">
+            <Button variant="outline" onClick={onClose}>Close</Button>
+            <Button 
+              onClick={() => markReadMutation.mutate()} 
+              disabled={hasRead || markReadMutation.isPending}
+              className={`${hasRead ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-900"} text-white`}
+            >
+              {hasRead ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 mr-2" /> Noted
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4 mr-2" /> Mark as Read
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// --- MAIN PAGE COMPONENT ---
 
 const announcementFormSchema = insertAnnouncementSchema.extend({
   targetDepartments: z.array(z.string()).optional(),
@@ -32,7 +163,11 @@ type AnnouncementForm = z.infer<typeof announcementFormSchema>;
 export default function Announcements() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  
+  // Dialog States
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [viewingAnnouncement, setViewingAnnouncement] = useState<Announcement | null>(null); // State for viewing
+  
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("active");
@@ -60,11 +195,9 @@ export default function Announcements() {
       return await res.json();
     },
     onSuccess: () => {
-      toast.success("Announcement created", {
-        description: "Your announcement has been published successfully."
-      });
+      toast.success("Announcement created");
       queryClient.invalidateQueries({ queryKey: ["/api/announcements"] });
-      setIsDialogOpen(false);
+      setIsCreateDialogOpen(false);
       form.reset();
       setEditingAnnouncement(null);
     },
@@ -83,7 +216,7 @@ export default function Announcements() {
       return await res.json();
     },
     onSuccess: () => {
-      toast.success( "Announcement updated",{ description: "The announcement has been updated successfully." });
+      toast.success("Announcement updated");
       queryClient.invalidateQueries({ queryKey: ["/api/announcements"] });
     },
     onError: (error: Error) => {
@@ -108,7 +241,12 @@ export default function Announcements() {
       targetDepartments: announcement.targetDepartments as string[] || [],
       isActive: announcement.isActive,
     });
-    setIsDialogOpen(true);
+    setIsCreateDialogOpen(true);
+  };
+
+  // Handler for "View Details" click
+  const handleView = (announcement: Announcement) => {
+    setViewingAnnouncement(announcement);
   };
 
   const handleToggleActive = (announcement: Announcement) => {
@@ -117,7 +255,7 @@ export default function Announcements() {
 
   const filteredAnnouncements = announcements?.filter((announcement: Announcement) => {
     const typeMatch = filterType === "all" || announcement.type === filterType;
-    const statusMatch = (filterStatus === "active" && announcement.isActive) ||
+    const statusMatch = (filterStatus === "active" && announcement.isActive) || 
       (filterStatus === "inactive" && !announcement.isActive) || 
       filterStatus === "all";
     return typeMatch && statusMatch;
@@ -143,16 +281,25 @@ export default function Announcements() {
 
   return (
     <div className="p-6 space-y-8">
+      {/* View Announcement Dialog */}
+      <ViewAnnouncementDialog 
+        isOpen={!!viewingAnnouncement} 
+        onClose={() => setViewingAnnouncement(null)} 
+        announcement={viewingAnnouncement}
+        currentUser={user}
+        canManage={canManage}
+      />
+
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900" data-testid="page-title">Announcements</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Announcements</h1>
           <p className="text-slate-500 mt-1 text-sm">Manage company-wide communications and updates</p>
         </div>
         {canManage && (
-        <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
+        <Dialog open={isCreateDialogOpen} onOpenChange={(open) => { setIsCreateDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button className="bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/20 rounded-full px-6" data-testid="button-create-announcement">
+            <Button className="bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/20 rounded-full px-6">
               <Plus className="w-4 h-4 mr-2" /> New Announcement
             </Button>
           </DialogTrigger>
@@ -194,7 +341,7 @@ export default function Announcements() {
                 </div>
               </div>
               <div className="flex justify-end space-x-3 pt-4">
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="rounded-full border-slate-200 hover:bg-slate-50">Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)} className="rounded-full border-slate-200 hover:bg-slate-50">Cancel</Button>
                 <Button type="submit" disabled={createAnnouncementMutation.isPending || updateAnnouncementMutation.isPending} className="rounded-full bg-slate-900 hover:bg-slate-800">
                   {(createAnnouncementMutation.isPending || updateAnnouncementMutation.isPending) ? "Saving..." : editingAnnouncement ? "Update Announcement" : "Create Announcement"}
                 </Button>
@@ -205,7 +352,7 @@ export default function Announcements() {
         )}
       </div>
 
-      {/* Bento Grid Stats - Refactored to use Components */}
+      {/* Bento Grid Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <BentoCard title="Total Announcements" value={stats.total} icon={Bell} variant="default" testIdPrefix="total-announcements" />
         <BentoCard title="Active" value={stats.active} icon={Eye} variant="emerald" testIdPrefix="active-announcements" />
@@ -265,13 +412,15 @@ export default function Announcements() {
           ) : filteredAnnouncements.length > 0 ? (
             <div className="grid grid-cols-1 gap-4">
               {filteredAnnouncements.map((announcement: Announcement) => (
-                <AnnouncementFeedItem 
-                  key={announcement.id} 
-                  announcement={announcement} 
-                  canManage={canManage} 
-                  onEdit={handleEdit} 
-                  onToggleActive={handleToggleActive} 
-                />
+                <div key={announcement.id} onClick={() => handleView(announcement)} className="cursor-pointer">
+                  {/* Assuming AnnouncementFeedItem supports onClick or is wrapped here */}
+                  <AnnouncementFeedItem 
+                    announcement={announcement} 
+                    canManage={canManage} 
+                    onEdit={(e) => { e.stopPropagation(); handleEdit(announcement); }} 
+                    onToggleActive={(e) => { e.stopPropagation(); handleToggleActive(announcement); }} 
+                  />
+                </div>
               ))}
             </div>
           ) : (
@@ -287,7 +436,7 @@ export default function Announcements() {
                 }
               </p>
               {canManage && announcements?.length === 0 && (
-                 <Button onClick={() => setIsDialogOpen(true)} className="rounded-full">
+                 <Button onClick={() => setIsCreateDialogOpen(true)} className="rounded-full">
                     <Plus className="w-4 h-4 mr-2" /> Create First Announcement
                  </Button>
               )}

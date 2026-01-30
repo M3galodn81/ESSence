@@ -17,7 +17,9 @@ import {
   Attendance,
   InsertAttendance,
   Break,
-  InsertBreak
+  InsertBreak,
+  AnnouncementRead,
+  InsertAnnouncementRead
 } from "@shared/schema";
 import session from "express-session";
 import { db, sqlite } from "./db";
@@ -31,7 +33,8 @@ import {
   reports,
   laborCostData,
   attendance,
-  breaks
+  breaks,
+  announcementReads
 } from "@shared/schema";
 import { eq, and, desc, asc, gte, lte, inArray, or, isNull } from "drizzle-orm";
 
@@ -132,6 +135,9 @@ export interface IStorage {
   getActiveAnnouncements(department?: string): Promise<Announcement[]>;
   getAnnouncementById(id: string): Promise<Announcement | undefined>;
   updateAnnouncement(id: string, updates: Partial<Announcement>): Promise<Announcement | undefined>;
+
+  markAnnouncementRead(userId: string, announcementId: string): Promise<void>;
+  getAnnouncementReads(announcementId: string): Promise<{ userId: string; readAt: Date; user: User }[]>;
 
   createActivity(activity: InsertActivity): Promise<Activity>;
   getActivitiesByUser(userId: string, limit?: number): Promise<Activity[]>;
@@ -439,6 +445,45 @@ export class DbStorage implements IStorage {
   async updateAnnouncement(id: string, updates: Partial<Announcement>): Promise<Announcement | undefined> {
     const result = await db.update(announcements).set(updates).where(eq(announcements.id, id)).returning();
     return result[0];
+  }
+
+  async markAnnouncementRead(userId: string, announcementId: string): Promise<void> {
+    // Check if already read to prevent duplicates
+    const existing = await db.select()
+      .from(announcementReads)
+      .where(and(
+        // REMOVED parseInt() - compare string to string
+        eq(announcementReads.userId, userId),
+        eq(announcementReads.announcementId, announcementId)
+      ))
+      .limit(1);
+
+    if (existing.length === 0) {
+      await db.insert(announcementReads).values({
+        userId: userId, // Pass string directly
+        announcementId: announcementId, // Pass string directly
+        readAt: new Date(),
+      });
+    }
+  }
+
+  async getAnnouncementReads(announcementId: string): Promise<{ userId: string; readAt: Date; user: User }[]> {
+    // Join reads with user table to get names
+    const results = await db.select({
+      read: announcementReads,
+      user: users,
+    })
+    .from(announcementReads)
+    // Join condition: text ID to text ID
+    .innerJoin(users, eq(announcementReads.userId, users.id))
+    // REMOVED parseInt()
+    .where(eq(announcementReads.announcementId, announcementId));
+
+    return results.map(({ read, user }) => ({
+      userId: user.id,
+      readAt: read.readAt!, // The '!' asserts it's not null, or use: read.readAt ?? new Date()
+      user: user,
+    }));
   }
 
   async createActivity(activity: InsertActivity): Promise<Activity> {
