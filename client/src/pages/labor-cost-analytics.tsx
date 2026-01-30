@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -35,6 +35,7 @@ export default function LaborCostAnalytics() {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [timeRange, setTimeRange] = useState<number>(6);
   
   // Edit/Delete State
   const [editingRecord, setEditingRecord] = useState<LaborCostData | null>(null);
@@ -250,14 +251,26 @@ export default function LaborCostAnalytics() {
     ? ((previousMonthData.laborCostPercentage - currentMonthData.laborCostPercentage) / 100).toFixed(1)
     : null;
 
-  const chartData = laborCostData?.slice(0, 7).reverse().map((data: LaborCostData) => ({
-    month: getMonthName(data.month).substring(0, 3),
-    fullMonth: getMonthName(data.month),
-    year: data.year,
-    sales: data.totalSales / 100,
-    laborCost: data.totalLaborCost / 100,
-    laborPercent: data.laborCostPercentage / 100,
-  })) || [];
+  const chartData = useMemo(() => {
+    if (!laborCostData) return [];
+    
+    return [...laborCostData]
+      .sort((a, b) => {
+        // Sort by year then month ascending
+        if (a.year !== b.year) return a.year - b.year;
+        return a.month - b.month;
+      })
+      .slice(-timeRange) // Take the last N elements based on filter
+      .map((data: LaborCostData) => ({
+        // Formatting the X-Axis label as "Jan '24" for clarity
+        label: `${getMonthName(data.month).substring(0, 3)} '${data.year.toString().slice(-2)}`,
+        fullMonth: getMonthName(data.month),
+        year: data.year,
+        sales: data.totalSales / 100,
+        laborCost: data.totalLaborCost / 100,
+        laborPercent: data.laborCostPercentage / 100,
+      }));
+  }, [laborCostData, timeRange]);
 
   if (!canViewLaborCostAnalysis(user)) {
     return (
@@ -429,67 +442,97 @@ export default function LaborCostAnalytics() {
 
            {/* 4. Trend Chart (Spans 2 cols) */}
            <Card className="lg:col-span-2 bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-3xl overflow-hidden">
-              <CardHeader>
-                 <CardTitle className="text-lg font-bold text-slate-800">6-Month Trend Analysis</CardTitle>
-              </CardHeader>
-              <CardContent className="h-[300px]">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#0f172a" stopOpacity={0.1}/>
-                          <stop offset="95%" stopColor="#0f172a" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
-                          <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(4px)', borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} 
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length) {
-                            const data = payload[0].payload;
-                            return (
-                              <div className="bg-white/95 backdrop-blur-md border border-slate-200/60 p-3 rounded-xl shadow-xl text-sm">
-                                <p className="font-bold text-slate-800 mb-2 border-b border-slate-200/60 pb-2">
-                                  {data.fullMonth}, {data.year}
-                                </p>
-                                <div className="space-y-1.5">
-                                  <div className="flex items-center justify-between gap-4">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-slate-900" />
-                                      <span className="text-slate-500">Sales:</span>
-                                    </div>
-                                    <span className="font-mono font-medium text-slate-900">
-                                      ₱{data.sales.toLocaleString()}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center justify-between gap-4">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-2 h-2 rounded-full bg-red-500" />
-                                      <span className="text-slate-500">Labor:</span>
-                                    </div>
-                                    <span className="font-mono font-medium text-rose-600">
-                                      ₱{data.laborCost.toLocaleString()}
-                                    </span>
-                                  </div>
-                                </div>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-lg font-bold text-slate-800">Trend Analysis</CardTitle>
+              <div className="flex bg-slate-100 p-1 rounded-lg">
+                {[3, 6, 9, 12].map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setTimeRange(range)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                      timeRange === range 
+                        ? "bg-white text-slate-900 shadow-sm" 
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {range === 12 ? '1Y' : `${range}M`}
+                  </button>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0f172a" stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor="#0f172a" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  {/* Fixed X-Axis */}
+                  <XAxis 
+                    dataKey="label" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{fill: '#94a3b8', fontSize: 12}}
+                    dy={10}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{fill: '#94a3b8', fontSize: 12}} 
+                    tickFormatter={(value) => `₱${formatCompactNumber(value * 100)}`}
+                  />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <Tooltip 
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-white/95 backdrop-blur-md border border-slate-200/60 p-3 rounded-xl shadow-xl text-sm">
+                            <p className="font-bold text-slate-800 mb-2 border-b border-slate-200/60 pb-2">
+                              {data.fullMonth} {data.year}
+                            </p>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="text-slate-500">Sales:</span>
+                                <span className="font-mono font-medium text-slate-900">₱{data.sales.toLocaleString()}</span>
                               </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                      <Area type="monotone" dataKey="sales" stroke="#0f172a" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" name="Sales" />
-                      <Area type="monotone" dataKey="laborCost" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorCost)" name="Labor Cost" />
-                    </AreaChart>
-                 </ResponsiveContainer>
-              </CardContent>
-           </Card>
+                              <div className="flex items-center justify-between gap-4">
+                                <span className="text-slate-500">Labor:</span>
+                                <span className="font-mono font-medium text-rose-600">₱{data.laborCost.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="sales" 
+                    stroke="#0f172a" 
+                    strokeWidth={3} 
+                    fillOpacity={1} 
+                    fill="url(#colorSales)" 
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="laborCost" 
+                    stroke="#ef4444" 
+                    strokeWidth={3} 
+                    fillOpacity={1} 
+                    fill="url(#colorCost)" 
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+</Card>
         </div>
       ) : (
         <div className="text-center py-20 bg-white/40 border border-dashed border-slate-200 rounded-3xl">
