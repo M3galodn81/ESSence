@@ -11,20 +11,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertReportSchema, type User as UserType } from "@shared/schema";
 import { z } from "zod";
 import { 
-  AlertTriangle, ShieldAlert, UserX, Stethoscope, 
-  Hammer, FileWarning, Plus, Calendar as CalendarIcon, Clock, 
-  Eye, FileText, MapPin, CheckCircle2, AlertCircle, Filter, ArrowUpDown, X, Users, Minus,
-  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, PieChart as PieChartIcon,
-  List as ListIcon
+  AlertTriangle, UserX, Hammer, Plus, Calendar as CalendarIcon, Clock, 
+  FileText, MapPin, CheckCircle2, AlertCircle, X, Users,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, 
+  List as ListIcon, Banknote, Search, History, Filter
 } from "lucide-react";
-import { format, isWithinInterval, startOfDay, endOfDay, subMonths } from "date-fns";
+import { format, isWithinInterval, startOfDay, endOfDay, subMonths, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
@@ -33,27 +30,15 @@ import {
 
 /**
  * REPORT FORM SCHEMA CONFIGURATION
- * * We extend the base database schema to handle frontend-specific logic:
- * 1. involvedPeople: Handled as an array of strings in the UI, converted to comma-separated string for DB.
- * 2. dateOccurred: Coerced to Date object for easier handling with Date Pickers.
- * 3. details: Structured object for JSON storage in SQLite.
  */
 const reportFormSchema = insertReportSchema.omit({ userId: true, partiesInvolved: true }).extend({
     involvedPeople: z.array(z.string()).min(1, "At least one person must be involved"), 
-    
-    // Override date to ensure it's a Date object in the form state
     dateOccurred: z.coerce.date(),
-
     details: z.object({
         items: z.array(z.object({
             name: z.string().min(1, "Item name required"),
             quantity: z.number().min(1),
-            cost: z.number().min(0)
         })).optional(),
-        
-        policeReportNumber: z.string().optional(),
-        injuryType: z.string().optional(),
-        medicalAction: z.string().optional()
     }).optional()
 });
 
@@ -68,9 +53,10 @@ export default function Reports() {
   const [view, setView] = useState<"list" | "analytics">("list");
   
   // --- FILTER STATE ---
-  const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [monthFilter, setMonthFilter] = useState<string>("all");
+  const [personFilter, setPersonFilter] = useState<string>(""); // NEW: Person Filter
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
 
   // --- PAGINATION STATE ---
@@ -78,64 +64,104 @@ export default function Reports() {
   const itemsPerPage = 5;
 
   // --- DYNAMIC FORM STATE ---
-  // These states handle the inputs for adding items/people before they are committed to the form
-  const [newItem, setNewItem] = useState({ name: "", quantity: 1, cost: 0 });
+  const [newItem, setNewItem] = useState({ name: "", quantity: 1 });
   const [newPerson, setNewPerson] = useState("");
+  const [staffSearchTerm, setStaffSearchTerm] = useState(""); 
 
   // --- CONFIGURATION CONSTANTS ---
   const categories = [
-    // Guest & Service
-    { id: "guest_misconduct", label: "Guest Misconduct / Behavioral Issue", icon: UserX, color: "bg-orange-100 text-orange-600", fill: "#f97316" },
-    { id: "service_dispute", label: "Service Dispute / Billing Issue", icon: FileText, color: "bg-amber-100 text-amber-600", fill: "#d97706" },
-    
-    // Staff
-    { id: "staff_conduct", label: "Staff Conduct / Policy Violation", icon: FileWarning, color: "bg-blue-100 text-blue-600", fill: "#3b82f6" },
-    { id: "staff_performance", label: "Staff Performance / Attendance", icon: Users, color: "bg-indigo-100 text-indigo-600", fill: "#4f46e5" },
-    
-    // Safety & Security
-    { id: "accident_injury", label: "Slip, Trip, Fall / Physical Injury", icon: AlertTriangle, color: "bg-red-100 text-red-600", fill: "#dc2626" },
-    { id: "medical_emergency", label: "Medical Emergency / Illness", icon: Stethoscope, color: "bg-rose-100 text-rose-600", fill: "#e11d48" },
-    { id: "security_breach", label: "Unauthorized Access / Trespassing", icon: ShieldAlert, color: "bg-slate-800 text-slate-100", fill: "#1e293b" },
-    { id: "theft_vandalism", label: "Theft / Vandalism / Property Loss", icon: Eye, color: "bg-purple-100 text-purple-600", fill: "#9333ea" },
-    
-    // Facilities
-    { id: "property_damage", label: "Property / Structural Damage", icon: Hammer, color: "bg-stone-100 text-stone-600", fill: "#57534e" },
-    { id: "equipment_failure", label: "Equipment / System Failure", icon: ArrowUpDown, color: "bg-gray-100 text-gray-600", fill: "#4b5563" },
-    { id: "hazard", label: "Safety Hazard (Fire/Water/Chemical)", icon: AlertCircle, color: "bg-yellow-100 text-yellow-600", fill: "#ca8a04" },
+    { 
+        id: "awan", 
+        label: "AWAN (Absent With Notice)", 
+        icon: Clock, 
+        color: "bg-blue-100 text-blue-700", 
+        fill: "#3b82f6" 
+    },
+    { 
+        id: "awol", 
+        label: "AWOL (Absent Without Leave)", 
+        icon: UserX, 
+        color: "bg-red-100 text-red-700", 
+        fill: "#ef4444" 
+    },
+    { 
+        id: "tardiness", 
+        label: "Tardiness", 
+        icon: History, 
+        color: "bg-amber-100 text-amber-700", 
+        fill: "#f59e0b" 
+    },
+    { 
+        id: "cashier_shortage", 
+        label: "Cashier Shortage", 
+        icon: Banknote, 
+        color: "bg-emerald-100 text-emerald-700", 
+        fill: "#10b981" 
+    },
+    { 
+        id: "breakages", 
+        label: "Breakages", 
+        icon: Hammer, 
+        color: "bg-orange-100 text-orange-700", 
+        fill: "#f97316" 
+    },
+    { 
+        id: "others", 
+        label: "Others", 
+        icon: FileText, 
+        color: "bg-slate-100 text-slate-700", 
+        fill: "#64748b" 
+    },
   ];
 
   // --- DATA FETCHING ---
   const { data: reports, isLoading } = useQuery({ queryKey: ["/api/reports"] });
   const { data: teamMembers } = useQuery<UserType[]>({ queryKey: ["/api/team"] });
 
-  // Reset pagination when filters change to avoid empty pages
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, categoryFilter, dateRange, sortOrder]);
+  }, [statusFilter, categoryFilter, monthFilter, personFilter, sortOrder]);
+
+  const monthOptions = useMemo(() => {
+    const options = [];
+    for (let i = 0; i < 12; i++) {
+        const d = subMonths(new Date(), i);
+        options.push({
+            value: format(d, "yyyy-MM"),
+            label: format(d, "MMMM yyyy")
+        });
+    }
+    return options;
+  }, []);
 
   // --- FILTERING LOGIC ---
   const filteredReports = useMemo(() => {
     if (!reports) return [];
     return reports.filter((r: any) => {
-        // Filter by Status
         if (statusFilter !== "all" && r.status !== statusFilter) return false;
-        // Filter by Category
         if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
-        // Filter by Date Range
-        if (dateRange.from && dateRange.to && r.dateOccurred) {
-            const reportDate = new Date(r.dateOccurred);
-            if (!isWithinInterval(reportDate, { start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) })) return false;
+        
+        // Month Filter
+        if (monthFilter !== "all" && r.dateOccurred) {
+            const reportMonth = format(new Date(r.dateOccurred), "yyyy-MM");
+            if (reportMonth !== monthFilter) return false;
         }
+
+        // NEW: Person Filter (Check against partiesInvolved string)
+        if (personFilter.trim() !== "") {
+            const search = personFilter.toLowerCase();
+            const parties = (r.partiesInvolved || "").toLowerCase();
+            if (!parties.includes(search)) return false;
+        }
+
         return true;
     }).sort((a: any, b: any) => {
-        // Sort Logic
         const timeA = new Date(a.dateOccurred).getTime();
         const timeB = new Date(b.dateOccurred).getTime();
         return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
     });
-  }, [reports, statusFilter, categoryFilter, dateRange, sortOrder]);
+  }, [reports, statusFilter, categoryFilter, monthFilter, personFilter, sortOrder]);
 
-  // --- PAGINATION LOGIC ---
   const paginatedReports = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     return filteredReports.slice(startIndex, startIndex + itemsPerPage);
@@ -143,11 +169,9 @@ export default function Reports() {
 
   const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
 
-  // --- ANALYTICS DATA PREPARATION ---
   const stats = useMemo(() => {
     if (!reports) return { monthly: [], byCategory: [], mostInvolved: [] };
 
-    // 1. Monthly Trend
     const months: Record<string, number> = {};
     for (let i = 5; i >= 0; i--) {
         const d = subMonths(new Date(), i);
@@ -162,7 +186,6 @@ export default function Reports() {
     });
     const monthlyData = Object.entries(months).map(([name, count]) => ({ name, count }));
 
-    // 2. By Category
     const catCounts: Record<string, number> = {};
     reports.forEach((r: any) => {
         catCounts[r.category] = (catCounts[r.category] || 0) + 1;
@@ -172,7 +195,6 @@ export default function Reports() {
         return { name: cat?.label || id, value, fill: cat?.fill || "#cbd5e1" };
     });
 
-    // 3. Most Involved (Parsing CSV string back to counts)
     const peopleCounts: Record<string, number> = {};
     reports.forEach((r: any) => {
         if (r.partiesInvolved) {
@@ -193,7 +215,7 @@ export default function Reports() {
   const form = useForm<ReportForm>({
     resolver: zodResolver(reportFormSchema),
     defaultValues: {
-      category: "customer",
+      category: "others",
       severity: "low",
       dateOccurred: new Date(),
       timeOccurred: format(new Date(), "HH:mm"),
@@ -202,27 +224,21 @@ export default function Reports() {
     },
   });
 
-  // Watch form values for dynamic UI updates
   const selectedCategory = form.watch("category");
   const currentPeople = form.watch("involvedPeople");
   const currentItems = form.watch("details.items") || [];
 
-  // API Mutation
   const createReportMutation = useMutation({
     mutationFn: async (data: ReportForm) => {
-      // Prepare payload for backend
       const { involvedPeople, ...cleanData } = data;
       const payload = {
           ...cleanData,
-          partiesInvolved: involvedPeople.join(", "), // Array -> String
+          partiesInvolved: involvedPeople.join(", "),
           userId: user?.id,
-          // Convert JS Date to timestamp (number) for SQLite integer storage
           dateOccurred: new Date(data.dateOccurred).getTime(),
-          // Default fallbacks
           witnesses: cleanData.witnesses || "", 
           images: [],
       };
-
       const res = await apiRequest("POST", "/api/reports", payload);
       return await res.json();
     },
@@ -230,9 +246,8 @@ export default function Reports() {
       toast.success("Report Filed Successfully");
       queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
       setIsDialogOpen(false);
-      // Reset form to defaults
       form.reset({
-        category: "customer",
+        category: "others",
         severity: "low",
         dateOccurred: new Date(),
         timeOccurred: format(new Date(), "HH:mm"),
@@ -241,12 +256,10 @@ export default function Reports() {
       });
     },
     onError: (err) => {
-        console.error("Submission Error:", err);
         toast.error("Failed to file report", { description: err.message });
     }
   });
 
-  // Mutation to Toggle Resolve Status
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
       const res = await apiRequest("PATCH", `/api/reports/${id}`, { status });
@@ -256,8 +269,6 @@ export default function Reports() {
         const newStatus = updatedReport.status;
         toast.success(`Report marked as ${newStatus}`);
         queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
-        
-        // Update local state immediately to reflect change in the open modal
         if (selectedReport) {
             setSelectedReport({ ...selectedReport, status: newStatus });
         }
@@ -267,21 +278,20 @@ export default function Reports() {
     }
   });
 
-  // Form Validation Error Callback
   const onInvalid = (errors: FieldErrors<ReportForm>) => {
     const firstErrorKey = Object.keys(errors)[0];
     const errorMessage = errors[firstErrorKey as keyof ReportForm]?.message;
     toast.error("Validation Error", { description: errorMessage ? String(errorMessage) : "Please check the form fields." });
   };
 
-  // --- HELPER FUNCTIONS FOR DYNAMIC LISTS ---
+  // --- HELPER FUNCTIONS ---
 
   const addPerson = () => {
       if (!newPerson.trim()) return;
       const current = form.getValues("involvedPeople");
       if (!current.includes(newPerson)) {
           form.setValue("involvedPeople", [...current, newPerson]);
-          form.trigger("involvedPeople"); // Re-validate
+          form.trigger("involvedPeople");
       }
       setNewPerson("");
   };
@@ -304,7 +314,7 @@ export default function Reports() {
       if (!newItem.name.trim()) return;
       const current = form.getValues("details.items") || [];
       form.setValue("details.items", [...current, newItem]);
-      setNewItem({ name: "", quantity: 1, cost: 0 });
+      setNewItem({ name: "", quantity: 1 });
   };
 
   const removeItem = (index: number) => {
@@ -312,9 +322,19 @@ export default function Reports() {
       form.setValue("details.items", current.filter((_, i) => i !== index));
   };
 
-  // State for "View Details" Modal
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+
+  const filteredEmployees = useMemo(() => {
+    if (!teamMembers) return [];
+    if (!staffSearchTerm) return teamMembers.filter(m => m.role !== 'admin');
+    
+    return teamMembers.filter(m => 
+        m.role !== 'admin' && 
+        (m.firstName.toLowerCase().includes(staffSearchTerm.toLowerCase()) || 
+         m.lastName.toLowerCase().includes(staffSearchTerm.toLowerCase()))
+    );
+  }, [teamMembers, staffSearchTerm]);
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
@@ -322,10 +342,9 @@ export default function Reports() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Incident Reporting</h1>
-          <p className="text-slate-500 mt-1">Official documentation for workplace incidents</p>
+          <p className="text-slate-500 mt-1">Document AWOL, breakage, and other incidents</p>
         </div>
         <div className="flex items-center gap-2">
-            {/* View Switcher */}
             <div className="flex items-center bg-slate-100 p-1 rounded-lg">
                 <Button 
                     variant="ghost" 
@@ -345,7 +364,6 @@ export default function Reports() {
                 </Button>
             </div>
             
-            {/* Create Report Dialog */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800 ml-2">
@@ -392,7 +410,6 @@ export default function Reports() {
                           <Label>Date</Label>
                           <Input 
                             type="date" 
-                            // Manually bind date input to handle Date object from form state
                             value={format(new Date(form.watch("dateOccurred")), "yyyy-MM-dd")} 
                             onChange={(e) => {
                                 const value = e.target.value;
@@ -408,7 +425,7 @@ export default function Reports() {
                       </div>
                       <div className="space-y-2">
                           <Label>Location</Label>
-                          <Input placeholder="e.g. Kitchen" {...form.register("location")} />
+                          <Input placeholder="e.g. Kitchen / POS" {...form.register("location")} />
                           {form.formState.errors.location && <p className="text-xs text-red-500">{form.formState.errors.location.message}</p>}
                       </div>
                   </div>
@@ -430,33 +447,45 @@ export default function Reports() {
                     <div className="space-y-2">
                         <Label>Action Taken</Label>
                         <Textarea placeholder="Immediate actions..." {...form.register("actionTaken")} />
-                        {form.formState.errors.actionTaken && <p className="text-xs text-red-500">{form.formState.errors.actionTaken.message}</p>}
                     </div>
                     <div className="space-y-2">
                         <Label>Witnesses</Label>
                         <Textarea placeholder="Names/Contacts..." {...form.register("witnesses")} />
-                        {form.formState.errors.witnesses && <p className="text-xs text-red-500">{form.formState.errors.witnesses.message}</p>}
                     </div>
                   </div>
 
-                  {/* People Involved (Dynamic List) */}
+                  {/* People Involved (With Search) */}
                   <div className="space-y-3 p-4 bg-slate-50/50 rounded-lg border border-slate-100">
                       <Label>People Involved <span className="text-red-500">*</span></Label>
                       <div className="flex flex-col gap-3">
-                          {/* Staff Dropdown */}
+                          {/* Staff Search & Dropdown */}
                           <div className="flex flex-col gap-1.5">
                               <span className="text-xs text-slate-500 font-medium">Add Staff Member</span>
+                              
+                              <div className="relative">
+                                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                                  <Input 
+                                    className="pl-9 mb-2 bg-white" 
+                                    placeholder="Search staff name..." 
+                                    value={staffSearchTerm}
+                                    onChange={(e) => setStaffSearchTerm(e.target.value)}
+                                  />
+                              </div>
+
                               <Select onValueChange={addStaffFromSelect}>
                                   <SelectTrigger className="bg-white border-slate-200">
                                       <SelectValue placeholder="Select from team..." />
                                   </SelectTrigger>
                                   <SelectContent>
-                                      {/* Filter out admins from selection */}
-                                      {teamMembers?.filter(m => m.role !== 'admin').map((member) => (
+                                      {filteredEmployees.length > 0 ? (
+                                        filteredEmployees.map((member) => (
                                           <SelectItem key={member.id} value={`${member.firstName} ${member.lastName}`}>
                                               {member.firstName} {member.lastName} <span className="text-xs text-slate-400 ml-1">({member.position})</span>
                                           </SelectItem>
-                                      ))}
+                                        ))
+                                      ) : (
+                                        <div className="p-2 text-sm text-slate-500 text-center">No staff found</div>
+                                      )}
                                   </SelectContent>
                               </Select>
                           </div>
@@ -490,17 +519,16 @@ export default function Reports() {
                       {form.formState.errors.involvedPeople && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {form.formState.errors.involvedPeople.message}</p>}
                   </div>
 
-                  {/* Property Details (Only for Property Reports) */}
-                  {selectedCategory === 'property' && (
+                  {/* Property Details (Only for Breakages) */}
+                  {selectedCategory === 'breakages' && (
                       <div className="bg-slate-50 p-4 rounded-lg space-y-4 border border-slate-200">
                           <h4 className="font-medium text-sm text-slate-900">Damaged Items</h4>
                           <div className="grid grid-cols-12 gap-2 items-end">
-                              <div className="col-span-6"><Label className="text-xs">Item Name</Label><Input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Plate" /></div>
+                              <div className="col-span-9"><Label className="text-xs">Item Name</Label><Input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Plate" /></div>
                               <div className="col-span-2"><Label className="text-xs">Qty</Label><Input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: +e.target.value})} /></div>
-                              <div className="col-span-3"><Label className="text-xs">Cost ($)</Label><Input type="number" value={newItem.cost} onChange={e => setNewItem({...newItem, cost: +e.target.value})} /></div>
                               <div className="col-span-1"><Button type="button" size="icon" onClick={addItem}><Plus className="w-4 h-4" /></Button></div>
                           </div>
-                          <div className="space-y-2">{currentItems.map((item, i) => <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded border"><span>{item.quantity}x {item.name} (${item.cost})</span><button type="button" onClick={() => removeItem(i)}><X className="w-4 h-4 hover:text-red-500" /></button></div>)}</div>
+                          <div className="space-y-2">{currentItems.map((item, i) => <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded border"><span>{item.quantity}x {item.name}</span><button type="button" onClick={() => removeItem(i)}><X className="w-4 h-4 hover:text-red-500" /></button></div>)}</div>
                       </div>
                   )}
 
@@ -522,20 +550,47 @@ export default function Reports() {
             <Card className="bg-white border-slate-200 shadow-sm md:col-span-2">
                 <CardContent className="p-0">
                     {/* --- FILTER BAR (Embedded) --- */}
-                    <div className="flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl">
+                    <div className="flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl items-center">
+                        <Filter className="w-4 h-4 text-slate-400" />
+                        
+                        {/* NEW: Person Filter Input */}
+                        <div className="relative w-[160px]">
+                            <Input 
+                                placeholder="Filter people..." 
+                                value={personFilter} 
+                                onChange={(e) => setPersonFilter(e.target.value)} 
+                                className="h-8 text-xs bg-white pr-6"
+                            />
+                            {personFilter && (
+                                <button onClick={() => setPersonFilter("")} className="absolute right-2 top-2">
+                                    <X className="w-3 h-3 text-slate-400 hover:text-red-500" />
+                                </button>
+                            )}
+                        </div>
+
                         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                            <SelectTrigger className="w-[180px] h-8 text-xs"><SelectValue placeholder="Category" /></SelectTrigger>
+                            <SelectTrigger className="w-[160px] h-8 text-xs bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Categories</SelectItem>
                                 {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
                             </SelectContent>
                         </Select>
+                        
+                        <Select value={monthFilter} onValueChange={setMonthFilter}>
+                            <SelectTrigger className="w-[140px] h-8 text-xs bg-white"><SelectValue placeholder="Month" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Months</SelectItem>
+                                {monthOptions.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+
                         <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger className="w-[140px] h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                            <SelectTrigger className="w-[120px] h-8 text-xs bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
                             <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="resolved">Resolved</SelectItem></SelectContent>
                         </Select>
-                        {(categoryFilter !== 'all' || statusFilter !== 'all') && (
-                            <Button variant="ghost" size="sm" onClick={() => {setCategoryFilter('all'); setStatusFilter('all')}} className="h-8 text-xs">Reset</Button>
+
+                        {(categoryFilter !== 'all' || statusFilter !== 'all' || monthFilter !== 'all' || personFilter !== "") && (
+                            <Button variant="ghost" size="sm" onClick={() => {setCategoryFilter('all'); setStatusFilter('all'); setMonthFilter('all'); setPersonFilter('');}} className="h-8 text-xs text-red-500 hover:text-red-600 hover:bg-red-50">Reset</Button>
                         )}
                     </div>
 
@@ -546,7 +601,7 @@ export default function Reports() {
                         paginatedReports.map((report: any) => (
                             <div key={report.id} onClick={() => { setSelectedReport(report); setIsViewOpen(true); }} className="flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors">
                                 <div className="flex items-center gap-4">
-                                    <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color)}>
+                                    <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color || "bg-slate-100 text-slate-600")}>
                                         {(() => { const Icon = categories.find(c=>c.id===report.category)?.icon || FileText; return <Icon className="w-5 h-5" /> })()}
                                     </div>
                                     <div>
@@ -555,6 +610,12 @@ export default function Reports() {
                                                 <span>{format(new Date(report.dateOccurred), "MMM dd")}</span>
                                                 <span>•</span>
                                                 <span className="capitalize">{report.severity} Priority</span>
+                                                {report.partiesInvolved && (
+                                                    <>
+                                                        <span>•</span>
+                                                        <span className="max-w-[150px] truncate" title={report.partiesInvolved}>{report.partiesInvolved}</span>
+                                                    </>
+                                                )}
                                         </div>
                                     </div>
                                 </div>
@@ -570,45 +631,11 @@ export default function Reports() {
                                 Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredReports.length)} of {filteredReports.length}
                             </div>
                             <div className="flex items-center gap-1">
-                                <Button 
-                                    variant="outline" 
-                                    size="icon" 
-                                    className="h-7 w-7" 
-                                    onClick={() => setCurrentPage(1)} 
-                                    disabled={currentPage === 1}
-                                >
-                                    <ChevronsLeft className="w-3 h-3" />
-                                </Button>
-                                <Button 
-                                    variant="outline" 
-                                    size="icon" 
-                                    className="h-7 w-7" 
-                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} 
-                                    disabled={currentPage === 1}
-                                >
-                                    <ChevronLeft className="w-3 h-3" />
-                                </Button>
-                                <span className="text-xs font-medium px-2 min-w-[3rem] text-center">
-                                    {currentPage} / {totalPages || 1}
-                                </span>
-                                <Button 
-                                    variant="outline" 
-                                    size="icon" 
-                                    className="h-7 w-7" 
-                                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} 
-                                    disabled={currentPage === totalPages}
-                                >
-                                    <ChevronRight className="w-3 h-3" />
-                                </Button>
-                                <Button 
-                                    variant="outline" 
-                                    size="icon" 
-                                    className="h-7 w-7" 
-                                    onClick={() => setCurrentPage(totalPages)} 
-                                    disabled={currentPage === totalPages}
-                                >
-                                    <ChevronsRight className="w-3 h-3" />
-                                </Button>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}><ChevronsLeft className="w-3 h-3" /></Button>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="w-3 h-3" /></Button>
+                                <span className="text-xs font-medium px-2 min-w-[3rem] text-center">{currentPage} / {totalPages || 1}</span>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages}><ChevronRight className="w-3 h-3" /></Button>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}><ChevronsRight className="w-3 h-3" /></Button>
                             </div>
                         </div>
                     )}
@@ -624,19 +651,38 @@ export default function Reports() {
                     <CardDescription className="text-xs">Frequent names in recent incidents</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                         {stats.mostInvolved?.map(([name, count], i) => (
-                            <div key={name} className="flex items-center justify-between text-sm">
+                            <button 
+                                key={name} 
+                                onClick={() => setPersonFilter(name)}
+                                className={cn(
+                                    "w-full flex items-center justify-between text-sm p-2 rounded-lg transition-colors hover:bg-slate-100 text-left",
+                                    personFilter === name ? "bg-blue-50 border border-blue-100" : "bg-transparent"
+                                )}
+                            >
                                 <div className="flex items-center gap-2">
                                     <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold", i === 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600")}>
                                         {i + 1}
                                     </span>
-                                    <span className="text-slate-700 font-medium truncate max-w-[120px]" title={name}>{name}</span>
+                                    <span className={cn("font-medium truncate max-w-[120px]", personFilter === name ? "text-blue-700" : "text-slate-700")} title={name}>
+                                        {name}
+                                    </span>
                                 </div>
-                                <Badge variant="secondary" className="text-[10px]">{count} Reports</Badge>
-                            </div>
+                                <Badge variant="secondary" className="text-[10px] bg-white border border-slate-100">{count}</Badge>
+                            </button>
                         ))}
                         {(!stats.mostInvolved || stats.mostInvolved.length === 0) && <div className="text-center text-slate-400 text-xs py-4">No data available</div>}
+                        
+                        {personFilter && !stats.mostInvolved.some(([n]) => n === personFilter) && (
+                            <div className="mt-4 pt-4 border-t border-slate-100">
+                                <p className="text-xs text-slate-400 mb-1">Active Filter:</p>
+                                <Badge variant="outline" className="text-blue-600 bg-blue-50 border-blue-100 flex justify-between">
+                                    {personFilter} 
+                                    <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => setPersonFilter("")} />
+                                </Badge>
+                            </div>
+                        )}
                     </div>
                 </CardContent>
             </Card>
@@ -708,7 +754,7 @@ export default function Reports() {
                     <DialogHeader>
                         <div className="flex items-center gap-3 mb-2">
                             <Badge variant="outline" className="uppercase tracking-wider text-[10px]">
-                                {categories.find(c => c.id === selectedReport.category)?.label || "Report"}
+                                {categories.find(c => c.id === selectedReport.category)?.label || selectedReport.category}
                             </Badge>
                             <Badge className={cn("capitalize", 
                                 selectedReport.severity === 'critical' ? "bg-red-100 text-red-700 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"
@@ -767,13 +813,11 @@ export default function Reports() {
                             <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                                 <h4 className="text-sm font-bold text-blue-900 mb-3">Additional Details</h4>
                                 <div className="grid grid-cols-1 gap-2">
-                                    {/* Render Items List if property damage */}
                                     {selectedReport.details.items && Array.isArray(selectedReport.details.items) ? (
                                         <div className="space-y-2">
                                             {selectedReport.details.items.map((item: any, idx: number) => (
                                                 <div key={idx} className="flex justify-between text-sm border-b border-blue-100 pb-1 last:border-0">
                                                     <span>{item.quantity}x {item.name}</span>
-                                                    <span className="font-mono text-blue-800">${item.cost}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -794,7 +838,7 @@ export default function Reports() {
                         )}
                     </div>
 
-                     <DialogFooter className="flex-row justify-between sm:justify-between">
+                      <DialogFooter className="flex-row justify-between sm:justify-between">
                         <Button variant="ghost" onClick={() => setIsViewOpen(false)}>Close</Button>
                         <Button 
                             variant={selectedReport.status === 'resolved' ? "outline" : "default"}
@@ -818,12 +862,7 @@ export default function Reports() {
                     </DialogFooter>
                 </>
             )}
-
-           
-
         </DialogContent>
-
-         
       </Dialog>
     </div>
   );
