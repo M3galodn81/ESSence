@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useDeferredValue } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,7 +20,8 @@ import {
   Briefcase,
   AlertTriangle,
   UserCog,
-  UserCheck
+  UserCheck,
+  Search
 } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -37,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { BentoCard } from "@/components/custom/bento-card";
 
+// ... [Schemas remain unchanged] ...
 const createUserSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
@@ -88,6 +90,10 @@ export default function UserManagement() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [isDemotionAlertOpen, setIsDemotionAlertOpen] = useState(false);
+  
+  // Search State
+  const [searchQuery, setSearchQuery] = useState("");
+  const deferredQuery = useDeferredValue(searchQuery);
 
   const createForm = useForm<CreateUserForm>({
     resolver: zodResolver(createUserSchema),
@@ -111,9 +117,9 @@ export default function UserManagement() {
   const editForm = useForm<EditUserForm>({
     resolver: zodResolver(editUserSchema),
     defaultValues: {
-        annualLeaveBalanceLimit: "",
-        sickLeaveBalanceLimit: "",
-        serviceIncentiveLeaveBalanceLimit: "",
+       annualLeaveBalanceLimit: "",
+       sickLeaveBalanceLimit: "",
+       serviceIncentiveLeaveBalanceLimit: "",
     }
   });
 
@@ -130,39 +136,44 @@ export default function UserManagement() {
     enabled: user?.role === "admin" || user?.role === "manager",
   });
 
-  const managers = users.filter((u: any) => u.role === "manager" );
+  const filteredUsers = users.filter((u: any) => {
+    const searchStr = `${u.firstName} ${u.lastName} ${u.email} ${u.employeeId} ${u.username}`.toLowerCase();
+    return searchStr.includes(deferredQuery.toLowerCase());
+  });
 
-  const generateNextEmployeeId = (role: string) => {
-    let prefix = "EMP";
-    if (role === "manager") prefix = "MAN";
-    if (role === "admin") prefix = "ADM";
-    if (role === "payroll_officer") prefix = "PAY";
-
-    const existingIds = users
-      .map((u: any) => u.employeeId)
-      .filter((id: string) => id && id.startsWith(prefix));
-
-    let maxNum = 0;
-    existingIds.forEach((id: string) => {
-      const parts = id.split("-");
-      if (parts.length === 2) {
-        const num = parseInt(parts[1], 10);
-        if (!isNaN(num) && num > maxNum) {
-          maxNum = num;
-        }
-      }
-    });
-
-    const nextNum = (maxNum + 1).toString().padStart(3, "0");
-    return `${prefix}-${nextNum}`;
-  };
+  const managers = users.filter((u: any) => u.role === "manager");
 
   useEffect(() => {
     if (isCreateDialogOpen && users.length > 0) {
+      const generateNextEmployeeId = (role: string) => {
+        let prefix = "EMP";
+        if (role === "manager") prefix = "MAN";
+        if (role === "admin") prefix = "ADM";
+        if (role === "payroll_officer") prefix = "PAY";
+
+        const existingIds = users
+          .map((u: any) => u.employeeId)
+          .filter((id: string) => id && id.startsWith(prefix));
+
+        let maxNum = 0;
+        existingIds.forEach((id: string) => {
+          const parts = id.split("-");
+          if (parts.length === 2) {
+            const num = parseInt(parts[1], 10);
+            if (!isNaN(num) && num > maxNum) {
+              maxNum = num;
+            }
+          }
+        });
+
+        const nextNum = (maxNum + 1).toString().padStart(3, "0");
+        return `${prefix}-${nextNum}`;
+      };
+
       const nextId = generateNextEmployeeId(watchedCreateRole);
       createForm.setValue("employeeId", nextId);
     }
-  }, [watchedCreateRole, isCreateDialogOpen, users, createForm.setValue]);
+  }, [watchedCreateRole, isCreateDialogOpen, users, createForm]);
 
   const createUserMutation = useMutation({
     mutationFn: async (data: CreateUserForm) => {
@@ -400,12 +411,11 @@ export default function UserManagement() {
     return false;
   };
 
-  // Calculate stats for Bento
   const stats = {
-      total: users.length,
-      admins: users.filter((u: any) => u.role === 'admin').length,
-      managers: users.filter((u: any) => u.role === 'manager').length,
-      employees: users.filter((u: any) => u.role === 'employee').length,
+    total: users.length,
+    admins: users.filter((u: any) => u.role === 'admin').length,
+    managers: users.filter((u: any) => u.role === 'manager').length,
+    employees: users.filter((u: any) => u.role === 'employee').length,
   };
 
   if (user?.role !== "admin" && user?.role !== "manager") {
@@ -431,6 +441,20 @@ export default function UserManagement() {
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">User Management</h1>
           <p className="text-slate-500 mt-1 text-sm">Create and manage user accounts and permissions</p>
         </div>
+
+      <div className="flex flex-col sm:flex-row gap-3 items-center">
+        {/* Search Bar */}
+        <div className="relative w-full sm:w-64">
+          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+            <Search className="h-4 w-4 text-slate-400" /> 
+          </div>
+          <Input
+            placeholder="Search users..."
+            className="pl-10 rounded-full bg-white/60 border-slate-200/60 focus:bg-white transition-all shadow-sm"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
           setIsCreateDialogOpen(open);
           if (!open) createForm.reset();
@@ -446,7 +470,6 @@ export default function UserManagement() {
               <DialogDescription>Add a new user to the system</DialogDescription>
             </DialogHeader>
             <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-4 mt-2">
-              {/* ... Create Form Content (Standardized Inputs) ... */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>First Name *</Label>
@@ -525,6 +548,7 @@ export default function UserManagement() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Bento Stats */}
@@ -538,25 +562,37 @@ export default function UserManagement() {
       {/* Glass User Grid */}
       {usersLoading ? (
         <div className="text-center py-12 text-slate-400">Loading users...</div>
-      ) : users.length === 0 ? (
-        <div className="text-center py-20 bg-white/40 border border-dashed border-slate-200 rounded-3xl">
-           <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-           <p className="text-slate-500">No users found.</p>
+      ) : filteredUsers.length === 0 ? (
+        // ADDED w-full here to fix the width issue
+        <div className="w-full text-center py-20 bg-white/40 border border-dashed border-slate-200 rounded-3xl">
+          <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <p className="text-slate-500 mb-4">
+            {searchQuery ? `No users found matching "${searchQuery}"` : "No users found."}
+          </p>
+          {searchQuery && (
+            <Button 
+              variant="outline" 
+              onClick={() => setSearchQuery("")}
+              className="rounded-full"
+            >
+              Clear Search
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {users.map((u: any) => (
+          {filteredUsers.map((u: any) => (
             <Card key={u.id} className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm hover:shadow-md transition-all rounded-2xl overflow-hidden group">
               <CardContent className="p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-4">
-                     <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-lg font-bold text-slate-600 border border-slate-200">
+                      <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-lg font-bold text-slate-600 border border-slate-200">
                         {u.firstName.charAt(0)}{u.lastName.charAt(0)}
-                     </div>
-                     <div>
+                      </div>
+                      <div>
                         <h3 className="font-bold text-slate-900">{u.firstName} {u.lastName}</h3>
                         <p className="text-xs text-slate-500">{u.email}</p>
-                     </div>
+                      </div>
                   </div>
                   {getRoleBadge(u.role)}
                 </div>
@@ -578,15 +614,15 @@ export default function UserManagement() {
 
                 {(user?.role === "admin" || canModifyUser(u)) && (
                   <div className="flex items-center gap-2 pt-4 border-t border-slate-100/50 opacity-60 group-hover:opacity-100 transition-opacity">
-                     <Button size="sm" variant="ghost" className="flex-1 h-8 bg-white border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-100 rounded-lg text-xs" onClick={() => handleEdit(u)}>
+                      <Button size="sm" variant="ghost" className="flex-1 h-8 bg-white border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-100 rounded-lg text-xs" onClick={() => handleEdit(u)}>
                         <Edit className="w-3.5 h-3.5 mr-1.5" /> Edit
-                     </Button>
-                     <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-white border border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100 rounded-lg" onClick={() => handleChangePassword(u)} title="Change Password">
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-white border border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100 rounded-lg" onClick={() => handleChangePassword(u)} title="Change Password">
                         <Key className="w-3.5 h-3.5" />
-                     </Button>
-                     <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-white border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100 rounded-lg" onClick={() => handleDelete(u)} disabled={u.id === user.id} title="Delete">
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-white border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100 rounded-lg" onClick={() => handleDelete(u)} disabled={u.id === user.id} title="Delete">
                         <Trash2 className="w-3.5 h-3.5" />
-                     </Button>
+                      </Button>
                   </div>
                 )}
               </CardContent>
@@ -602,7 +638,6 @@ export default function UserManagement() {
             <DialogTitle>Edit User</DialogTitle>
           </DialogHeader>
           <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4 mt-2">
-             {/* Same structure as create form but populated */}
              <div className="grid grid-cols-2 gap-4">
                 <div><Label>First Name</Label><Input {...editForm.register("firstName")} className="rounded-xl" /></div>
                 <div><Label>Last Name</Label><Input {...editForm.register("lastName")} className="rounded-xl" /></div>
@@ -641,7 +676,7 @@ export default function UserManagement() {
                    <Select value={editForm.watch("managerId") || ""} onValueChange={(val) => editForm.setValue("managerId", val)}>
                       <SelectTrigger className="rounded-xl"><SelectValue placeholder="Select Manager" /></SelectTrigger>
                       <SelectContent className="rounded-xl">
-                         {managers.map((m: any) => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}
+                          {managers.map((m: any) => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}
                       </SelectContent>
                    </Select>
                 </div>

@@ -92,21 +92,179 @@
 }
 
 @layer components {
-  /* Typography */
-  
-  /* Header Title */
+  /* =========================
+     PAGE / LAYOUT
+  ========================== */
+
+  .page {
+    @apply min-h-screen bg-background text-foreground font-sans;
+  }
+
+  .page-container {
+    @apply max-w-7xl mx-auto px-6 md:px-8 py-6 md:py-8;
+  }
+
+  .page-section {
+    @apply space-y-6;
+  }
+
+  /* =========================
+     TYPOGRAPHY
+  ========================== */
+
   .header-title{
     @apply text-2xl font-bold tracking-tight text-slate-900;
-  }
+  } 
 
   .header-subtitle{
     @apply text-sm font-medium text-slate-500;
   }
 
-  /* Cards */
+  .page-title {
+    @apply text-3xl font-bold tracking-tight text-slate-900;
+  }
+
+  .page-subtitle {
+    @apply text-slate-500 mt-1 text-sm;
+  }
+
+  .section-title {
+    @apply text-lg font-semibold tracking-tight;
+  }
+
+  .section-subtitle {
+    @apply text-xs text-muted-foreground;
+  }
+
+  /* =========================
+     CARDS
+  ========================== */
+
   .glass-card{
     @apply bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden;
   }
-
   
+  .card-base {
+    @apply bg-card text-card-foreground border rounded-[var(--radius)] shadow-sm;
+  }
+
+  .card-glass {
+    @apply bg-white/60 backdrop-blur-md border border-border shadow-sm rounded-3xl;
+  }
+
+  .card-header {
+    @apply flex items-center justify-between gap-4 px-6 py-4 border-b;
+  }
+
+  .card-content {
+    @apply px-6 py-4;
+  }
+
+  /* =========================
+     BENTO / STATS CARDS
+  ========================== */
+
+  .bento-grid {
+    @apply grid gap-4;
+  }
+
+  .bento-card {
+    @apply card-base p-4 flex items-center gap-4;
+  }
+
+  .bento-icon {
+    @apply h-10 w-10 rounded-xl flex items-center justify-center;
+  }
+
+  .bento-label {
+    @apply text-xs font-medium text-muted-foreground;
+  }
+
+  .bento-value {
+    @apply text-xl font-bold;
+  }
+
+  /* =========================
+     TABLES
+  ========================== */
+
+  .table-wrapper {
+    @apply overflow-x-auto;
+  }
+
+  .table {
+    @apply w-full text-sm text-left;
+  }
+
+  .table-head {
+    @apply bg-muted border-b;
+  }
+
+  .table-head-cell {
+    @apply px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground;
+  }
+
+  .table-row {
+    @apply transition-colors hover:bg-muted/40;
+  }
+
+  .table-cell {
+    @apply px-6 py-4 whitespace-nowrap;
+  }
+
+  /* =========================
+     STATUS BADGES
+  ========================== */
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize border;
+  }
+
+  .badge-success {
+    @apply bg-emerald-50 text-emerald-700 border-emerald-100;
+  }
+
+  .badge-warning {
+    @apply bg-amber-50 text-amber-700 border-amber-100;
+  }
+
+  .badge-danger {
+    @apply bg-rose-50 text-rose-700 border-rose-100;
+  }
+
+  .badge-neutral {
+    @apply bg-muted text-foreground border-border;
+  }
+
+  /* =========================
+     CONTROLS / FILTERS
+  ========================== */
+
+  .filter-bar {
+    @apply flex flex-col lg:flex-row gap-4 items-center;
+  }
+
+  .search-input {
+    @apply h-11 rounded-xl bg-background border border-input pl-10;
+  }
+
+  .toolbar {
+    @apply flex items-center gap-2 bg-background border border-border rounded-xl p-1;
+  }
+
+  /* =========================
+     BUTTONS (semantic)
+  ========================== */
+
+  .btn-primary {
+    @apply bg-primary text-primary-foreground rounded-xl px-4 py-2 font-medium hover:opacity-90;
+  }
+
+  .btn-outline {
+    @apply border border-border bg-background rounded-xl px-4 py-2 hover:bg-muted;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent hover:bg-muted rounded-full;
+  }
 }

@@ -137,6 +137,7 @@ function ViewAnnouncementDialog({
           <div className="flex gap-3 w-full sm:w-auto justify-end">
             <Button variant="outline" onClick={onClose} className="rounded-full">Close</Button>
             
+            {/* TODO: Fix Mark as Week*/}
             {isReadByMe ? (
               <Button 
                 disabled 
