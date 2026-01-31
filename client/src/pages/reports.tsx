@@ -72,14 +72,14 @@ export default function Reports() {
   const categories = [
     { 
         id: "awan", 
-        label: "AWAN (Absent With Notice)", 
+        label: "AWAN (Away With Advanced Notice)", 
         icon: Clock, 
         color: "bg-blue-100 text-blue-700", 
         fill: "#3b82f6" 
     },
     { 
         id: "awol", 
-        label: "AWOL (Absent Without Leave)", 
+        label: "AWOL (Absent Without Offical Leave)", 
         icon: UserX, 
         color: "bg-red-100 text-red-700", 
         fill: "#ef4444" 

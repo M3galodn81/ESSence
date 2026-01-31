@@ -109,7 +109,7 @@ export default function Sidebar({ className }: SidebarProps) {
           />
         </div>
         <div className="mt-4 text-center">
-          <h1 className="font-bold text-lg text-white tracking-tight">ESSence</h1>
+          <h1 className="font-bold text-lg text-white tracking-tight">ESSENCE</h1>
           {/* <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Self Service</p> */}
         </div>
       </div>
