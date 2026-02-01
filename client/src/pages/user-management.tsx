@@ -441,7 +441,7 @@ export default function UserManagement() {
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">User Management</h1>
           <p className="text-slate-500 mt-1 text-sm">Create and manage user accounts and permissions</p>
         </div>
-
+      
       <div className="flex flex-col sm:flex-row gap-3 items-center">
         {/* Search Bar */}
         <div className="relative w-full sm:w-64">

@@ -60,41 +60,20 @@ export default function LaborCostAnalytics() {
     },
   });
 
-  // Helper for calculations
+  const getMetricConfig = (percentage: number) => {
+    return LABOR_THRESHOLDS.find((t) => percentage <= t.max) || LABOR_THRESHOLDS[LABOR_THRESHOLDS.length - 1];
+  };
+
   const calculateMetrics = (totalSales: number, totalLaborCost: number) => {
-    const salesInCentavos = Math.round(totalSales * 100);
-    const laborInCentavos = Math.round(totalLaborCost * 100);
+    const percentage = totalSales > 0 ? (totalLaborCost / totalSales) * 100 : 0;
+    const config = getMetricConfig(percentage);
 
-    let percentage = 0;
-    if (salesInCentavos > 0) {
-        percentage = (laborInCentavos / salesInCentavos) * 10000;
-    } else if (laborInCentavos > 0) {
-        percentage = 1000000; 
-    }
-    
-    let status = "Poor";
-    let performanceRating = "critical";
-    
-    if (percentage < 3000) {
-      status = "Excellent";
-      performanceRating = "good";
-    } else if (percentage < 3500) {
-      status = "High";
-      performanceRating = "good";
-    } else if (percentage < 4500) {
-      status = "High";
-      performanceRating = "warning";
-    } else if (percentage < 5000) {
-      status = "Poor";
-      performanceRating = "warning";
-    }
-
-    return { 
-      salesInCentavos, 
-      laborInCentavos, 
-      percentage: Math.round(percentage), 
-      status, 
-      performanceRating 
+    return {
+      totalSales,
+      totalLaborCost,
+      percentage: parseFloat(percentage.toFixed(2)),
+      status: config.status,
+      performanceRating: config.rating,
     };
   };
 
@@ -106,8 +85,8 @@ export default function LaborCostAnalytics() {
         month: data.month,
         year: data.year,
         notes: data.notes,
-        totalSales: metrics.salesInCentavos,
-        totalLaborCost: metrics.laborInCentavos,
+        totalSales: metrics.totalSales,
+        totalLaborCost: metrics.totalLaborCost,
         laborCostPercentage: metrics.percentage,
         status: metrics.status,
         performanceRating: metrics.performanceRating,
@@ -115,19 +94,15 @@ export default function LaborCostAnalytics() {
       return await res.json();
     },
     onSuccess: () => {
-      toast.success("Data added", { description: "Labor cost data has been added successfully." });
+      toast.success("Data added");
       queryClient.invalidateQueries({ queryKey: ["/api/labor-cost"] });
       handleCloseDialog();
-    },
-    onError: (error: Error) => {
-      toast.error("Failed to add data", { description: error.message });
     },
   });
 
   const updateLaborCostMutation = useMutation({
     mutationFn: async (data: LaborCostForm) => {
       if (!editingRecord) throw new Error("No record selected");
-      
       const metrics = calculateMetrics(data.totalSales, data.totalLaborCost);
 
       const res = await fetch(`/api/labor-cost/${editingRecord.id}`, {
@@ -135,9 +110,6 @@ export default function LaborCostAnalytics() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             ...metrics,
-            totalSales: metrics.salesInCentavos,
-            totalLaborCost: metrics.laborInCentavos,
-            laborCostPercentage: metrics.percentage,
             month: data.month,
             year: data.year,
             notes: data.notes
@@ -148,12 +120,9 @@ export default function LaborCostAnalytics() {
       return await res.json();
     },
     onSuccess: () => {
-      toast.success("Data updated", { description: "Record updated successfully." });
+      toast.success("Data updated");
       queryClient.invalidateQueries({ queryKey: ["/api/labor-cost"] });
       handleCloseDialog();
-    },
-    onError: (error: Error) => {
-      toast.error("Update failed", { description: error.message });
     },
   });
 
@@ -188,8 +157,8 @@ export default function LaborCostAnalytics() {
     form.reset({
         month: record.month,
         year: record.year,
-        totalSales: record.totalSales / 100,
-        totalLaborCost: record.totalLaborCost / 100,
+        totalSales: record.totalSales, // Directly using value
+        totalLaborCost: record.totalLaborCost, // Directly using value
         notes: record.notes || "",
     });
     setIsDialogOpen(true);
@@ -206,7 +175,7 @@ export default function LaborCostAnalytics() {
       style: 'currency',
       currency: 'PHP',
       maximumFractionDigits: 0,
-    }).format(amount / 100);
+    }).format(amount);
   };
 
   // New formatting for compact numbers (e.g. 2.5m)
@@ -229,13 +198,9 @@ export default function LaborCostAnalytics() {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, { color: string; icon: any }> = {
-      "Excellent": { color: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: CheckCircle },
-      "High": { color: "bg-amber-100 text-amber-700 border-amber-200", icon: AlertCircle },
-      "Poor": { color: "bg-rose-100 text-rose-700 border-rose-200", icon: AlertCircle },
-    };
-    const config = variants[status] || variants["High"];
-    const Icon = config.icon;
+    const config = LABOR_THRESHOLDS.find(t => t.status === status) || LABOR_THRESHOLDS[2];
+    const Icon = config.rating === "good" ? CheckCircle : AlertCircle;
+
     return (
       <Badge variant="outline" className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full ${config.color}`}>
         <Icon className="w-3 h-3" />
@@ -253,22 +218,16 @@ export default function LaborCostAnalytics() {
 
   const chartData = useMemo(() => {
     if (!laborCostData) return [];
-    
     return [...laborCostData]
-      .sort((a, b) => {
-        // Sort by year then month ascending
-        if (a.year !== b.year) return a.year - b.year;
-        return a.month - b.month;
-      })
-      .slice(-timeRange) // Take the last N elements based on filter
+      .sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
+      .slice(-timeRange)
       .map((data: LaborCostData) => ({
-        // Formatting the X-Axis label as "Jan '24" for clarity
         label: `${getMonthName(data.month).substring(0, 3)} '${data.year.toString().slice(-2)}`,
         fullMonth: getMonthName(data.month),
         year: data.year,
-        sales: data.totalSales / 100,
-        laborCost: data.totalLaborCost / 100,
-        laborPercent: data.laborCostPercentage / 100,
+        sales: data.totalSales,
+        laborCost: data.totalLaborCost,
+        laborPercent: data.laborCostPercentage,
       }));
   }, [laborCostData, timeRange]);
 
@@ -363,24 +322,23 @@ export default function LaborCostAnalytics() {
                         <circle cx="50" cy="50" r="40" fill="none" stroke="#1e293b" strokeWidth="10" />
                         <circle 
                            cx="50" cy="50" r="40" fill="none" 
-                           // Cap visual progress at 100%
-                           strokeDasharray={`${Math.min(100, currentMonthData.laborCostPercentage / 100) * 2.51} 251`}
-                           stroke={currentMonthData.laborCostPercentage < 3500 ? "#10b981" : currentMonthData.laborCostPercentage < 4500 ? "#f59e0b" : "#ef4444"}
+                           // Visual progress: Ideal is 12%, so we multiply percentage to fill gauge meaningfully
+                           strokeDasharray={`${Math.min(100, currentMonthData.laborCostPercentage * 4) * 2.51 / 100} 251`}
+                           stroke={currentMonthData.laborCostPercentage <= 11 ? "#10b981" : currentMonthData.laborCostPercentage <= 12 ? "#3b82f6" : "#ef4444"}
                            strokeWidth="10"
                            strokeLinecap="round"
-                           className="drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]"
                         />
                      </svg>
                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className={`font-bold ${currentMonthData.laborCostPercentage > 99900 ? 'text-3xl' : 'text-5xl'}`}>
-                           {formatCompactNumber(currentMonthData.laborCostPercentage / 100)}<span className="text-2xl text-slate-400">%</span>
+                        <span className="text-4xl font-bold">
+                           {currentMonthData.laborCostPercentage/100}<span className="text-2xl text-slate-400">%</span>
                         </span>
                         <span className="text-xs font-medium text-slate-400 uppercase mt-1">Labor / Sales</span>
                      </div>
                   </div>
                   <div className="mt-6 text-center space-y-1">
-                     <p className="text-lg font-semibold">{currentMonthData.status} Rating</p>
-                     <p className="text-sm text-slate-400">Target: &lt; 30%</p>
+                    <p className="text-lg font-semibold">{currentMonthData.status} Rating</p>
+                    <p className="text-sm text-slate-400">Target: {IDEAL_TARGET}% Ideal</p>
                   </div>
               </CardContent>
            </Card>
@@ -421,13 +379,9 @@ export default function LaborCostAnalytics() {
                  </CardTitle>
               </CardHeader>
               <CardContent>
-                 <p className="text-slate-700 font-medium leading-relaxed">
-                    {currentMonthData.laborCostPercentage < 3500
-                      ? "Excellent work! Your labor costs are optimized. This efficiency maximizes profitability."
-                      : currentMonthData.laborCostPercentage < 4500
-                      ? "Performance is stable, but watch out for overtime spikes during low-sales periods."
-                      : "Labor costs are eating into margins. Consider reviewing scheduling efficiency or increasing sales targets."}
-                 </p>
+                <p className="text-slate-700 font-medium leading-relaxed">
+                  {getMetricConfig(currentMonthData.laborCostPercentage / 100).description}
+                </p>
                  {improvement && parseFloat(improvement) > 0 && (
                     <div className="mt-4 p-3 bg-emerald-100/50 rounded-xl border border-emerald-100 flex items-center gap-3">
                        <div className="bg-emerald-500 text-white p-1.5 rounded-full"><TrendingDown className="w-4 h-4" /></div>

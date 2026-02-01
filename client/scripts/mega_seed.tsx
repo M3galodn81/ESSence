@@ -514,27 +514,51 @@ async function seed() {
   await db.insert(schedules).values(shiftData);
 
   // 7. Analytics Data
-  console.log("Generating analytics...");
+  console.log("Generating analytics with 9-13% labor cost variance...");
   const laborData = [];
   const payrollByMonth = payslipsToInsert.reduce((acc: any, p: any) => {
       const key = `${p.year}-${p.month}`;
       if (!acc[key]) acc[key] = 0;
-      acc[key] += p.grossPay;
+      acc[key] += p.grossPay; // This is in "cents" (grossPay * 100)
       return acc;
   }, {});
 
-  for (const [key, totalCost] of Object.entries(payrollByMonth)) {
+  for (const [key, totalCostInCents] of Object.entries(payrollByMonth)) {
       const [y, m] = key.split('-');
+      
+      // Randomize labor cost percentage between 9.0 and 13.0
+      // Math.random() * (max - min) + min
+      const randomPercentage = Math.random() * (13 - 9) + 9;
+      
+      // Calculate Total Sales based on the labor cost and the random percentage
+      // formula: Sales = LaborCost / Percentage
+      // Example: If Labor is 100k and % is 10, Sales is 1M.
+      const totalSales = (totalCostInCents as number) / (randomPercentage / 100);
+
+      // Determine status based on your 12% benchmark
+      let status = "Warning";
+      let performanceRating = "warning";
+
+      if (randomPercentage < 11) {
+        status = "Excellent";
+        performanceRating = "good";
+      } else if (randomPercentage <= 12) {
+        status = "Good";
+        performanceRating = "good";
+      }
+
       laborData.push({
-        month: parseInt(m), year: parseInt(y),
-        totalSales: Math.round((totalCost as number) * 0.04 * 100), // 25% cost
-        totalLaborCost: totalCost as number, laborCostPercentage: 2500,
-        status: "Excellent", performanceRating: "A", notes: "Seed Data"
+        month: parseInt(m), 
+        year: parseInt(y),
+        totalSales: Math.round(totalSales), // Stored as integer
+        totalLaborCost: totalCostInCents as number, // Already stored as integer
+        laborCostPercentage: Math.round(randomPercentage * 100), // stored as integer (e.g., 1250 for 12.5%)
+        status: status, 
+        performanceRating: performanceRating, 
+        notes: `Seed Data: Calculated at ${randomPercentage.toFixed(2)}% efficiency.`
       });
   }
   await db.insert(laborCostData).values(laborData);
-
-  console.log("Seed completed successfully!");
 }
 
 seed().catch((err) => {
