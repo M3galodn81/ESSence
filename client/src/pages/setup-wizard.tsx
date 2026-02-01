@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Shield, CheckCircle, UserCog, Lock, Server, ArrowRight } from "lucide-react";
+import { toast } from "sonner";
 
 const adminSetupSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
@@ -16,6 +17,7 @@ const adminSetupSchema = z.object({
   email: z.string().email("Invalid email address"),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
+  
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
@@ -52,7 +54,8 @@ export default function SetupWizard() {
 
       if (!response.ok) {
         const error = await response.text();
-        throw new Error(error || "Failed to create admin account");
+       
+        toast.error("Setup failed: " + (error || "Unknown error"));
       }
 
       return response.json();
@@ -60,6 +63,7 @@ export default function SetupWizard() {
     onSuccess: () => {
       setIsComplete(true);
     },
+
   });
 
   const onSubmit = (data: AdminSetupForm) => {

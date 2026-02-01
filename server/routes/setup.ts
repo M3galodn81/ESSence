@@ -29,6 +29,7 @@ const router = Router();
         role: "admin",
         department: "Administration",
         position: "System Administrator",
+        employeeId: "ADM-001"
       };
       const admin = await storage.createUser(adminData);
       res.json(admin);

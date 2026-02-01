@@ -1,7 +1,7 @@
 import { db } from "../../db";
 import { users, User, InsertUser } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
-import { BaseStorage } from "./base-storage";
+import { BaseStorage } from "../table/base-storage";
 
 export class UserStorage extends BaseStorage{
    async getUser(id: string): Promise<User | undefined> {
@@ -22,7 +22,7 @@ export class UserStorage extends BaseStorage{
       const result = await db.insert(users).values(insertUser).returning();
   
       await this.createActivity({
-        userId: userId,
+        userId: userId || result[0].id,
         type: "user_created",
         description: `User ${insertUser.firstName} ${insertUser.lastName} created`,
       });
