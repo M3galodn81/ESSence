@@ -1,4 +1,5 @@
-import { DbStorage } from "./storage/table/db-storage";
+import { DbStorage } from "./table/db-storage";
+import { sqlite } from "../db";
 
 export let storage: DbStorage;
 
