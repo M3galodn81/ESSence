@@ -62,11 +62,11 @@ export default function LeaveManagement() {
   const [rejectionRequestId, setRejectionRequestId] = useState<string | null>(null);
 
   const { data: leaveRequests, isLoading } = useQuery<LeaveRequest[]>({
-    queryKey: ["/api/leave-requests"],
+    queryKey: ["/api/leave-management"],
   });
 
   const { data: pendingRequests, isLoading: pendingLoading } = useQuery<LeaveRequest[]>({
-    queryKey: ["/api/leave-requests/pending"],
+    queryKey: ["/api/leave-management/pending"],
     enabled: user?.role === 'manager' || user?.role === 'admin',
   });
 
@@ -118,7 +118,7 @@ export default function LeaveManagement() {
 
       const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
-      const res = await apiRequest("POST", "/api/leave-requests", {
+      const res = await apiRequest("POST", "/api/leave-management", {
         ...data,
         startDate,
         endDate,
@@ -128,24 +128,25 @@ export default function LeaveManagement() {
     },
     onSuccess: () => {
       toast.success("Leave request submitted", { description: "Your leave request has been submitted for approval." });
-      queryClient.invalidateQueries({ queryKey: ["/api/leave-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave-management"] });
       setIsDialogOpen(false);
       form.reset();
     },
     onError: (error: Error) => {
+      console.error("Error submitting leave request:", error);
       toast.error("Submission failed", { description: error.message });
     },
   });
 
   const approveLeaveRequestMutation = useMutation({
     mutationFn: async ({ id, status, comments }: { id: string; status: string; comments?: string }) => {
-      const res = await apiRequest("PATCH", `/api/leave-requests/${id}`, { status, comments });
+      const res = await apiRequest("PATCH", `/api/leave-management/${id}`, { status, comments });
       return await res.json();
     },
     onSuccess: (data, variables) => {
       toast.success(`Leave request ${variables.status}`, { description: `The leave request has been ${variables.status} successfully.` });
-      queryClient.invalidateQueries({ queryKey: ["/api/leave-requests/pending"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/leave-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave-management/pending"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave-management"] });
 
       if (variables.status === 'rejected') {
         setIsRejectDialogOpen(false);

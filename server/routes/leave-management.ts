@@ -21,6 +21,7 @@ const router = Router();
       const leaveRequest = await storage.createLeaveRequest(apiData);
       res.json(leaveRequest);
     } catch (error) {
+      console.error(error);
       if (error instanceof ZodError) return res.status(400).json({ message: "Invalid leave request data", debug: error.errors });
       return res.sendStatus(500);
     }
@@ -43,7 +44,7 @@ const router = Router();
   });
 
   // --- Edit Pending Leave Requests (for Managers/Admins) ---
-  router.patch("/id", async (req, res) => {
+  router.patch("/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const user = req.user!;
     if (user.role !== 'manager' && user.role !== 'admin') return res.status(403).json({ message: "Access denied" });

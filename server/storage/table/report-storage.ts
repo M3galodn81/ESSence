@@ -11,8 +11,8 @@ export class ReportStorage extends BaseStorage{
     await this.createActivity({
       userId: report.userId,
       type: "report_created",
-      description: `${report.type === 'incident' ? 'Incident' : 'Breakage'} report submitted: ${report.title}`,
-      metadata: { reportId: newReport.id, reportType: report.type },
+      details: `${report.type === 'incident' ? 'Incident' : 'Breakage'} report submitted: ${report.title}`,
+      // metadata: { reportId: newReport.id, reportType: report.type },
     });
 
     return newReport;

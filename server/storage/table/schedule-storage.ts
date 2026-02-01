@@ -5,8 +5,8 @@ import { BaseStorage } from "./base-storage";
 
 export class ScheduleStorage extends BaseStorage{
     async createSchedule(schedule: InsertSchedule): Promise<Schedule> {
-    const result = await db.insert(schedules).values(schedule).returning();
-    return result[0];
+        const result = await db.insert(schedules).values(schedule).returning();
+        return result[0];
     }
 
     async getSchedulesByUser(userId: string, startDate?: Date, endDate?: Date): Promise<Schedule[]> {

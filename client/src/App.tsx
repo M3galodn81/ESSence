@@ -27,6 +27,7 @@ import MainLayout from "@/components/layout/main-layout";
 import PayslipHistory from "@/pages/payslip-history";
 import AdminAttendance from "@/pages/admin-attendance";
 import HolidayCalendar from "@/pages/holiday-calendar";
+import QRAttendance from "@/pages/qr-attendance";
 
 function Router() {
   const { needsSetup, isLoading } = useAuth();
@@ -138,6 +139,11 @@ function Router() {
       <ProtectedRoute path="/holiday-calendar" component={() => (
         <MainLayout>
           <HolidayCalendar />
+        </MainLayout>
+      )} />
+      <ProtectedRoute path="/qr-attendance" component={() => (
+        <MainLayout>
+          <QRAttendance />
         </MainLayout>
       )} />
 

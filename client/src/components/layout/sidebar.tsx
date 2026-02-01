@@ -40,6 +40,7 @@ const navigationItems = [
   { path: "/schedules", label: "My Schedule", icon: Clock, roles: ["employee"] },
   { path: "/reports", label: "Reports", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
   { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "admin", "payroll_officer"] },
+  { path: "/qr-attendance", label: "QR Attendance", icon: FileText, roles: ["manager", "admin"] },
 ];
 
 const managementItems = [

@@ -48,7 +48,8 @@ router.get("/", async (req, res) => {
         id: payslips.id,
         generatedAt: payslips.generatedAt,
         month: payslips.month,
-        year: payslips.year
+        year: payslips.year,
+        period: payslips.period
       })
       .from(payslips)
       .where(and(
@@ -82,7 +83,7 @@ router.get("/", async (req, res) => {
             type: 'payslip',
             title: 'Payslip Available',
             // Fallback to MM/YYYY format since 'period' column might be missing in DB
-            message: `Payslip for ${p.month}/${p.year} is now available.`,
+            message: `Payslip for ${p.month} (${p.period || 'N/A'}) /${p.year} is now available.`,
             timestamp: p.generatedAt,
             link: '/payslips',
             read: false

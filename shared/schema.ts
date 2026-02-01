@@ -112,7 +112,7 @@ export const activities = sqliteTable("activities", {
   type: text("type").notNull(),
   entityType: text("entity_type"),
   entityId: text("entity_id"),
-  details: json<Record<string, any>>("details"),
+  details: text("details"),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),

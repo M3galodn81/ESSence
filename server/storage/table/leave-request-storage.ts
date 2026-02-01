@@ -12,8 +12,8 @@ async createLeaveRequest(request: InsertLeaveRequest): Promise<LeaveRequest> {
     await this.createActivity({
       userId: request.userId,
       type: "leave_requested",
-      description: `Leave request submitted for ${request.days} days`,
-      metadata: { leaveRequestId: leaveRequest.id, startDate: request.startDate, endDate: request.endDate },
+      details: `Leave request submitted for ${request.days} days`,
+      // metadata: { leaveRequestId: leaveRequest.id, startDate: request.startDate, endDate: request.endDate },
     });
 
     return leaveRequest;
@@ -41,8 +41,8 @@ async createLeaveRequest(request: InsertLeaveRequest): Promise<LeaveRequest> {
       await this.createActivity({
         userId: request.userId,
         type: updates.status === 'approved' ? 'leave_approved' : 'leave_rejected',
-        description: `Leave request ${updates.status}`,
-        metadata: { leaveRequestId: id },
+        details: `Leave request ${updates.status}`,
+        // metadata: { leaveRequestId: id },
       });
 
       if (updates.status === 'approved') {
