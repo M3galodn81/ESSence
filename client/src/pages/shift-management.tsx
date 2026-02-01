@@ -27,9 +27,9 @@ import { cn } from "@/lib/utils";
 const ROLES = ["cashier", "bar", "server", "kitchen"];
 
 const SHIFT_PRESETS = {
-  morning: { start: "08:00", end: "17:00", label: "Day (8am - 5pm)", color: "bg-emerald-100 border-emerald-200 text-emerald-800", indicator: "bg-emerald-500" },
-  afternoon: { start: "13:00", end: "00:00", label: "Mid (1pm - 12am)", color: "bg-amber-100 border-amber-200 text-amber-800", indicator: "bg-amber-500" },
-  night: { start: "21:00", end: "06:00", label: "Night (9pm - 6am)", color: "bg-indigo-100 border-indigo-200 text-indigo-800", indicator: "bg-indigo-500" },
+  morning: { start: "08:00", end: "17:00", label: "AM (8am - 5pm)", color: "bg-emerald-100 border-emerald-200 text-emerald-800", indicator: "bg-emerald-500" },
+  afternoon: { start: "13:00", end: "00:00", label: "PM (1pm - 12am)", color: "bg-amber-100 border-amber-200 text-amber-800", indicator: "bg-amber-500" },
+  night: { start: "21:00", end: "06:00", label: "GY (9pm - 6am)", color: "bg-indigo-100 border-indigo-200 text-indigo-800", indicator: "bg-indigo-500" },
   off: { start: "00:00", end: "23:59", label: "Day Off", color: "bg-slate-100 border-slate-200 text-slate-500", indicator: "bg-slate-400" }
 };
 
