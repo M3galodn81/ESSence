@@ -299,40 +299,66 @@ async function seed() {
   ]);
 
   // 4. Incident Reports - SIMULATED 1 YEAR HISTORY
+  // 4. Incident Reports - ALIGNED WITH FRONTEND CATEGORIES
   console.log("Generating 1 year of incident reports...");
+  
   const reportTemplates = [
-    // Customer Issues
-    { category: "customer", title: "Intoxicated Guest Harassment", severity: "high", desc: "Guest at Table 5 became belligerent after being cut off.", location: "Dining Hall", actionTaken: "Security called, guest removed.", details: { policeReportNumber: "N/A" } },
-    { category: "customer", title: "Dine and Dash", severity: "medium", desc: "Party of 4 left without paying $200 bill.", location: "Patio", actionTaken: "Police report filed.", details: { policeReportNumber: "PR-2025-042" } },
-    { category: "customer", title: "Noise Complaint", severity: "low", desc: "Table 2 complained about music volume.", location: "Bar", actionTaken: "Volume lowered.", details: {} },
-    
-    // Employee Issues
-    { category: "employee", title: "No Call No Show", severity: "medium", desc: "Employee failed to report for scheduled shift.", location: "N/A", actionTaken: "Written warning issued.", details: {} },
-    { category: "employee", title: "Uniform Violation", severity: "low", desc: "Staff member wearing open-toed shoes.", location: "Kitchen", actionTaken: "Sent home to change.", details: {} },
-    { category: "employee", title: "Insubordination", severity: "high", desc: "Staff refused direct order from manager.", location: "Prep Area", actionTaken: "Meeting scheduled with HR.", details: {} },
-
-    // Accidents
-    { category: "accident", title: "Slip and Fall", severity: "medium", desc: "Prep cook slipped on wet floor near dish pit.", location: "Dish Pit", actionTaken: "First aid applied, area cleaned.", details: { injuryType: "Contusion", medicalAction: "Ice pack" } },
-    { category: "accident", title: "Minor Burn", severity: "low", desc: "Line cook touched hot pan handle.", location: "Hot Line", actionTaken: "Burn cream applied.", details: { injuryType: "1st Degree Burn" } },
-    { category: "accident", title: "Glass Cut", severity: "medium", desc: "Bartender cut hand on broken glass in ice bin.", location: "Bar", actionTaken: "Bandaged, ice bin burned and refilled.", details: { injuryType: "Laceration" } },
-
-    // Security
-    { category: "security", title: "Backdoor Lock Tampered", severity: "high", desc: "Scratch marks found on delivery entrance lock.", location: "Back Door", actionTaken: "Locksmith called, police notified.", details: { policeReportNumber: "PR-2025-889" } },
-    { category: "security", title: "Lost Item", severity: "low", desc: "Guest left iPhone 14 at bar.", location: "Bar", actionTaken: "Placed in safe.", details: { itemName: "iPhone 14" } },
-    { category: "security", title: "Vandalism", severity: "medium", desc: "Graffiti found in men's restroom.", location: "Restroom", actionTaken: "Cleaned immediately.", details: {} },
-
-    // Medical
-    { category: "medical", title: "Guest Allergic Reaction", severity: "critical", desc: "Guest had reaction to peanuts.", location: "Table 12", actionTaken: "EpiPen administered, ambulance called.", details: { injuryType: "Anaphylaxis", medicalAction: "Ambulance" } },
-    { category: "medical", title: "Staff Fainting", severity: "high", desc: "Server fainted due to heat exhaustion.", location: "Server Station", actionTaken: "Given water and rest.", details: { medicalAction: "Rest" } },
-
-    // Property
-    { category: "property", title: "Broken POS Terminal", severity: "medium", desc: "Screen cracked after being knocked over.", location: "Bar POS", actionTaken: "IT notified for replacement.", details: { itemName: "iPad Pro", estimatedCost: 1200 } },
-    { category: "property", title: "Leaking Sink", severity: "low", desc: "Handwash sink leaking onto floor.", location: "Kitchen", actionTaken: "Plumber called.", details: { itemName: "Sink Pipe", estimatedCost: 300 } },
-    { category: "property", title: "Broken Plate", severity: "low", desc: "Stack of dinner plates dropped.", location: "Dish Pit", actionTaken: "Cleaned up.", details: { itemName: "Dinner Plates (5)", estimatedCost: 50 } },
+    { 
+      category: "awol", 
+      title: "Absent Without Official Leave", 
+      severity: "high", 
+      desc: "Employee failed to show up for the afternoon shift and did not answer calls.", 
+      location: "N/A", 
+      actionTaken: "Attempted to contact employee; documented for HR." 
+    },
+    { 
+      category: "tardiness", 
+      title: "Repeated Late Arrival", 
+      severity: "low", 
+      desc: "Employee arrived 20 minutes late for the third time this week.", 
+      location: "Front Desk", 
+      actionTaken: "Verbal warning issued regarding punctuality." 
+    },
+    { 
+      category: "breakages", 
+      title: "Plateware Damage during Rush", 
+      severity: "low", 
+      desc: "Server dropped a tray of dinner plates while clearing Table 4.", 
+      location: "Dining Hall", 
+      actionTaken: "Area cordoned off and cleaned immediately.", 
+      details: { items: [{ name: "Dinner Plate", quantity: 4 }, { name: "Wine Glass", quantity: 1 }] } 
+    },
+    { 
+      category: "cashier_shortage", 
+      title: "POS Cash Discrepancy", 
+      severity: "medium", 
+      desc: "End-of-day count showed a shortage of $50 compared to digital records.", 
+      location: "Main Bar POS", 
+      actionTaken: "Re-counting all receipts and checking security footage.", 
+      details: { variance: 50, terminalId: "POS-01" } 
+    },
+    { 
+      category: "awan", 
+      title: "Advanced Notice Leave", 
+      severity: "low", 
+      desc: "Employee requested emergency leave 48 hours in advance due to family matters.", 
+      location: "N/A", 
+      actionTaken: "Schedule adjusted to cover the gap.", 
+      details: {} 
+    },
+    { 
+      category: "others", 
+      title: "Uniform Policy Violation", 
+      severity: "low", 
+      desc: "Staff member arrived without the required apron.", 
+      location: "Staff Room", 
+      actionTaken: "Provided a spare apron for the shift.", 
+      details: {} 
+    }
   ];
   
   const reportsData = [];
-  const TOTAL_REPORTS = 65; // Generate 65 reports over the year
+  const TOTAL_REPORTS = 75; // Increased for better analytics visibility
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
@@ -340,14 +366,16 @@ async function seed() {
     const template = reportTemplates[Math.floor(Math.random() * reportTemplates.length)];
     const reporter = employees[Math.floor(Math.random() * employees.length)];
     
-    // Random date within last 365 days
+    // Distribute reports across the last year
     const randomTime = oneYearAgo.getTime() + Math.random() * (new Date().getTime() - oneYearAgo.getTime());
     const dateOccurred = new Date(randomTime);
 
-    // Random time of day (10am - 11pm)
-    const hour = 10 + Math.floor(Math.random() * 13);
-    const minute = Math.floor(Math.random() * 60);
-    const timeOccurred = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    // Pick 1-2 random staff members as parties involved to feed the "Most Involved" sidebar
+    const numInvolved = Math.floor(Math.random() * 2) + 1;
+    const involved = Array.from({ length: numInvolved }, () => {
+        const p = allStaff[Math.floor(Math.random() * allStaff.length)];
+        return `${p.firstName} ${p.lastName}`;
+    }).join(", ");
     
     reportsData.push({
       userId: reporter.id,
@@ -355,34 +383,36 @@ async function seed() {
       title: template.title,
       description: template.desc,
       severity: template.severity,
-      status: Math.random() > 0.3 ? "resolved" : (Math.random() > 0.5 ? "investigating" : "pending"), // Mix of statuses
+      // Status matched to frontend: 'pending' or 'resolved'
+      status: Math.random() > 0.4 ? "resolved" : "pending", 
       location: template.location,
       dateOccurred: dateOccurred,
-      timeOccurred: timeOccurred,
-      partiesInvolved: "Staff/Guests",
-      witnesses: `${employees[Math.floor(Math.random() * employees.length)].firstName} ${employees[Math.floor(Math.random() * employees.length)].lastName}`,
+      timeOccurred: `${10 + Math.floor(Math.random() * 12)}:${Math.floor(Math.random() * 6) * 10}`,
+      partiesInvolved: involved,
+      witnesses: "Shift Lead / On-duty Staff",
       actionTaken: template.actionTaken,
       details: template.details || {},
-      resolvedBy: template.severity === "low" || Math.random() > 0.5 ? mainManager.id : null,
-      resolvedAt: template.severity === "low" || Math.random() > 0.5 ? new Date(dateOccurred.getTime() + 86400000) : null, // Resolved next day
-      createdAt: dateOccurred // Created at occurrence time
+      resolvedBy: Math.random() > 0.5 ? mainManager.id : null,
+      resolvedAt: Math.random() > 0.5 ? new Date(dateOccurred.getTime() + 86400000) : null,
+      createdAt: dateOccurred
     });
   }
-  // Add a few for "Today" specifically
+
+  // Ensure a few recent reports for today/yesterday
   reportsData.push({
       userId: employees[0].id,
-      category: "property",
-      title: "Broken Wine Glass",
-      description: "Dropped tray during lunch rush.",
-      severity: "low",
+      category: "breakages",
+      title: "Kitchen Equipment Malfunction",
+      description: "Blender motor burned out during prep.",
+      severity: "medium",
       status: "pending",
-      location: "Main Dining",
+      location: "Main Kitchen",
       dateOccurred: new Date(),
-      timeOccurred: "12:30",
-      partiesInvolved: "N/A",
-      witnesses: "N/A",
-      actionTaken: "Cleaned up.",
-      details: { itemName: "Red Wine Glass", estimatedCost: 10 },
+      timeOccurred: "09:15",
+      partiesInvolved: `${employees[0].firstName} ${employees[0].lastName}`,
+      witnesses: "Head Cook",
+      actionTaken: "Unplugged and tagged out.",
+      details: { items: [{ name: "Commercial Blender", quantity: 1 }] },
       createdAt: new Date()
   });
 
