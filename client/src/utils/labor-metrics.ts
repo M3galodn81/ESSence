@@ -2,7 +2,7 @@
  * Configuration for Labor Cost Performance Metrics
  * Easily edit limits and UI messages here.
  */
-const LABOR_THRESHOLDS = [
+export const LABOR_THRESHOLDS = [
   {
     max: 11,
     status: "Excellent",
@@ -26,4 +26,4 @@ const LABOR_THRESHOLDS = [
   },
 ];
 
-const IDEAL_TARGET = 12;
+export const IDEAL_TARGET = 12;

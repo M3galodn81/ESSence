@@ -19,6 +19,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import type { LaborCostData } from "@shared/schema";
 import { Loader2 } from "lucide-react";
 import { canViewLaborCostAnalysis } from "@/utils/permissions";
+import { LABOR_THRESHOLDS, IDEAL_TARGET } from "@/utils/labor-metrics";
 
 const formSchema = z.object({
   month: z.number().min(1).max(12),
@@ -324,7 +325,7 @@ export default function LaborCostAnalytics() {
                            cx="50" cy="50" r="40" fill="none" 
                            // Visual progress: Ideal is 12%, so we multiply percentage to fill gauge meaningfully
                            strokeDasharray={`${Math.min(100, currentMonthData.laborCostPercentage * 4) * 2.51 / 100} 251`}
-                           stroke={currentMonthData.laborCostPercentage <= 11 ? "#10b981" : currentMonthData.laborCostPercentage <= 12 ? "#3b82f6" : "#ef4444"}
+                           stroke={currentMonthData.laborCostPercentage <= 11 ? "#10b981" : currentMonthData.laborCostPercentage <= 12 ? "#ef4444" : "#3b82f6"}
                            strokeWidth="10"
                            strokeLinecap="round"
                         />
