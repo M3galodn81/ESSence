@@ -22,14 +22,17 @@ import {
 import type { Schedule, User } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
 
 // --- Configuration ---
 const ROLES = ["cashier", "bar", "server", "kitchen"];
 
 const SHIFT_PRESETS = {
-  morning: { start: "08:00", end: "17:00", label: "AM (8am - 5pm)", color: "bg-emerald-100 border-emerald-200 text-emerald-800", indicator: "bg-emerald-500" },
-  afternoon: { start: "13:00", end: "00:00", label: "PM (1pm - 12am)", color: "bg-amber-100 border-amber-200 text-amber-800", indicator: "bg-amber-500" },
-  night: { start: "21:00", end: "06:00", label: "GY (9pm - 6am)", color: "bg-indigo-100 border-indigo-200 text-indigo-800", indicator: "bg-indigo-500" },
+  morning: { start: "08:00", end: "17:00", label: "AM", color: "bg-emerald-100 border-emerald-200 text-emerald-800", indicator: "bg-emerald-500" },
+  afternoon: { start: "13:00", end: "00:00", label: "PM", color: "bg-amber-100 border-amber-200 text-amber-800", indicator: "bg-amber-500" },
+  night: { start: "21:00", end: "06:00", label: "GY", color: "bg-indigo-100 border-indigo-200 text-indigo-800", indicator: "bg-indigo-500" },
   off: { start: "00:00", end: "23:59", label: "Day Off", color: "bg-slate-100 border-slate-200 text-slate-500", indicator: "bg-slate-400" }
 };
 
@@ -49,16 +52,19 @@ export default function ShiftManagement() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState<"roster" | "kanban" | "list">("roster");
+  const [view, setView] = useState<"roster" | "kanban" | "list">("kanban");
+  const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
    
   // Dialogs
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
+
    
   // Filter State
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
+  const [filterType, setFilterType] = useState<string | null>(null);
 
   // --- Permission Check ---
   if (user?.role !== 'manager' && user?.role !== 'admin') return <div className="p-8 text-center text-slate-500">Access denied.</div>;
@@ -268,16 +274,58 @@ export default function ShiftManagement() {
 
   const Toolbar = () => (
     <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
-      <div className="flex items-center gap-3 px-3 w-full lg:w-auto">
-        <Users className="w-4 h-4 text-slate-400" />
-        <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
-          <SelectTrigger className="w-[180px] border-none shadow-none font-medium p-0 h-auto focus:ring-0"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Employees</SelectItem>
-            {teamMembers?.map((m) => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
+      {/* 1. Autocomplete Employee Filter */}
+    <div className="flex items-center gap-3 px-3 w-full lg:w-auto">
+      <Users className="w-4 h-4 text-slate-400" />
+      <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            role="combobox"
+            aria-expanded={openEmployeePicker}
+            className="w-[200px] justify-between font-medium p-0 h-auto hover:bg-transparent"
+          >
+            {selectedEmployee === "all" 
+              ? "All Employees" 
+              : teamMembers?.find((m) => m.id === selectedEmployee)?.firstName + " " + teamMembers?.find((m) => m.id === selectedEmployee)?.lastName}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[200px] p-0">
+          <Command>
+            <CommandInput placeholder="Search employee..." />
+            <CommandList>
+              <CommandEmpty>No employee found.</CommandEmpty>
+              <CommandGroup>
+                <CommandItem
+                  value="all"
+                  onSelect={() => {
+                    setSelectedEmployee("all");
+                    setOpenEmployeePicker(false);
+                  }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", selectedEmployee === "all" ? "opacity-100" : "opacity-0")} />
+                  All Employees
+                </CommandItem>
+                {teamMembers?.map((m) => (
+                  <CommandItem
+                    key={m.id}
+                    value={`${m.firstName} ${m.lastName}`}
+                    onSelect={() => {
+                      setSelectedEmployee(m.id);
+                      setOpenEmployeePicker(false);
+                    }}
+                  >
+                    <Check className={cn("mr-2 h-4 w-4", selectedEmployee === m.id ? "opacity-100" : "opacity-0")} />
+                    {m.firstName} {m.lastName}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
 
       <div className="flex items-center bg-slate-50 rounded-lg p-1">
         <Button variant="ghost" size="icon" onClick={() => navigate('prev')} className="h-8 w-8 text-slate-500 hover:bg-white hover:shadow-sm"><ChevronLeft className="w-4 h-4" /></Button>
@@ -294,8 +342,8 @@ export default function ShiftManagement() {
         <div className="h-4 w-px bg-slate-200 mx-2" />
         <Tabs value={view} onValueChange={(v) => setView(v as any)} className="w-auto">
           <TabsList className="bg-slate-100 h-9 p-1">
-            <TabsTrigger value="roster" className="h-7 text-xs px-3 gap-2"><Grid className="w-3.5 h-3.5"/> Roster</TabsTrigger>
             <TabsTrigger value="kanban" className="h-7 text-xs px-3 gap-2"><LayoutPanelLeft className="w-3.5 h-3.5"/> Day</TabsTrigger>
+            <TabsTrigger value="roster" className="h-7 text-xs px-3 gap-2"><Grid className="w-3.5 h-3.5"/> Roster</TabsTrigger>
             <TabsTrigger value="list" className="h-7 text-xs px-3 gap-2"><List className="w-3.5 h-3.5"/> List</TabsTrigger>
           </TabsList>
         </Tabs>
@@ -304,35 +352,70 @@ export default function ShiftManagement() {
   );
 
   const StatsBar = () => {
-    const shifts = getSchedulesForDay(currentDate).filter(s => s.type !== 'off');
-    const counts = {
-        total: shifts.length,
-        morning: shifts.filter(s => s.type === 'morning').length,
-        afternoon: shifts.filter(s => s.type === 'afternoon').length,
-        night: shifts.filter(s => s.type === 'night').length
-    };
-
-    return (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card className="bg-white border-slate-200 shadow-sm p-4 flex items-center justify-between">
-                <div><p className="text-[10px] font-bold uppercase text-slate-400">Total Staff</p><p className="text-2xl font-bold text-slate-900">{counts.total}</p></div>
-                <Users className="w-8 h-8 text-slate-100" />
-            </Card>
-            <Card className="bg-emerald-50 border-emerald-100 shadow-sm p-4 flex items-center justify-between">
-                <div><p className="text-[10px] font-bold uppercase text-emerald-600">Morning</p><p className="text-2xl font-bold text-emerald-900">{counts.morning}</p></div>
-                <Sun className="w-8 h-8 text-emerald-200" />
-            </Card>
-            <Card className="bg-amber-50 border-amber-100 shadow-sm p-4 flex items-center justify-between">
-                <div><p className="text-[10px] font-bold uppercase text-amber-600">Afternoon</p><p className="text-2xl font-bold text-amber-900">{counts.afternoon}</p></div>
-                <Sunset className="w-8 h-8 text-amber-200" />
-            </Card>
-            <Card className="bg-indigo-50 border-indigo-100 shadow-sm p-4 flex items-center justify-between">
-                <div><p className="text-[10px] font-bold uppercase text-indigo-600">Night</p><p className="text-2xl font-bold text-indigo-900">{counts.night}</p></div>
-                <Moon className="w-8 h-8 text-indigo-200" />
-            </Card>
-        </div>
-    );
+  const shifts = getSchedulesForDay(currentDate).filter(s => s.type !== 'off');
+  const counts = {
+    total: shifts.length,
+    morning: shifts.filter(s => s.type === 'morning').length,
+    afternoon: shifts.filter(s => s.type === 'afternoon').length,
+    night: shifts.filter(s => s.type === 'night').length
   };
+
+  const toggleFilter = (type: string | null) => {
+    setFilterType(prev => prev === type ? null : type);
+  };
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Total Staff - Resets filter */}
+      <Card 
+        onClick={() => toggleFilter(null)}
+        className={cn(
+          "bg-white border-slate-200 shadow-sm p-4 flex items-center justify-between cursor-pointer transition-all hover:border-slate-400",
+          filterType === null && "ring-2 ring-slate-900 ring-offset-2"
+        )}
+      >
+        <div><p className="text-[10px] font-bold uppercase text-slate-400">Total Staff</p><p className="text-2xl font-bold text-slate-900">{counts.total}</p></div>
+        <Users className="w-8 h-8 text-slate-100" />
+      </Card>
+
+      {/* Morning Filter */}
+      <Card 
+        onClick={() => toggleFilter('morning')}
+        className={cn(
+          "bg-emerald-50 border-emerald-100 shadow-sm p-4 flex items-center justify-between cursor-pointer transition-all hover:border-emerald-300",
+          filterType === 'morning' && "ring-2 ring-emerald-500 ring-offset-2"
+        )}
+      >
+        <div><p className="text-[10px] font-bold uppercase text-emerald-600">Morning</p><p className="text-2xl font-bold text-emerald-900">{counts.morning}</p></div>
+        <Sun className="w-8 h-8 text-emerald-200" />
+      </Card>
+
+      {/* Afternoon Filter */}
+      <Card 
+        onClick={() => toggleFilter('afternoon')}
+        className={cn(
+          "bg-amber-50 border-amber-100 shadow-sm p-4 flex items-center justify-between cursor-pointer transition-all hover:border-amber-300",
+          filterType === 'afternoon' && "ring-2 ring-amber-500 ring-offset-2"
+        )}
+      >
+        <div><p className="text-[10px] font-bold uppercase text-amber-600">Afternoon</p><p className="text-2xl font-bold text-amber-900">{counts.afternoon}</p></div>
+        <Sunset className="w-8 h-8 text-amber-200" />
+      </Card>
+
+      {/* Night Filter */}
+      <Card 
+        onClick={() => toggleFilter('night')}
+        className={cn(
+          "bg-indigo-50 border-indigo-100 shadow-sm p-4 flex items-center justify-between cursor-pointer transition-all hover:border-indigo-300",
+          filterType === 'night' && "ring-2 ring-indigo-500 ring-offset-2"
+        )}
+      >
+        <div><p className="text-[10px] font-bold uppercase text-indigo-600">Night</p><p className="text-2xl font-bold text-indigo-900">{counts.night}</p></div>
+        <Moon className="w-8 h-8 text-indigo-200" />
+      </Card>
+    </div>
+  );
+};
 
   return (
     <div className="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
@@ -398,8 +481,12 @@ export default function ShiftManagement() {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
                         {ROLES.map(role => {
                             const roleShifts = getSchedulesForDay(currentDate)
-                                .filter(s => s.shiftRole === role && s.type !== 'off')
-                                .sort((a,b) => a.startTime - b.startTime);
+                                .filter(s => {
+                                  const roleMatch = s.shiftRole === role && s.type !== 'off';
+                                  const typeMatch = filterType ? s.type === filterType : true; // Apply the card filter
+                                  return roleMatch && typeMatch;
+                                })
+                                .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
                             return (
                                 <div key={role} className="flex flex-col bg-slate-100/50 rounded-xl border border-slate-200 p-1">
                                     <div className="p-3 border-b border-slate-100 mb-2 flex items-center justify-between">
