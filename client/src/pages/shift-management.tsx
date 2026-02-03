@@ -140,6 +140,14 @@ export default function ShiftManagement() {
     );
   };
 
+  const getShiftTypeFromTime = (timeStr: string): "morning" | "afternoon" | "night" => {
+    const hour = parseInt(timeStr.split(':')[0], 10);
+    if (hour >= 7 && hour < 12) return "morning";
+    if (hour >= 13 && hour < 18) return "afternoon";
+    if (hour >= 18 || hour <= 1) return "night";
+    return "night"; // Default rest to GY
+  };
+
   // --- Forms & Mutations (Simplified for brevity, logic same as before) ---
   const createForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema), defaultValues: { shiftType: "morning", shiftRole: "server" } });
   const editForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema) });
@@ -147,33 +155,45 @@ export default function ShiftManagement() {
   // 1. MODIFIED: Only sets the label/color, does NOT force the time anymore
   const handleShiftTypeChange = (val: string, form: any) => {
     form.setValue("shiftType", val);
-    // Removed the lines that set startTime/endTime based on the preset
+    
+    // Set starting time based on first hour of range
+    let startTime = "07:00";
+    if (val === "afternoon") startTime = "13:00";
+    if (val === "night") startTime = "18:00";
+    if (val === "off") startTime = "00:00";
+
+    // Trigger the full time logic to set the 9hr end time
+    const pseudoEvent = { target: { value: startTime } } as React.ChangeEvent<HTMLInputElement>;
+    onStartTimeChange(pseudoEvent, form);
   };
 
   // 2. NEW: Automatically sets End Time to Start Time + 9 Hours
   const onStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>, form: any) => {
     const newStartTime = e.target.value;
-    
-    // Update the start time field immediately
+    if (!newStartTime) return;
+
+    // 1. Update form value for Start Time
     form.setValue("startTime", newStartTime);
 
-    if (newStartTime) {
-      const [hours, minutes] = newStartTime.split(':').map(Number);
-      
-      // Create a date object to handle the math (including crossing midnight)
-      const date = new Date();
-      date.setHours(hours);
-      date.setMinutes(minutes);
-      
-      // Add 9 hours
-      date.setHours(date.getHours() + 9);
-      
-      // Format back to HH:mm
-      const newEndHour = date.getHours().toString().padStart(2, '0');
-      const newEndMinute = date.getMinutes().toString().padStart(2, '0');
-      
-      form.setValue("endTime", `${newEndHour}:${newEndMinute}`);
-    }
+    // 2. Detect Shift Type (AM/PM/GY)
+    const hour = parseInt(newStartTime.split(':')[0], 10);
+    let detectedType: "morning" | "afternoon" | "night" = "night";
+    
+    if (hour >= 7 && hour < 12) detectedType = "morning";
+    else if (hour >= 13 && hour < 18) detectedType = "afternoon";
+    else detectedType = "night";
+
+    form.setValue("shiftType", detectedType);
+
+    // 3. Set End Time (+9 Hours)
+    const [h, m] = newStartTime.split(':').map(Number);
+    const date = new Date();
+    date.setHours(h, m, 0);
+    date.setHours(date.getHours() + 9);
+    
+    const endH = date.getHours().toString().padStart(2, '0');
+    const endM = date.getMinutes().toString().padStart(2, '0');
+    form.setValue("endTime", `${endH}:${endM}`);
   };
 
   const createShiftMutation = useMutation({
@@ -527,7 +547,7 @@ export default function ShiftManagement() {
             </div>
             <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-xl">
               <div className="space-y-1"><Label className="text-xs">Start Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("startTime")} onChange={(e) => onStartTimeChange(e, createForm)}/></div>
-              <div className="space-y-1"><Label className="text-xs">End Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("endTime")} /></div>
+              <div className="space-y-1"><Label className="text-xs">End Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("endTime")} readOnly /></div>
             </div>
             <div className="space-y-2"><Label>Location</Label><Input className="rounded-xl" placeholder="e.g. Main Hall" {...createForm.register("location")} /></div>
             <DialogFooter><Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button><Button type="submit" disabled={createShiftMutation.isPending}>Create Shift</Button></DialogFooter>
