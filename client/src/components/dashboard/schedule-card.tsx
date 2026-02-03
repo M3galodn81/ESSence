@@ -1,9 +1,19 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Calendar, Clock } from "lucide-react";
+import { Calendar, Clock, Sun, Sunset, Moon, Coffee } from "lucide-react";
 import { useLocation } from "wouter";
 import type { Schedule } from "@shared/schema";
+import { cn } from "@/lib/utils";
+
+// --- Constants & Style Configuration ---
+
+const SHIFT_CONFIG = {
+  morning: { label: "AM", icon: Sun, color: "text-emerald-400" },
+  afternoon: { label: "PM", icon: Sunset, color: "text-amber-400" },
+  night: { label: "GY", icon: Moon, color: "text-indigo-400" },
+  off: { label: "OFF", icon: Coffee, color: "text-slate-400" }
+} as const;
 
 interface ScheduleCardProps {
   schedules: Schedule[];
@@ -19,6 +29,11 @@ export default function ScheduleCard({ schedules, isLoading }: ScheduleCardProps
   );
 
   const formatTime = (date: number | Date) => new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  // Get config for current shift type
+  const shift = todaySchedule 
+    ? (SHIFT_CONFIG[todaySchedule.type as keyof typeof SHIFT_CONFIG] || SHIFT_CONFIG.morning)
+    : null;
 
   return (
     <Card className="bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-lg rounded-2xl border-none" data-testid="schedule-card">
@@ -49,15 +64,22 @@ export default function ScheduleCard({ schedules, isLoading }: ScheduleCardProps
                 Until {formatTime(todaySchedule.endTime)}
               </p>
             </div>
+            
             <div className="pt-4 border-t border-white/10 flex justify-between items-center">
-               <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Shift</span>
-               <span className="text-sm font-medium bg-white/10 px-3 py-1 rounded-full capitalize">
-                 {todaySchedule.type}
-               </span>
+               <span className="text-xs font-medium uppercase tracking-wider text-slate-500">Shift Type</span>
+               <div className="flex items-center gap-2 bg-white/10 px-3 py-1 rounded-full">
+                 {shift && <shift.icon className={cn("w-3.5 h-3.5", shift.color)} />}
+                 <span className="text-sm font-bold uppercase">
+                   {shift?.label}
+                 </span>
+               </div>
             </div>
           </div>
         ) : (
           <div className="py-6 text-center">
+            <div className="flex justify-center mb-2">
+                <Coffee className="w-8 h-8 text-slate-600 opacity-50" />
+            </div>
             <p className="text-slate-400 font-medium">No shift today</p>
             <p className="text-xs text-slate-500 mt-1">Enjoy your day off!</p>
           </div>
