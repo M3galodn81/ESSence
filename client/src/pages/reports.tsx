@@ -19,7 +19,8 @@ import {
   AlertTriangle, UserX, Hammer, Plus, Calendar as CalendarIcon, Clock, 
   FileText, MapPin, CheckCircle2, AlertCircle, X, Users,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, 
-  List as ListIcon, Banknote, Search, History, Filter
+  List as ListIcon, Banknote, Search, History, Filter,
+  Loader2
 } from "lucide-react";
 import { format, isWithinInterval, startOfDay, endOfDay, subMonths, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,13 @@ const reportFormSchema = insertReportSchema.omit({ userId: true, partiesInvolved
     }).optional()
 });
 
+const SEVERITY_WEIGHTS: Record<string, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1
+};
+
 type ReportForm = z.infer<typeof reportFormSchema>;
 
 export default function Reports() {
@@ -58,6 +66,7 @@ export default function Reports() {
   const [monthFilter, setMonthFilter] = useState<string>("all");
   const [personFilter, setPersonFilter] = useState<string>(""); // NEW: Person Filter
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [sortBy, setSortBy] = useState<"date" | "priority">("date");
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -67,6 +76,9 @@ export default function Reports() {
   const [newItem, setNewItem] = useState({ name: "", quantity: 1 });
   const [newPerson, setNewPerson] = useState("");
   const [staffSearchTerm, setStaffSearchTerm] = useState(""); 
+  const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false);
+const [resolutionAction, setResolutionAction] = useState("");
+
 
   // --- CONFIGURATION CONSTANTS ---
   const categories = [
@@ -156,11 +168,19 @@ export default function Reports() {
 
         return true;
     }).sort((a: any, b: any) => {
-        const timeA = new Date(a.dateOccurred).getTime();
-        const timeB = new Date(b.dateOccurred).getTime();
-        return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
-    });
-  }, [reports, statusFilter, categoryFilter, monthFilter, personFilter, sortOrder]);
+    if (sortBy === "priority") {
+      const weightA = SEVERITY_WEIGHTS[a.severity] || 0;
+      const weightB = SEVERITY_WEIGHTS[b.severity] || 0;
+      // Sort by weight first, then by date for reports with same weight
+      if (weightB !== weightA) return weightB - weightA;
+    }
+    
+    // Default or fallback: Date sorting
+    const timeA = new Date(a.dateOccurred).getTime();
+    const timeB = new Date(b.dateOccurred).getTime();
+    return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
+  });
+}, [reports, statusFilter, categoryFilter, monthFilter, personFilter, sortOrder, sortBy]);
 
   const paginatedReports = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -261,22 +281,26 @@ export default function Reports() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: string }) => {
-      const res = await apiRequest("PATCH", `/api/reports/${id}`, { status });
-      return await res.json();
+    mutationFn: async ({ id, status, actionTaken }: { id: number; status: string; actionTaken?: string }) => {
+        const payload: any = { status };
+        if (actionTaken) payload.actionTaken = actionTaken; // Update action only if provided
+        
+        const res = await apiRequest("PATCH", `/api/reports/${id}`, payload);
+        return await res.json();
     },
     onSuccess: (updatedReport) => {
-        const newStatus = updatedReport.status;
-        toast.success(`Report marked as ${newStatus}`);
+        toast.success(`Report marked as ${updatedReport.status}`);
         queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+        setIsResolveDialogOpen(false); // Close the popup
+        setResolutionAction(""); // Clear the text
         if (selectedReport) {
-            setSelectedReport({ ...selectedReport, status: newStatus });
+        setSelectedReport(updatedReport);
         }
     },
     onError: (err) => {
         toast.error("Failed to update status", { description: err.message });
     }
-  });
+    });
 
   const onInvalid = (errors: FieldErrors<ReportForm>) => {
     const firstErrorKey = Object.keys(errors)[0];
@@ -341,7 +365,7 @@ export default function Reports() {
       {/* --- PAGE HEADER --- */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Incident Reporting</h1>
+          <h1 className="text-3xl font-bold text-slate-900">Reporting</h1>
           <p className="text-slate-500 mt-1">Document AWOL, breakage, and other incidents</p>
         </div>
         <div className="flex items-center gap-2">
@@ -372,7 +396,7 @@ export default function Reports() {
               </DialogTrigger>
               <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl">
                 <DialogHeader className="border-b border-slate-100 pb-4">
-                  <DialogTitle>File Incident Report</DialogTitle>
+                  <DialogTitle>File a Report</DialogTitle>
                   <DialogDescription>Please provide factual, objective details.</DialogDescription>
                 </DialogHeader>
 
@@ -584,6 +608,19 @@ export default function Reports() {
                             </SelectContent>
                         </Select>
 
+                        <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
+                            <SelectTrigger className="w-[140px] h-8 text-xs bg-white">
+                                <div className="flex items-center gap-2">
+                                <BarChart3 className="w-3 h-3" />
+                                <SelectValue placeholder="Sort By" />
+                                </div>
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="date">Sort by Date</SelectItem>
+                                <SelectItem value="priority">Sort by Priority</SelectItem>
+                            </SelectContent>
+                        </Select>
+
                         <Select value={statusFilter} onValueChange={setStatusFilter}>
                             <SelectTrigger className="w-[120px] h-8 text-xs bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
                             <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="resolved">Resolved</SelectItem></SelectContent>
@@ -599,28 +636,44 @@ export default function Reports() {
                         {isLoading ? <div className="p-8 text-center text-slate-400">Loading...</div> : 
                         paginatedReports.length === 0 ? <div className="p-8 text-center text-slate-400">No reports found.</div> :
                         paginatedReports.map((report: any) => (
-                            <div key={report.id} onClick={() => { setSelectedReport(report); setIsViewOpen(true); }} className="flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors">
-                                <div className="flex items-center gap-4">
-                                    <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color || "bg-slate-100 text-slate-600")}>
-                                        {(() => { const Icon = categories.find(c=>c.id===report.category)?.icon || FileText; return <Icon className="w-5 h-5" /> })()}
-                                    </div>
-                                    <div>
-                                        <h4 className="text-sm font-bold text-slate-800">{report.title}</h4>
-                                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                                                <span>{format(new Date(report.dateOccurred), "MMM dd")}</span>
-                                                <span>•</span>
-                                                <span className="capitalize">{report.severity} Priority</span>
-                                                {report.partiesInvolved && (
-                                                    <>
-                                                        <span>•</span>
-                                                        <span className="max-w-[150px] truncate" title={report.partiesInvolved}>{report.partiesInvolved}</span>
-                                                    </>
-                                                )}
-                                        </div>
-                                    </div>
-                                </div>
-                                <Badge variant={report.status === 'resolved' ? 'default' : 'secondary'} className="capitalize">{report.status}</Badge>
-                            </div>
+                            <div 
+  key={report.id} 
+  onClick={() => { setSelectedReport(report); setIsViewOpen(true); }} 
+  className={cn(
+    "flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors border-l-4",
+    report.severity === 'critical' ? "border-l-red-600 bg-red-50/30" : 
+    report.severity === 'high' ? "border-l-orange-500" : "border-l-transparent"
+  )}
+>
+  <div className="flex items-center gap-4">
+    <div className="relative">
+      <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color || "bg-slate-100 text-slate-600")}>
+        {(() => { const Icon = categories.find(c=>c.id===report.category)?.icon || FileText; return <Icon className="w-5 h-5" /> })()}
+      </div>
+      
+      {/* ADD DANGER ICON OVERLAY */}
+      {(report.severity === 'critical' || report.severity === 'high') && (
+        <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
+          <AlertTriangle className={cn("w-3.5 h-3.5", report.severity === 'critical' ? "text-red-600" : "text-orange-500")} />
+        </div>
+      )}
+    </div>
+
+    <div>
+      <div className="flex items-center gap-2">
+        <h4 className="text-sm font-bold text-slate-800">{report.title}</h4>
+        {report.severity === 'critical' && (
+          <Badge variant="destructive" className="h-4 px-1.5 text-[8px] animate-pulse">CRITICAL</Badge>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+        <span>{format(new Date(report.dateOccurred), "MMM dd")}</span>
+        {/* ... existing badges ... */}
+      </div>
+    </div>
+  </div>
+  <Badge variant={report.status === 'resolved' ? 'default' : 'secondary'} className="capitalize">{report.status}</Badge>
+</div>
                         ))}
                     </div>
                     
@@ -692,7 +745,7 @@ export default function Reports() {
             {/* Chart 1: Trend Over Time */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-lg">Incident Trend (Last 6 Months)</CardTitle>
+                    <CardTitle className="text-lg">Report Trend (Last 6 Months)</CardTitle>
                     <CardDescription>Number of reports filed per month</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -716,7 +769,7 @@ export default function Reports() {
             {/* Chart 2: Category Breakdown */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-lg">Incidents by Category</CardTitle>
+                    <CardTitle className="text-lg">Reports by Category</CardTitle>
                     <CardDescription>Distribution of report types</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -746,124 +799,161 @@ export default function Reports() {
         </div>
       )}
 
+
       {/* View Details Dialog */}
-      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <Dialog open={isViewOpen} onOpenChange={(open) => {
+        setIsViewOpen(open);
+        if (!open) setSelectedReport(null); // Clear selection on close
+        }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            {selectedReport && (
-                <>
-                    <DialogHeader>
-                        <div className="flex items-center gap-3 mb-2">
-                            <Badge variant="outline" className="uppercase tracking-wider text-[10px]">
-                                {categories.find(c => c.id === selectedReport.category)?.label || selectedReport.category}
-                            </Badge>
-                            <Badge className={cn("capitalize", 
-                                selectedReport.severity === 'critical' ? "bg-red-100 text-red-700 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"
-                            )}>
-                                {selectedReport.severity} Priority
-                            </Badge>
-                        </div>
-                        <DialogTitle className="text-2xl font-bold text-slate-900">{selectedReport.title}</DialogTitle>
-                        <DialogDescription className="flex items-center gap-2 text-slate-500">
-                            <CalendarIcon className="w-4 h-4" /> {format(new Date(selectedReport.dateOccurred), "MMMM dd, yyyy")} 
-                            <Clock className="w-4 h-4 ml-2" /> {selectedReport.timeOccurred}
-                        </DialogDescription>
-                    </DialogHeader>
+            {!selectedReport ? (
+            <div className="p-8 text-center flex justify-center items-center h-40">
+                <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+            </div>
+            ) : (
+            <>
+                <DialogHeader>
+                <div className="flex items-center gap-3 mb-2">
+                    <Badge variant="outline" className="uppercase tracking-wider text-[10px]">
+                    {categories.find(c => c.id === selectedReport.category)?.label || selectedReport.category}
+                    </Badge>
+                    <Badge className={cn("capitalize", 
+                    selectedReport.severity === 'critical' ? "bg-red-100 text-red-700 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"
+                    )}>
+                    {selectedReport.severity} Priority
+                    </Badge>
+                </div>
+                <DialogTitle className="text-2xl font-bold text-slate-900">{selectedReport.title}</DialogTitle>
+                <DialogDescription className="flex items-center gap-2 text-slate-500">
+                    <CalendarIcon className="w-4 h-4" /> {format(new Date(selectedReport.dateOccurred), "MMMM dd, yyyy")} 
+                    <Clock className="w-4 h-4 ml-2" /> {selectedReport.timeOccurred}
+                </DialogDescription>
+                </DialogHeader>
 
-                    <div className="space-y-6 py-4">
-                        <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                            <div className="space-y-1">
-                                <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
-                                <div className="flex items-center gap-2 font-medium text-slate-900">
-                                    <MapPin className="w-4 h-4 text-slate-400" />
-                                    {selectedReport.location}
-                                </div>
-                            </div>
-                            <div className="space-y-1">
-                                <span className="text-xs font-semibold text-slate-400 uppercase">Status</span>
-                                <div className="flex items-center gap-2 font-medium text-slate-900 capitalize">
-                                    {selectedReport.status === 'resolved' ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <AlertCircle className="w-4 h-4 text-amber-500" />}
-                                    {selectedReport.status}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <h4 className="text-sm font-bold text-slate-900 mb-2">Incident Description</h4>
-                                <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.description}</p>
-                            </div>
-                            <div>
-                                <h4 className="text-sm font-bold text-slate-900 mb-2">Immediate Action Taken</h4>
-                                <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.actionTaken || "No immediate action recorded."}</p>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
-                                <span className="text-xs font-semibold text-slate-400 uppercase">Witnesses</span>
-                                <p className="text-sm font-medium text-slate-900">{selectedReport.witnesses || "None listed"}</p>
-                            </div>
-                            <div className="space-y-1">
-                                <span className="text-xs font-semibold text-slate-400 uppercase">Parties Involved</span>
-                                <p className="text-sm font-medium text-slate-900">{selectedReport.partiesInvolved || "None listed"}</p>
-                            </div>
-                        </div>
-
-                        {selectedReport.details && Object.keys(selectedReport.details).length > 0 && (
-                            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                                <h4 className="text-sm font-bold text-blue-900 mb-3">Additional Details</h4>
-                                <div className="grid grid-cols-1 gap-2">
-                                    {selectedReport.details.items && Array.isArray(selectedReport.details.items) ? (
-                                        <div className="space-y-2">
-                                            {selectedReport.details.items.map((item: any, idx: number) => (
-                                                <div key={idx} className="flex justify-between text-sm border-b border-blue-100 pb-1 last:border-0">
-                                                    <span>{item.quantity}x {item.name}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="grid grid-cols-2 gap-4">
-                                            {Object.entries(selectedReport.details).map(([key, value]) => (
-                                                key !== 'items' && (
-                                                    <div key={key}>
-                                                        <span className="text-xs text-blue-600/70 uppercase font-semibold block mb-1">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                                                        <span className="text-sm font-medium text-blue-900">{value as string}</span>
-                                                    </div>
-                                                )
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                <div className="space-y-6 py-4">
+                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="space-y-1">
+                    <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
+                    <div className="flex items-center gap-2 font-medium text-slate-900">
+                        <MapPin className="w-4 h-4 text-slate-400" />
+                        {selectedReport.location}
                     </div>
+                    </div>
+                    <div className="space-y-1">
+                    <span className="text-xs font-semibold text-slate-400 uppercase">Status</span>
+                    <div className="flex items-center gap-2 font-medium text-slate-900 capitalize">
+                        {selectedReport.status === 'resolved' ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <AlertCircle className="w-4 h-4 text-amber-500" />}
+                        {selectedReport.status}
+                    </div>
+                    </div>
+                </div>
 
-                      <DialogFooter className="flex-row justify-between sm:justify-between">
-                        <Button variant="ghost" onClick={() => setIsViewOpen(false)}>Close</Button>
-                        <Button 
-                            variant={selectedReport.status === 'resolved' ? "outline" : "default"}
-                            className={selectedReport.status === 'resolved' ? "border-amber-500 text-amber-600 hover:bg-amber-50" : "bg-emerald-600 hover:bg-emerald-700 text-white"}
-                            onClick={() => updateStatusMutation.mutate({ 
-                                id: selectedReport.id, 
-                                status: selectedReport.status === 'resolved' ? 'pending' : 'resolved' 
-                            })}
-                            disabled={updateStatusMutation.isPending}
-                        >
-                            {selectedReport.status === 'resolved' ? (
-                                <>
-                                    <Clock className="w-4 h-4 mr-2" /> Mark as Pending
-                                </>
-                            ) : (
-                                <>
-                                    <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as Resolved
-                                </>
-                            )}
-                        </Button>
-                    </DialogFooter>
-                </>
+                <div className="space-y-4">
+                    <div>
+                    <h4 className="text-sm font-bold text-slate-900 mb-2">Incident Description</h4>
+                    <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.description}</p>
+                    </div>
+                    <div>
+                    <h4 className="text-sm font-bold text-slate-900 mb-2">Immediate Action Taken</h4>
+                    <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.actionTaken || "No immediate action recorded."}</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                    <span className="text-xs font-semibold text-slate-400 uppercase">Witnesses</span>
+                    <p className="text-sm font-medium text-slate-900">{selectedReport.witnesses || "None listed"}</p>
+                    </div>
+                    <div className="space-y-1">
+                    <span className="text-xs font-semibold text-slate-400 uppercase">Parties Involved</span>
+                    <p className="text-sm font-medium text-slate-900">{selectedReport.partiesInvolved || "None listed"}</p>
+                    </div>
+                </div>
+                </div>
+
+                <DialogFooter className="flex-row justify-between sm:justify-between border-t pt-4">
+                <Button variant="ghost" onClick={() => setIsViewOpen(false)}>Close</Button>
+                
+                {selectedReport.status === 'resolved' ? (
+                    <Button 
+                    variant="outline"
+                    className="border-amber-500 text-amber-600 hover:bg-amber-50"
+                    onClick={() => updateStatusMutation.mutate({ id: selectedReport.id, status: 'pending' })}
+                    disabled={updateStatusMutation.isPending}
+                    >
+                    <Clock className="w-4 h-4 mr-2" /> Mark as Pending
+                    </Button>
+                ) : (
+                    <Button 
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    onClick={() => {
+                        setResolutionAction(selectedReport.actionTaken || ""); 
+                        setIsViewOpen(false); 
+                        // Delay slightly to allow the first dialog to close
+                        setTimeout(() => setIsResolveDialogOpen(true), 150);
+                    }}
+                    >
+                    <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as Resolved
+                    </Button>
+                )}
+                </DialogFooter>
+            </>
             )}
         </DialogContent>
-      </Dialog>
+        </Dialog>
+
+        {/* Resolve Action Popup */}
+        <Dialog open={isResolveDialogOpen} onOpenChange={setIsResolveDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                Resolve Report
+            </DialogTitle>
+            <DialogDescription>
+                Document the final action taken to address this incident.
+            </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+            <div className="space-y-2">
+                <Label htmlFor="resolution">Immediate Action Taken</Label>
+                <Textarea 
+                id="resolution"
+                placeholder="e.g. Discussed with staff, issued warning, or item replaced..."
+                className="min-h-[120px]"
+                value={resolutionAction}
+                onChange={(e) => setResolutionAction(e.target.value)}
+                />
+            </div>
+            </div>
+            <DialogFooter>
+            <Button 
+                variant="ghost" 
+                onClick={() => {
+                setIsResolveDialogOpen(false);
+                setIsViewOpen(true); // Go back if cancelled
+                }}
+            >
+                Back
+            </Button>
+            <Button 
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={!resolutionAction.trim() || updateStatusMutation.isPending}
+                onClick={() => {
+                if (!selectedReport) return;
+                updateStatusMutation.mutate({ 
+                    id: selectedReport.id, 
+                    status: 'resolved',
+                    actionTaken: resolutionAction 
+                });
+                }}
+            >
+                {updateStatusMutation.isPending ? "Saving..." : "Confirm & Resolve"}
+            </Button>
+            </DialogFooter>
+        </DialogContent>
+        </Dialog>
+
     </div>
   );
 }
