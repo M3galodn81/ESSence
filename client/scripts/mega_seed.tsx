@@ -300,6 +300,7 @@ async function seed() {
 
   // 4. Incident Reports - SIMULATED 1 YEAR HISTORY
   // 4. Incident Reports - ALIGNED WITH FRONTEND CATEGORIES
+  // 4. Incident Reports - SIMULATED 1 YEAR HISTORY
   console.log("Generating 1 year of incident reports...");
   
   const reportTemplates = [
@@ -335,7 +336,7 @@ async function seed() {
       desc: "End-of-day count showed a shortage of $50 compared to digital records.", 
       location: "Main Bar POS", 
       actionTaken: "Re-counting all receipts and checking security footage.", 
-      details: { variance: 50, terminalId: "POS-01" } 
+      details: { items: [{ name: "Shortage Adjustment", quantity: 50 }] } 
     },
     { 
       category: "awan", 
@@ -358,7 +359,7 @@ async function seed() {
   ];
   
   const reportsData = [];
-  const TOTAL_REPORTS = 75; // Increased for better analytics visibility
+  const TOTAL_REPORTS = 75; 
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
@@ -366,11 +367,11 @@ async function seed() {
     const template = reportTemplates[Math.floor(Math.random() * reportTemplates.length)];
     const reporter = employees[Math.floor(Math.random() * employees.length)];
     
-    // Distribute reports across the last year
     const randomTime = oneYearAgo.getTime() + Math.random() * (new Date().getTime() - oneYearAgo.getTime());
     const dateOccurred = new Date(randomTime);
+    const isResolved = Math.random() > 0.4;
 
-    // Pick 1-2 random staff members as parties involved to feed the "Most Involved" sidebar
+    // Pick random staff for involved parties sidebar
     const numInvolved = Math.floor(Math.random() * 2) + 1;
     const involved = Array.from({ length: numInvolved }, () => {
         const p = allStaff[Math.floor(Math.random() * allStaff.length)];
@@ -378,46 +379,47 @@ async function seed() {
     }).join(", ");
     
     reportsData.push({
-      userId: reporter.id,
+      userId: reporter.id, // String UUID
       category: template.category,
       title: template.title,
       description: template.desc,
       severity: template.severity,
-      // Status matched to frontend: 'pending' or 'resolved'
-      status: Math.random() > 0.4 ? "resolved" : "pending", 
+      status: isResolved ? "resolved" : "pending", 
       location: template.location,
       dateOccurred: dateOccurred,
       timeOccurred: `${10 + Math.floor(Math.random() * 12)}:${Math.floor(Math.random() * 6) * 10}`,
       partiesInvolved: involved,
       witnesses: "Shift Lead / On-duty Staff",
-      actionTaken: template.actionTaken,
+      // If resolved, ensure actionTaken is present as per your new logic
+      actionTaken: isResolved ? `Resolution: ${template.actionTaken}` : template.actionTaken,
       details: template.details || {},
-      resolvedBy: Math.random() > 0.5 ? mainManager.id : null,
-      resolvedAt: Math.random() > 0.5 ? new Date(dateOccurred.getTime() + 86400000) : null,
+      images: [],
+      resolvedBy: isResolved ? mainManager.id : null,
+      resolvedAt: isResolved ? new Date(dateOccurred.getTime() + 86400000) : null,
       createdAt: dateOccurred
     });
   }
 
-  // Ensure a few recent reports for today/yesterday
+  // Ensure a few recent critical reports for your new Priority sorting
   reportsData.push({
       userId: employees[0].id,
-      category: "breakages",
-      title: "Kitchen Equipment Malfunction",
-      description: "Blender motor burned out during prep.",
-      severity: "medium",
+      category: "others",
+      title: "Health & Safety Hazard",
+      description: "Water leak near POS terminals causing electrical sparks.",
+      severity: "critical",
       status: "pending",
-      location: "Main Kitchen",
+      location: "Main Hall",
       dateOccurred: new Date(),
-      timeOccurred: "09:15",
+      timeOccurred: "08:30",
       partiesInvolved: `${employees[0].firstName} ${employees[0].lastName}`,
-      witnesses: "Head Cook",
-      actionTaken: "Unplugged and tagged out.",
-      details: { items: [{ name: "Commercial Blender", quantity: 1 }] },
+      witnesses: "Front of House Team",
+      actionTaken: "Maintenance called, area cordoned off.",
+      details: {},
+      images: [],
       createdAt: new Date()
   });
 
   await db.insert(reports).values(reportsData);
-
 
   // =========================================================================
   // 5. ATTENDANCE & PAYSLIP GENERATION (12 Months)

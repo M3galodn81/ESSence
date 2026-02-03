@@ -241,6 +241,7 @@ export default function LeaveManagement() {
       </div>
 
       {/* Bento Stats - Leave Balances */}
+      {!canManageLeaves && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl overflow-hidden">
           <CardContent className="p-6">
@@ -274,12 +275,15 @@ export default function LeaveManagement() {
           </CardContent>
         </Card>
       </div>
+      )}
 
       {/* Tabs Section */}
-      <Tabs defaultValue="my-requests" className="w-full">
+      <Tabs defaultValue={canManageLeaves ? "pending" : "my-requests"} className="w-full">
         <div className="flex items-center mb-6">
           <TabsList className="bg-white/40 backdrop-blur-md border border-slate-200/50 p-1 rounded-full h-auto" data-testid="leave-tabs">
+            {!canManageLeaves && (
             <TabsTrigger value="my-requests" className="rounded-full px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm" data-testid="tab-my-requests">My Requests</TabsTrigger>
+            )}
             {canManageLeaves && (
               <TabsTrigger value="pending" className="rounded-full px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm" data-testid="tab-pending">
                 Pending Approvals

@@ -19,9 +19,12 @@ export class ReportStorage extends BaseStorage{
   }
 
   async getReportsByUser(userId: string): Promise<Report[]> {
-    return await db.select().from(reports)
+    const result = await db.select().from(reports)
       .where(eq(reports.userId, userId))
       .orderBy(desc(reports.createdAt));
+      
+    console.log(`[Storage] Found ${result.length} reports for user ${userId}`);
+    return result;
   }
 
   async getAllReports(): Promise<Report[]> {

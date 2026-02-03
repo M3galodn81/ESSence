@@ -17,6 +17,10 @@ export class UserStorage extends BaseStorage{
     async getAllUsers(): Promise<User[]> {
       return await db.select().from(users);
     }
+
+    async getAllEmployees(): Promise<User[]> {
+      return await db.select().from(users).where(eq(users.role, 'employee'));
+    }
   
     async createUser(insertUser: InsertUser, userId?: string): Promise<User> {
       const result = await db.insert(users).values(insertUser).returning();

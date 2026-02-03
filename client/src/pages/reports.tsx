@@ -19,8 +19,9 @@ import {
   AlertTriangle, UserX, Hammer, Plus, Calendar as CalendarIcon, Clock, 
   FileText, MapPin, CheckCircle2, AlertCircle, X, Users,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, 
-  List as ListIcon, Banknote, Search, History, Filter,
-  Loader2
+  List as ListIcon, Banknote, Search, History, Filter,Check,
+  Loader2,
+  ChevronsUpDown
 } from "lucide-react";
 import { format, isWithinInterval, startOfDay, endOfDay, subMonths, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -28,19 +29,23 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend 
 } from 'recharts';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Avatar, AvatarFallback } from "@radix-ui/react-avatar";
 
 /**
  * REPORT FORM SCHEMA CONFIGURATION
  */
 const reportFormSchema = insertReportSchema.omit({ userId: true, partiesInvolved: true }).extend({
-    involvedPeople: z.array(z.string()).min(1, "At least one person must be involved"), 
-    dateOccurred: z.coerce.date(),
-    details: z.object({
-        items: z.array(z.object({
-            name: z.string().min(1, "Item name required"),
-            quantity: z.number().min(1),
-        })).optional(),
-    }).optional()
+  title: z.string().min(5, "Title must be at least 5 characters"),
+  description: z.string().min(10, "Description must be at least 10 characters"),
+  location: z.string().min(2, "Location is required"),
+  involvedPeople: z.array(z.string()).min(1, "At least one person must be involved"), 
+  dateOccurred: z.coerce.date({ required_error: "Date is required" }),
+  timeOccurred: z.string().min(1, "Time is required"),
+  category: z.string().min(1, "Category is required"),
+  severity: z.string().min(1, "Severity is required"),
+  // Note: details is kept optional as per your shared schema
 });
 
 const SEVERITY_WEIGHTS: Record<string, number> = {
@@ -67,6 +72,8 @@ export default function Reports() {
   const [personFilter, setPersonFilter] = useState<string>(""); // NEW: Person Filter
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [sortBy, setSortBy] = useState<"date" | "priority">("date");
+  const [openFilterPicker, setOpenFilterPicker] = useState(false);
+
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -78,6 +85,7 @@ export default function Reports() {
   const [staffSearchTerm, setStaffSearchTerm] = useState(""); 
   const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false);
 const [resolutionAction, setResolutionAction] = useState("");
+const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
 
 
   // --- CONFIGURATION CONSTANTS ---
@@ -145,6 +153,17 @@ const [resolutionAction, setResolutionAction] = useState("");
     }
     return options;
   }, []);
+
+  const getEmployeeName = (userId: string) => {
+    const emp = teamMembers?.find((m) => m.id === userId);
+    return emp ? `${emp.firstName} ${emp.lastName}` : "Unknown";
+  };
+
+  const getEmployeeRole = (userId: string) => {
+    const emp = teamMembers?.find((m) => m.id === userId);
+    return emp ? emp.role : "Unknown";
+  };
+
 
   // --- FILTERING LOGIC ---
   const filteredReports = useMemo(() => {
@@ -486,32 +505,77 @@ const [resolutionAction, setResolutionAction] = useState("");
                           <div className="flex flex-col gap-1.5">
                               <span className="text-xs text-slate-500 font-medium">Add Staff Member</span>
                               
-                              <div className="relative">
-                                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                                  <Input 
-                                    className="pl-9 mb-2 bg-white" 
-                                    placeholder="Search staff name..." 
-                                    value={staffSearchTerm}
-                                    onChange={(e) => setStaffSearchTerm(e.target.value)}
-                                  />
-                              </div>
-
-                              <Select onValueChange={addStaffFromSelect}>
-                                  <SelectTrigger className="bg-white border-slate-200">
-                                      <SelectValue placeholder="Select from team..." />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                      {filteredEmployees.length > 0 ? (
-                                        filteredEmployees.map((member) => (
-                                          <SelectItem key={member.id} value={`${member.firstName} ${member.lastName}`}>
-                                              {member.firstName} {member.lastName} <span className="text-xs text-slate-400 ml-1">({member.position})</span>
-                                          </SelectItem>
-                                        ))
-                                      ) : (
-                                        <div className="p-2 text-sm text-slate-500 text-center">No staff found</div>
-                                      )}
-                                  </SelectContent>
-                              </Select>
+                              {/* People Involved Autocomplete */}
+                                
+                                
+                                <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
+                                    <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        aria-expanded={openEmployeePicker}
+                                        className="w-full justify-between bg-white border-slate-200 font-normal hover:bg-slate-50"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                        <Search className="h-4 w-4 opacity-50" />
+                                        <span>Search from team members...</span>
+                                        </div>
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+  <Command>
+    <CommandInput placeholder="Type staff name..." />
+    {/* Setting a max-height and overflow here allows mouse wheel scrolling */}
+    <CommandList className="max-h-[300px] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-200">
+      <CommandEmpty className="p-4 text-sm text-slate-500 flex flex-col items-center gap-2">
+        <UserX className="w-8 h-8 opacity-20" />
+        No staff member found.
+      </CommandEmpty>
+      <CommandGroup heading="Active Staff">
+        {filteredEmployees.map((member) => {
+          const fullName = `${member.firstName} ${member.lastName}`;
+          const isAlreadyAdded = currentPeople.includes(fullName);
+          
+          return (
+            <CommandItem
+              key={member.id}
+              value={fullName}
+              disabled={isAlreadyAdded}
+              onSelect={() => {
+                addStaffFromSelect(fullName);
+                setOpenEmployeePicker(false);
+              }}
+              className={cn(
+                "flex items-center justify-between py-2 px-4 cursor-pointer",
+                isAlreadyAdded && "opacity-50 grayscale pointer-events-none"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <Avatar className="h-7 w-7">
+                  <AvatarFallback className="text-[10px] bg-slate-100">
+                    {member.firstName[0]}{member.lastName[0]}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col">
+                  <span className="font-medium text-xs">{fullName}</span>
+                  <span className="text-[9px] text-slate-400 uppercase">{member.position}</span>
+                </div>
+              </div>
+              {isAlreadyAdded ? (
+                <Badge variant="secondary" className="text-[8px] bg-emerald-50 text-emerald-600">Added</Badge>
+              ) : (
+                <Plus className="w-3 h-3 text-slate-300" />
+              )}
+            </CommandItem>
+          );
+        })}
+      </CommandGroup>
+    </CommandList>
+  </Command>
+</PopoverContent>
+                                </Popover>
+                                
                           </div>
 
                           {/* Manual Input */}
@@ -577,20 +641,85 @@ const [resolutionAction, setResolutionAction] = useState("");
                     <div className="flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl items-center">
                         <Filter className="w-4 h-4 text-slate-400" />
                         
-                        {/* NEW: Person Filter Input */}
-                        <div className="relative w-[160px]">
-                            <Input 
-                                placeholder="Filter people..." 
-                                value={personFilter} 
-                                onChange={(e) => setPersonFilter(e.target.value)} 
-                                className="h-8 text-xs bg-white pr-6"
-                            />
-                            {personFilter && (
-                                <button onClick={() => setPersonFilter("")} className="absolute right-2 top-2">
-                                    <X className="w-3 h-3 text-slate-400 hover:text-red-500" />
-                                </button>
-                            )}
-                        </div>
+                        <div className="flex items-center gap-2">
+  <Popover open={openFilterPicker} onOpenChange={setOpenFilterPicker}>
+    <PopoverTrigger asChild>
+      <Button
+        variant="outline"
+        role="combobox"
+        aria-expanded={openFilterPicker}
+        className="w-[200px] h-8 justify-between text-xs bg-white font-normal"
+      >
+        <div className="flex items-center gap-2 truncate">
+          <Search className="h-3 w-3 opacity-50" />
+          {personFilter || "Filter by person..."}
+        </div>
+        {personFilter && (
+          <X 
+            className="h-3 w-3 opacity-50 hover:opacity-100" 
+            onClick={(e) => {
+              e.stopPropagation();
+              setPersonFilter("");
+            }} 
+          />
+        )}
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent className="w-[200px] p-0" align="start">
+      <Command>
+        <CommandInput placeholder="Search name..." className="h-8 text-xs" />
+        <CommandList className="max-h-[200px]">
+          <CommandEmpty className="py-2 px-4 text-xs text-slate-500">No one found.</CommandEmpty>
+          <CommandGroup heading="Staff Members">
+            {teamMembers?.map((member) => {
+              const fullName = `${member.firstName} ${member.lastName}`;
+              return (
+                <CommandItem
+                  key={member.id}
+                  value={fullName}
+                  onSelect={(currentValue) => {
+                    setPersonFilter(currentValue === personFilter ? "" : currentValue);
+                    setOpenFilterPicker(false);
+                  }}
+                  className="text-xs"
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-3 w-3",
+                      personFilter === fullName ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  <div className="flex flex-col">
+                    <span>{fullName}</span>
+                    <span className="text-[10px] text-slate-400">{member.position}</span>
+                  </div>
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
+          
+          {/* Include logic for "manual" names that might be in reports but not in team list */}
+          <CommandGroup heading="Recent Involved Parties">
+            {stats.mostInvolved.map(([name]) => (
+               <CommandItem
+                  key={name}
+                  value={name}
+                  onSelect={(val) => {
+                    setPersonFilter(val);
+                    setOpenFilterPicker(false);
+                  }}
+                  className="text-xs"
+               >
+                 <History className="mr-2 h-3 w-3 opacity-50" />
+                 {name}
+               </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </Command>
+    </PopoverContent>
+  </Popover>
+</div>
 
                         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                             <SelectTrigger className="w-[160px] h-8 text-xs bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
@@ -845,6 +974,25 @@ const [resolutionAction, setResolutionAction] = useState("");
                         {selectedReport.status === 'resolved' ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <AlertCircle className="w-4 h-4 text-amber-500" />}
                         {selectedReport.status}
                     </div>
+                    </div>
+                </div>
+                
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+                            <Users className="w-5 h-5 text-slate-500" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Filed By</p>
+                            <p className="text-sm font-bold text-slate-900">{getEmployeeName(selectedReport.userId)}</p>
+                            <p className="text-xs text-slate-500 capitalize">{getEmployeeRole(selectedReport.userId)}</p>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Submission Date</p>
+                        <p className="text-xs font-medium text-slate-700">
+                            {format(new Date(selectedReport.createdAt), "MMM dd, yyyy p")}
+                        </p>
                     </div>
                 </div>
 

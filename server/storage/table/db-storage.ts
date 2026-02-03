@@ -46,6 +46,7 @@ export class DbStorage implements IStorage {
   async getUser(id: string) { return this.users.getUser(id); }
   async getUserByUsername(username: string) { return this.users.getUserByUsername(username); }
   async getAllUsers() { return this.users.getAllUsers(); }
+  async getAllEmployees() { return this.users.getAllEmployees(); }
   async createUser(user: InsertUser) { return this.users.createUser(user); }
   async updateUser(id: string, updates: Partial<User>) { return this.users.updateUser(id, updates); }
   async deleteUser(id: string) { return this.users.deleteUser(id); }

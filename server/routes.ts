@@ -68,18 +68,16 @@ export function registerRoutes(app: Express): Server {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     const user = req.user!;
     
-    if (user.role !== 'manager' && user.role !== 'admin' && user.role !== 'payroll_officer')
-      {
-        return res.status(403).json({ message: "Access denied" });
-      }
     let teamMembers;
 
     if (user.role === 'admin' || user.role === 'payroll_officer') {
       teamMembers = await storage.getAllUsers();
     }
-    else {
+    else if (user.role === 'manager') {
       teamMembers = await storage.getEmployeesForManager(user.id);
-    }  
+    }  else {
+      teamMembers = await storage.getAllEmployees();
+    }
     res.json(teamMembers);
   });
 

@@ -3,6 +3,7 @@ import { insertReportSchema, reports } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod"; 
+import { storage } from "server/storage";
 
 const router = Router();
 
@@ -12,13 +13,15 @@ router.get("/", async (req, res) => {
   const user = req.user!;
   try {
     let result;
-    // Admin & Manager see all
-    if (['admin', 'manager'].includes(user.role)) {
-      result = await db.select().from(reports).orderBy(desc(reports.createdAt));
-    } else {
-      // Employees only see their own reports
-      result = await db.select().from(reports).where(eq(reports.userId, user.id)).orderBy(desc(reports.createdAt));
-    }
+    console.log(`User ID: ${user.id}, Role: ${user.role}`);
+
+if (['admin', 'manager'].includes(user.role)) {
+  console.log("Branch: Admin/Manager - Fetching ALL");
+  result = await storage.getAllReports();
+} else {
+  console.log(`Branch: Employee - Fetching ONLY for ${user.id}`);
+  result = await storage.getReportsByUser(user.id);
+}
     res.json(result);
   } catch (error) {
     console.error("Error fetching reports:", error);
