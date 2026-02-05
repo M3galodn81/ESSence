@@ -16,6 +16,7 @@ export class PayslipStorage extends BaseStorage{
         userId: payslips.userId,
         month: payslips.month,
         year: payslips.year,
+        period: payslips.period,
         basicSalary: payslips.basicSalary,
         allowances: payslips.allowances,
         deductions: payslips.deductions,
@@ -33,12 +34,14 @@ export class PayslipStorage extends BaseStorage{
         userId: payslips.userId,
         month: payslips.month,
         year: payslips.year,
+        period: payslips.period,
         basicSalary: payslips.basicSalary,
         allowances: payslips.allowances,
         deductions: payslips.deductions,
         grossPay: payslips.grossPay,
         netPay: payslips.netPay,
         generatedAt: payslips.generatedAt
+
     }).from(payslips)
       .where(eq(payslips.userId, userId))
       .orderBy(desc(payslips.generatedAt)) as unknown as Payslip[];

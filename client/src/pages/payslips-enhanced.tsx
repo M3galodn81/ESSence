@@ -54,12 +54,17 @@ export default function PayslipsEnhanced() {
   };
 
   const getPeriodLabel = (payslip: Payslip) => {
-    if (payslip.period) {
-        return payslip.period === 1 ? "1st Half (1-15)" : "2nd Half (16-End)";
-    }
-    return payslip.period;
-
-  };
+    // Check for null/undefined explicitly since 1 or 2 are valid numbers
+        if (payslip.period !== undefined && payslip.period !== null) {
+            return payslip.period === 1 ? "1st Half (1-15)" : "2nd Half (16-End)";
+        }
+        
+        // Fallback logic
+        if (!payslip.generatedAt) return "Regular";
+        const date = new Date(payslip.generatedAt);
+        const day = date.getDate();
+        return day <= 15 ? "1st Half (1-15)" : "2nd Half (16-End)";
+    };
 
   const getDeductionBreakdown = (payslip: Payslip) => {
     const deductions = payslip.deductions as Record<string, number> || {};
