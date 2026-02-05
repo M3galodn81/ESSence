@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +16,15 @@ import {
   History
 } from "lucide-react";
 import { BentoCard } from "@/components/custom/bento-card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { startOfMonth, endOfMonth, eachWeekOfInterval, endOfWeek, isWithinInterval } from "date-fns";
+import { cn } from "@/lib/utils";
 
 // Types matching the API response
 interface AttendanceRecord {
@@ -32,7 +41,7 @@ interface AttendanceRecord {
 
 export default function AttendanceHistory() {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedWeek, setSelectedWeek] = useState<string>("all"); // New State
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -50,6 +59,44 @@ export default function AttendanceHistory() {
     },
   });
 
+  // Reset week filter when month changes
+  const handleMonthChange = (newDate: Date) => {
+    setCurrentDate(newDate);
+    setSelectedWeek("all");
+  };
+
+  // Generate Weeks for the current month
+  const weeksInMonth = useMemo(() => {
+    const start = startOfMonth(currentDate);
+    const end = endOfMonth(currentDate);
+    const weeks = eachWeekOfInterval({ start, end });
+
+    return weeks.map((weekStart, index) => {
+      const weekEnd = endOfWeek(weekStart);
+      return {
+        label: `Week ${index + 1}`,
+        subLabel: `${format(weekStart, "MMM d")} - ${format(weekEnd, "MMM d")}`,
+        id: index.toString(),
+        start: weekStart,
+        end: weekEnd
+      };
+    });
+  }, [currentDate]);
+
+  // Updated Filter Logic
+ const filteredRecords = records?.filter(r => {
+    const recordDate = new Date(r.date);
+    
+    // Week Filter Only
+    if (selectedWeek !== "all") {
+      const week = weeksInMonth[parseInt(selectedWeek)];
+      const isInWeek = isWithinInterval(recordDate, { start: week.start, end: week.end });
+      if (!isInWeek) return false;
+    }
+
+    return true;
+  }).sort((a, b) => b.date - a.date) || [];
+
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
   const resetToToday = () => setCurrentDate(new Date());
@@ -64,14 +111,6 @@ export default function AttendanceHistory() {
     const m = minutes % 60;
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
-
-  const filteredRecords = records?.filter(r => {
-    if (!searchTerm) return true;
-    const searchLower = searchTerm.toLowerCase();
-    const dateStr = formatDate(r.date).toLowerCase();
-    const notesStr = (r.notes || "").toLowerCase();
-    return dateStr.includes(searchLower) || notesStr.includes(searchLower);
-  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) || []; 
 
   const totalWorkHours = filteredRecords.reduce((acc, curr) => acc + (curr.totalWorkMinutes || 0), 0) / 60;
   const daysPresent = filteredRecords.length;
@@ -128,20 +167,45 @@ export default function AttendanceHistory() {
       </div>
 
       {/* Search & Filter Bar */}
-      <div className="flex flex-col sm:flex-row items-center gap-4">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder="Search dates or notes..."
-            className="pl-10 h-11 rounded-full bg-white/60 backdrop-blur-sm border-slate-200/60 focus:bg-white focus:ring-primary/20 transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/50 backdrop-blur-md border border-slate-200/60 rounded-2xl w-fit">
+          <button
+            onClick={() => setSelectedWeek("all")}
+            className={cn(
+              "px-4 py-2 rounded-xl text-sm font-medium transition-all",
+              selectedWeek === "all" 
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
+                : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
+            )}
+          >
+            All Month
+          </button>
+          
+          <div className="w-px h-6 bg-slate-300/50 mx-1 hidden sm:block" />
+
+          {weeksInMonth.map((week) => (
+            <button
+              key={week.id}
+              onClick={() => setSelectedWeek(week.id)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-sm font-medium flex flex-col items-center transition-all",
+                selectedWeek === week.id 
+                  ? "bg-white text-slate-900 shadow-sm border border-slate-200" 
+                  : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
+              )}
+            >
+              <span>{week.label}</span>
+              <span className="text-[10px] opacity-60 font-normal leading-none mt-0.5">
+                {week.subLabel}
+              </span>
+            </button>
+          ))}
         </div>
+
         <Button 
             variant="outline" 
-            onClick={resetToToday} 
-            className="rounded-full border-slate-200/60 bg-white/60 backdrop-blur-sm hover:bg-white w-full sm:w-auto"
+            onClick={() => handleMonthChange(new Date())} 
+            className="rounded-2xl border-slate-200/60 bg-white/60 backdrop-blur-sm hover:bg-white h-full py-6 lg:py-2"
         >
             <Clock className="w-4 h-4 mr-2 text-slate-500" />
             Jump to Today

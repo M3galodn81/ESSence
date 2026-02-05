@@ -10,18 +10,21 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children, title = "Dashboard", subtitle }: MainLayoutProps) {
   return (
-    <div className="min-h-screen flex bg-gradient-to-br from-slate-100  to-gray-100 font-sans text-slate-900">
-      {/* Sidebar is assumed to be fixed or sticky */}
+    // Added h-screen and overflow-hidden here to lock the viewport
+    <div className="h-screen w-full flex bg-gradient-to-br from-slate-100 to-gray-100 font-sans text-slate-900 overflow-hidden">
+      
       <Sidebar />
       
-      <main className="flex-1 flex flex-col overflow-hidden ml-0 lg:ml-64 transition-all duration-300 ease-in-out relative z-0">
+      {/* Ensure the main container is also locked to screen height */}
+      <main className="flex-1 h-screen flex flex-col relative z-0 ml-0 lg:ml-64 transition-all duration-300 ease-in-out">
         
-        {/* Main Content Area - Scrollbar hidden */}
-        {/* The Header is now INSIDE this scrollable container. 
-            This allows content to scroll BEHIND the sticky glass header. */}
-        <div className="flex-1 overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] relative">
+        {/* This is the key container. 
+          Adding 'max-h-full' and 'overflow-y-auto' ensures that only this 
+          div scrolls if {children} expands, without resizing the whole layout.
+        */}
+        <div className="flex-1 overflow-y-auto max-h-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] relative">
           
-          {/* Header stays at the top of this container (sticky) */}
+          {/* Sticky Header */}
           <Header title={title} subtitle={subtitle} />
           
           <div className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
