@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const DURATION_MS = 3000; // 5 seconds in milliseconds
+const DURATION_MS = 5000; // 5 seconds in milliseconds
 
 export default function ManagerQRPage() {
   const [qrValue, setQrValue] = useState("");
@@ -37,6 +37,7 @@ export default function ManagerQRPage() {
   const secondsLeft = (remaining / 1000).toFixed(2);
   const progressWidth = (remaining / DURATION_MS) * 100;
 
+  //TODO: Add logic to verify token on the backend when scanned, and show success/failure states on the UI
   return (
     <div className="flex items-center justify-center min-h-screen bg-slate-50 p-4">
       <Card className="w-full max-w-md text-center p-6 rounded-[2.5rem] shadow-2xl bg-white">
