@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Clock, Edit, Eye, EyeOff, Users } from "lucide-react";
 import type { Announcement } from "@shared/schema";
+import { useState } from "react";
 
 // --- Announcement Feed Item ---
 interface AnnouncementFeedItemProps {
@@ -13,7 +14,14 @@ interface AnnouncementFeedItemProps {
 
 // Announcement Feed Item Component
 export function AnnouncementFeedItem({ announcement, canManage, onEdit, onToggleActive }: AnnouncementFeedItemProps) {
-  
+  const [isExpanded, setIsExpanded] = useState(false);
+  const maxLength = 250; // Character limit before collapsing
+  const isLong = announcement.content.length > maxLength;
+
+  const displayContent = isExpanded 
+    ? announcement.content 
+    : `${announcement.content.substring(0, maxLength)}${isLong ? "..." : ""}`;
+
   // Type Badge
   const getTypeBadge = (type: string) => {
     // Define styles for each type
@@ -108,8 +116,21 @@ export function AnnouncementFeedItem({ announcement, canManage, onEdit, onToggle
           </div>
           
           <p className="text-slate-600 text-sm leading-relaxed max-w-4xl" data-testid={`announcement-content-${announcement.id}`}>
-            {announcement.content}
+            {displayContent}
           </p>
+
+          {isLong && (
+            <Button 
+              variant="link" 
+              className="p-0 h-auto text-blue-600 text-xs mt-1"
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent opening the View Dialog
+                setIsExpanded(!isExpanded);
+              }}
+            >
+              {isExpanded ? "Show Less" : "Read More"}
+            </Button>
+          )}
           
           {announcement.targetDepartments && (announcement.targetDepartments as string[]).length > 0 && (
             <div className="pt-2 flex items-center gap-2">

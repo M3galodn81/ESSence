@@ -80,23 +80,32 @@ const router = Router();
     }
   });
 
+
   router.get("/my-reads", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-  
-      try {
-        // We need a storage method for this, or direct DB query
-        // Assuming simple DB query here matching your schema structure:
-        const reads = await db.select({
-          announcementId: announcementReads.announcementId
-        })
-        .from(announcementReads)
-        .where(eq(announcementReads.userId, req.user!.id)); // Use string or int based on your schema
 
-        const readIds = reads.map(r => r.announcementId);
-        res.json(readIds);
-      } catch (error) {
-        res.status(500).json({ message: "Failed to fetch read status" });
-      }
+    try {
+      // 1. Ensure we are using the string version of the ID
+      const userId = String(req.user!.id);
+
+      const reads = await db.select({
+        announcementId: announcementReads.announcementId
+      })
+      .from(announcementReads)
+      .where(eq(announcementReads.userId, userId));
+
+      // 2. Ensure we return an array of strings
+      const readIds = reads.map(r => String(r.announcementId));
+      res.json(readIds);
+    } catch (error) {
+      // 3. LOG THE ACTUAL ERROR to the console so you can see why SQLite is mad
+      console.error("[My Reads Error]:", error); 
+      res.status(500).json({ 
+        message: "Failed to fetch read status",
+        detail: error instanceof Error ? error.message : "Unknown error" 
+      });
+    }
   });
+
 
 export default router;

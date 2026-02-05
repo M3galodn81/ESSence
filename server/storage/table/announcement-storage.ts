@@ -51,21 +51,24 @@ export class AnnouncementStorage extends BaseStorage{
   }
 
   async markAnnouncementRead(userId: string, announcementId: string): Promise<void> {
-    // Check if already read to prevent duplicates
+    const uId = String(userId);
+    const aId = String(announcementId);
+
     const existing = await db.select()
       .from(announcementReads)
-      .where(and(
-        // REMOVED parseInt() - compare string to string
-        eq(announcementReads.userId, userId),
-        eq(announcementReads.announcementId, announcementId)
-      ))
+      .where(
+        and(
+          eq(announcementReads.userId, uId),
+          eq(announcementReads.announcementId, aId)
+        )
+      )
       .limit(1);
 
     if (existing.length === 0) {
       await db.insert(announcementReads).values({
-        userId: userId, // Pass string directly
-        announcementId: announcementId, // Pass string directly
-        readAt: new Date(),
+        userId: uId,
+        announcementId: aId,
+        readAt: new Date(), // SQLite stores this as an ISO string or integer
       });
     }
   }

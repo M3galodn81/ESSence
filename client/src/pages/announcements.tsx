@@ -82,7 +82,7 @@ function ViewAnnouncementDialog({
           </div>
           <DialogTitle className="text-2xl font-bold text-slate-900">{announcement.title}</DialogTitle>
         </DialogHeader>
-
+        
         <div className="flex-1 overflow-y-auto pr-2 mt-4 space-y-6">
           <div className="bg-slate-50/50 p-6 rounded-xl border border-slate-100 text-slate-700 whitespace-pre-wrap leading-relaxed">
             {announcement.content}
@@ -128,12 +128,12 @@ function ViewAnnouncementDialog({
           )}
         </div>
 
-        <DialogFooter className="mt-4 pt-4 border-t flex sm:justify-between items-center gap-4">
-          <p className="text-xs text-slate-400 hidden sm:block">
+        <DialogFooter className="mt-4 pt-4 border-t flex sm:align-right items-center gap-4">
+          {/* <p className="text-xs text-slate-400 hidden sm:block">
             {announcement.targetDepartments && announcement.targetDepartments.length > 0 
               ? `Target: ${announcement.targetDepartments.join(", ")}` 
               : "Target: All Company"}
-          </p>
+          </p> */}
           <div className="flex gap-3 w-full sm:w-auto justify-end">
             <Button variant="outline" onClick={onClose} className="rounded-full">Close</Button>
             
@@ -437,7 +437,8 @@ export default function Announcements() {
           ) : filteredAnnouncements.length > 0 ? (
             <div className="grid grid-cols-1 gap-4">
               {filteredAnnouncements.map((announcement: Announcement) => {
-                const isRead = myReadIds?.includes(announcement.id);
+                // Inside filteredAnnouncements.map
+                const isRead = myReadIds?.some(id => String(id) === String(announcement.id));
                 
                 return (
                   <div 

@@ -57,10 +57,8 @@ export default function PayslipsEnhanced() {
     if (payslip.period) {
         return payslip.period === 1 ? "1st Half (1-15)" : "2nd Half (16-End)";
     }
-    if (!payslip.generatedAt) return "Regular";
-    const date = new Date(payslip.generatedAt);
-    const day = date.getDate();
-    return day <= 15 ? "1st Half (1-15)" : "2nd Half (16-End)";
+    return payslip.period;
+
   };
 
   const getDeductionBreakdown = (payslip: Payslip) => {
