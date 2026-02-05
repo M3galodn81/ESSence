@@ -527,7 +527,37 @@ export default function ShiftManagement() {
 
             {/* --- VIEW: LIST --- */}
             {view === 'list' && (
-                <Card className="border-slate-200 shadow-sm"><CardContent className="p-0"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500"><tr><th className="px-6 py-3 font-semibold">Date</th><th className="px-6 py-3 font-semibold">Employee</th><th className="px-6 py-3 font-semibold">Shift</th><th className="px-6 py-3 font-semibold">Time</th><th className="px-6 py-3 font-semibold text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredSchedules.map(s => (<tr key={s.id} className="hover:bg-slate-50/50"><td className="px-6 py-3 font-medium">{new Date(s.date).toLocaleDateString()}</td><td className="px-6 py-3">{getEmployeeName(s.userId)}</td><td className="px-6 py-3"><Badge variant="outline" className={cn("capitalize", SHIFT_PRESETS[s.type as keyof typeof SHIFT_PRESETS]?.color)}>{s.type}</Badge></td><td className="px-6 py-3 text-slate-500 text-xs font-mono">{s.type !== 'off' ? `${new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'OFF'}</td><td className="px-6 py-3 text-right"><Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(s)}><Edit className="w-4 h-4" /></Button><Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s)}><Trash2 className="w-4 h-4" /></Button></td></tr>))}</tbody></table></CardContent></Card>
+                <Card className="border-slate-200 shadow-sm">
+                  <CardContent className="p-0">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500">
+                        <tr>
+                          <th className="px-6 py-3 font-semibold">Date</th>
+                          <th className="px-6 py-3 font-semibold">Employee</th>
+                          <th className="px-6 py-3 font-semibold">Shift</th>
+                          <th className="px-6 py-3 font-semibold">Time</th>
+                          <th className="px-6 py-3 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredSchedules.map(s => (<tr key={s.id} className="hover:bg-slate-50/50">
+                        <td className="px-6 py-3 font-medium">{new Date(s.date).toLocaleDateString()}</td>
+                        <td className="px-6 py-3">{getEmployeeName(s.userId)}</td>
+                        <td className="px-6 py-3">
+                          <Badge 
+                            variant="outline" 
+                            className={cn("capitalize", SHIFT_PRESETS[s.type as keyof typeof SHIFT_PRESETS]?.color)}
+                          >
+                            {/* Access the label property based on the type */}
+                            {SHIFT_PRESETS[s.type as keyof typeof SHIFT_PRESETS]?.label || s.type}
+                          </Badge>
+                        </td>
+                        <td className="px-6 py-3 text-slate-500 text-xs font-mono">{s.type !== 'off' ? `${new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'OFF'}</td>
+                        <td className="px-6 py-3 text-right"><Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(s)}><Edit className="w-4 h-4" /></Button><Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s)}><Trash2 className="w-4 h-4" /></Button></td></tr>))}
+                      </tbody>
+                    </table>
+                  </CardContent>
+                </Card>
             )}
           </>
       )}
@@ -613,9 +643,13 @@ export default function ShiftManagement() {
 function RosterCard({ schedule, onEdit, onDelete }: any) {
   if (schedule.type === 'off') return <div onClick={() => onEdit(schedule)} className="rounded-md bg-slate-50 border border-slate-100 p-2 text-center cursor-pointer hover:bg-slate-100"><span className="text-[10px] font-bold text-slate-300">OFF</span></div>;
   const style = SHIFT_PRESETS[schedule.type as keyof typeof SHIFT_PRESETS];
+  const label = style?.label || schedule.type;
   return (
     <div onClick={() => onEdit(schedule)} className={cn("relative rounded-lg p-2 text-xs border shadow-sm cursor-pointer hover:scale-[1.02] transition-all group", style?.color)}>
-      <div className="flex justify-between items-center mb-1"><span className="font-bold capitalize">{schedule.type}</span><Badge variant="secondary" className="h-4 px-1 text-[8px] bg-white/60 border-0 uppercase">{schedule.shiftRole}</Badge></div>
+      <div className="flex justify-between items-center mb-1">
+        <span className="font-bold capitalize">{label}</span>
+        <Badge variant="secondary" className="h-4 px-1 text-[8px] bg-white/60 border-0 uppercase">{schedule.shiftRole}</Badge>
+      </div>
       <div className="font-mono text-[10px] opacity-90">{new Date(schedule.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
       <button onClick={(e) => onDelete(schedule, e)} className="absolute top-1 right-1 p-1 rounded-full bg-white/40 hover:bg-red-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-3 h-3" /></button>
     </div>
