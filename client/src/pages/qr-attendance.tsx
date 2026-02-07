@@ -37,6 +37,8 @@ export default function ManagerQRPage() {
   const secondsLeft = (remaining / 1000).toFixed(2);
   const progressWidth = (remaining / DURATION_MS) * 100;
 
+  //TODO: Check browser compatibility for QR code scanning
+  //TODO: Add employee authentication before showing QR code
   //TODO: Add logic to verify token on the backend when scanned, and show success/failure states on the UI
   return (
     <div className="flex items-center justify-center min-h-screen bg-slate-50 p-4">

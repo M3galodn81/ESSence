@@ -73,7 +73,8 @@ export const canViewLeaveDetails = canViewEmployeeDashboardFeatures;
 // #endregion
 
 // #region Reports
-
+export const canManageReports = (user?: User | null) =>
+ hasAnyRole(user, MANAGEMENT_ROLES);
 
 // #endregion
 

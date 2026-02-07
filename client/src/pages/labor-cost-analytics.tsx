@@ -309,6 +309,8 @@ export default function LaborCostAnalytics() {
       {/* Bento Grid - The Big Picture */}
       {currentMonthData ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* TODO: Fix chart's accuracy */}
            {/* 1. Key Metric: Labor % Gauge */}
            <Card className="lg:row-span-2 bg-slate-900 text-white border-slate-800 shadow-xl rounded-3xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none group-hover:bg-white/10 transition-colors duration-500    "  />

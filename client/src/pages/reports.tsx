@@ -32,6 +32,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Avatar, AvatarFallback } from "@radix-ui/react-avatar";
+import { canManageReports } from "@/utils/permissions";
 
 /**
  * REPORT FORM SCHEMA CONFIGURATION
@@ -1044,6 +1045,8 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                     <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as Resolved
                     </Button>
                 )}
+
+                
                 </DialogFooter>
             </>
             )}

@@ -1,7 +1,3 @@
-/**
- * Configuration for Labor Cost Performance Metrics
- * Easily edit limits and UI messages here.
- */
 export const LABOR_THRESHOLDS = [
   {
     max: 11,
