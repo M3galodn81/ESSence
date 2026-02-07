@@ -2,6 +2,10 @@ import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+
+//TODO: Refactor to use separate tables for complex JSON fields like emergencyContact and address, or use a more structured approach to store this data. This will improve query performance and data integrity.
+//TODO: Make UML diagrams for the database schema to visualize relationships and structure.
+
 const json = <T>(name: string) => {
   return text(name, { mode: 'json' }).$type<T>();
 };

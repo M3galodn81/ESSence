@@ -427,7 +427,7 @@ async function seed() {
   console.log("Generating attendance and payslips...");
   const now = new Date(); 
   const periods = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 11; i++) {
      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
      const m = d.getMonth();
      const y = d.getFullYear();
