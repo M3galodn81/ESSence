@@ -1023,7 +1023,9 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                 <DialogFooter className="flex-row justify-between sm:justify-between border-t pt-4">
                 <Button variant="ghost" onClick={() => setIsViewOpen(false)}>Close</Button>
                 
+                {/* TODO: Make mark as resolved for only the managers */}
                 {selectedReport.status === 'resolved' ? (
+                    
                     <Button 
                     variant="outline"
                     className="border-amber-500 text-amber-600 hover:bg-amber-50"
@@ -1032,6 +1034,7 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                     >
                     <Clock className="w-4 h-4 mr-2" /> Mark as Pending
                     </Button>
+                    
                 ) : (
                     <Button 
                     className="bg-emerald-600 hover:bg-emerald-700 text-white"
