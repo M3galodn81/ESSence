@@ -13,15 +13,12 @@ router.get("/", async (req, res) => {
   const user = req.user!;
   try {
     let result;
-    console.log(`User ID: ${user.id}, Role: ${user.role}`);
-
-if (['admin', 'manager'].includes(user.role)) {
-  console.log("Branch: Admin/Manager - Fetching ALL");
-  result = await storage.getAllReports();
-} else {
-  console.log(`Branch: Employee - Fetching ONLY for ${user.id}`);
-  result = await storage.getReportsByUser(user.id);
-}
+    // Managers/Admins see all, Employees see their own + assigned ones (handled in storage)
+    if (['admin', 'manager'].includes(user.role)) {
+      result = await storage.getAllReports();
+    } else {
+      result = await storage.getReportsByUser(user.id);
+    }
     res.json(result);
   } catch (error) {
     console.error("Error fetching reports:", error);
@@ -33,43 +30,34 @@ if (['admin', 'manager'].includes(user.role)) {
 router.post("/", async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   
-  console.log("📝 [POST /api/reports] Raw Body:", JSON.stringify(req.body, null, 2));
-
   try {
     // 1. Prepare Payload
     const payload = {
       ...req.body,
       userId: req.user!.id,
+      // Ensure boolean conversion if sent as string from some clients, though zod handles it mostly
+      nteRequired: req.body.nteRequired === true || req.body.nteRequired === 'true',
     };
     
     // 2. Validate
     const data = insertReportSchema.parse(payload);
     
     // 3. Fix Date Object for Drizzle
-    // Drizzle's SQLite driver for 'timestamp_ms' expects a Date object, not a number/string.
-    // Even if Zod returns a Date, we ensure it here to prevent 'getTime is not a function' errors.
     const finalData = {
         ...data,
         dateOccurred: new Date(data.dateOccurred), 
-        // Ensure optional JSON fields are objects/arrays, not undefined/null
         details: data.details || {},
         images: data.images || []
     };
 
-    console.log("🚀 [POST /api/reports] Inserting Data:", JSON.stringify(finalData, null, 2));
-
     // 4. Insert
     const report = await db.insert(reports).values(finalData).returning();
-    
-    console.log("✅ [POST /api/reports] Success:", report[0].id);
     res.json(report[0]);
   } catch (error) {
     console.error("❌ [POST /api/reports] Error:", error);
-    
     if (error instanceof z.ZodError) {
       return res.status(400).json({ message: "Invalid report data", details: error.errors });
     }
-
     res.status(400).json({ message: "Invalid report data", details: String(error) });
   }
 });
@@ -78,25 +66,46 @@ router.post("/", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   if (!req.isAuthenticated()) return res.sendStatus(401);
   const user = req.user!;
-  
-  if (!['admin', 'manager'].includes(user.role)) {
-      return res.status(403).json({ message: "Access denied" });
-  }
+  const reportId = req.params.id;
 
   try {
-    const { status, resolutionNotes } = req.body;
+    // Fetch existing report to check permissions
+    const existingReport = await db.select().from(reports).where(eq(reports.id, reportId)).limit(1);
+    if (!existingReport.length) return res.status(404).json({ message: "Report not found" });
+    const report = existingReport[0];
+
+    const { status, actionTaken, nteContent } = req.body;
+    const updates: any = {};
+
+    // Logic: 
+    // 1. Admin/Manager can update status and actionTaken.
+    // 2. Assigned Employee can update nteContent.
+    
+    const isManager = ['admin', 'manager'].includes(user.role);
+    const isAssignedEmployee = user.id === report.assignedTo;
+
+    if (isManager) {
+        if (status) {
+            updates.status = status;
+            updates.resolvedBy = user.id;
+            updates.resolvedAt = status === 'resolved' ? new Date() : null;
+        }
+        if (actionTaken) updates.actionTaken = actionTaken;
+    }
+
+    if (nteContent !== undefined && (isAssignedEmployee || isManager)) {
+        updates.nteContent = nteContent;
+    }
+
+    if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "No valid updates provided or permission denied" });
+    }
     
     const updated = await db.update(reports)
-      .set({ 
-        status, 
-        resolvedBy: user.id,
-        resolvedAt: status === 'resolved' ? new Date() : null
-      })
-      .where(eq(reports.id, req.params.id))
+      .set(updates)
+      .where(eq(reports.id, reportId))
       .returning();
     
-    if (updated.length === 0) return res.status(404).json({ message: "Report not found" });
-
     res.json(updated[0]);
   } catch (error) {
     console.error("Update Report Error:", error);

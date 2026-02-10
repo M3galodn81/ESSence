@@ -3,28 +3,28 @@ import {
   useQuery,
   useMutation,
   UseMutationResult,
+  useQueryClient, // Import useQueryClient hook
 } from "@tanstack/react-query";
 import { insertUserSchema, User as SelectUser, InsertUser } from "@shared/schema";
-import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
+import { getQueryFn, apiRequest } from "../lib/queryClient"; // Removed queryClient import, we use hook instead
 import { toast } from "sonner";
+
+type LoginData = Pick<InsertUser, "username" | "password">;
 
 type AuthContextType = {
   user: SelectUser | null;
   isLoading: boolean;
   error: Error | null;
-  needsSetup: boolean;
   loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<SelectUser, Error, InsertUser>;
 };
 
-type LoginData = Pick<InsertUser, "username" | "password">;
-
 export const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient(); // Get the client instance
 
-  // Existing Queries
   const {
     data: user,
     error,
@@ -34,47 +34,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
 
-  const {
-    data: setupData,
-    isLoading: setupLoading,
-  } = useQuery<{ needsSetup: boolean }, Error>({
-    queryKey: ["/api/setup/check"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
-  });
-
-  const needsSetup = setupData?.needsSetup ?? false;
-
-  // 🟢 Login Mutation: ADD INVALIDATION HERE
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
       const res = await apiRequest("POST", "/api/login", credentials);
       return await res.json();
     },
     onSuccess: (user: SelectUser) => {
-      // 1. Set the authenticated user data
-      queryClient.setQueryData(["/api/user"], user);
-      
-      // 2. 🟢 AUTO-REFRESH CRITICAL DATA 🟢
-      // Invalidate queries used by the LeaveManagement component and any general user data.
-      // This forces React Query to refetch these data sets, ensuring the UI is fresh.
-      queryClient.invalidateQueries({ queryKey: ["/api/leave-requests"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/leave-requests/pending"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/users/"] });
+      // 1. WIPE EVERYTHING. 
+      // This removes all cached data (Reports, Orders, Profile, etc.)
+      queryClient.clear();
 
-      toast.success("Login successful 🎉", {
-        description: `Welcome back, ${user.firstName}!`,
-      });
+      // 2. Set the new user data immediately
+      queryClient.setQueryData(["/api/user"], user);
+
+      // 3. Force valid queries to refetch 
+      // (This ensures any active components on the page get fresh data)
+      queryClient.invalidateQueries();
+      
+      toast.success("Login successful");
     },
     onError: (error: Error) => {
       toast.error("Login failed", {
-        title: "Login failed",
-        description: `Invalid username or password.`,
-        variant: "destructive",
+        description: error.message,
       });
     },
   });
 
-  // Registration Mutation (Refreshes user data implicitly via setQueryData)
   const registerMutation = useMutation({
     mutationFn: async (credentials: InsertUser) => {
       const res = await apiRequest("POST", "/api/register", credentials);
@@ -82,8 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: (user: SelectUser) => {
       queryClient.setQueryData(["/api/user"], user);
-      // 💡 It's usually safe to assume fresh data immediately after registration,
-      // but you might want to invalidate other keys here too if needed.
+      toast.success("Registration successful");
     },
     onError: (error: Error) => {
       toast.error("Registration failed", {
@@ -92,21 +76,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  // 🟢 Logout Mutation: ADD INVALIDATION HERE
   const logoutMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/logout");
     },
     onSuccess: () => {
-      // 1. Clear the authenticated user data
+      // 1. Wipe the cache on logout too
+      // This prevents the next user from seeing "flash" of old data
+      queryClient.clear();
+      
+      // 2. Manually set user to null to update UI immediately
       queryClient.setQueryData(["/api/user"], null);
 
-      // 2. 🟢 CLEAR ALL USER-SPECIFIC DATA 🟢
-      // This is crucial to prevent showing old, sensitive data to the next user.
-      queryClient.resetQueries({ queryKey: ["/api/leave-requests"], exact: false });
-      queryClient.resetQueries({ queryKey: ["/api/users/"], exact: false });
-
-      toast.success("Logout successful 👋");
+      toast.success("Logged out successfully");
     },
     onError: (error: Error) => {
       toast.error("Logout failed", {
@@ -119,9 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user: user ?? null,
-        isLoading: isLoading || setupLoading,
+        isLoading,
         error,
-        needsSetup,
         loginMutation,
         logoutMutation,
         registerMutation,

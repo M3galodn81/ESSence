@@ -1,6 +1,6 @@
 import { db, } from "../../db";
 import { Report, reports, InsertReport,  } from "@shared/schema";
-import { desc, eq } from "drizzle-orm";
+import { or, desc, eq } from "drizzle-orm";
 import { BaseStorage } from "./base-storage";
 
 export class ReportStorage extends BaseStorage{
@@ -11,7 +11,7 @@ export class ReportStorage extends BaseStorage{
     await this.createActivity({
       userId: report.userId,
       type: "report_created",
-      details: `${report.type === 'incident' ? 'Incident' : 'Breakage'} report submitted: ${report.title}`,
+      details: `${(report.category)?.toUpperCase()} report submitted: ${report.title}`,
       // metadata: { reportId: newReport.id, reportType: report.type },
     });
 
@@ -19,11 +19,17 @@ export class ReportStorage extends BaseStorage{
   }
 
   async getReportsByUser(userId: string): Promise<Report[]> {
+    // UPDATED: Users see reports they created OR reports where they are assigned (for NTE)
     const result = await db.select().from(reports)
-      .where(eq(reports.userId, userId))
+      .where(
+        or(
+          eq(reports.userId, userId),
+          eq(reports.assignedTo, userId)
+        )
+      )
       .orderBy(desc(reports.createdAt));
       
-    console.log(`[Storage] Found ${result.length} reports for user ${userId}`);
+    console.log(`[Storage] Found ${result.length} reports related to user ${userId}`);
     return result;
   }
 

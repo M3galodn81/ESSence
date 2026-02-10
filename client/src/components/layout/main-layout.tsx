@@ -1,6 +1,7 @@
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react"; // 1. Import useEffect
+import { useQueryClient } from "@tanstack/react-query"; // 2. Import QueryClient
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -9,6 +10,21 @@ interface MainLayoutProps {
 }
 
 export default function MainLayout({ children, title = "Dashboard", subtitle }: MainLayoutProps) {
+  // 3. Get the query client instance
+  const queryClient = useQueryClient();
+
+  // 4. Set up the Auto-Refresh interval
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      // This forces ALL queries in your app to check for new data
+      // It happens in the background without flickering the screen
+      queryClient.invalidateQueries(); 
+    }, 5000); // <-- 5000ms = 5 seconds. Change this to adjust speed.
+
+    // Cleanup interval when component unmounts
+    return () => clearInterval(intervalId);
+  }, [queryClient]);
+
   return (
     // Added h-screen and overflow-hidden here to lock the viewport
     <div className="h-screen w-full flex bg-gradient-to-br from-slate-100 to-gray-100 font-sans text-slate-900 overflow-hidden">

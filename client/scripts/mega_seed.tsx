@@ -298,9 +298,9 @@ async function seed() {
     { title: "Inventory Procedures", content: "Follow breakage protocols.", type: "urgent", authorId: mainManager.id, isActive: true, targetDepartments: ["Kitchen"], createdAt: new Date() }
   ]);
 
-  // 4. Incident Reports - SIMULATED 1 YEAR HISTORY
-  // 4. Incident Reports - ALIGNED WITH FRONTEND CATEGORIES
-  // 4. Incident Reports - SIMULATED 1 YEAR HISTORY
+  // =========================================================================
+  // 4. INCIDENT REPORTS (Updated with NTE & Assignment Logic)
+  // =========================================================================
   console.log("Generating 1 year of incident reports...");
   
   const reportTemplates = [
@@ -358,6 +358,16 @@ async function seed() {
     }
   ];
   
+  // Sample explanations for NTEs
+  const nteExplanations = [
+    "I apologize for the oversight. There was a heavy accident on the highway causing severe traffic.",
+    "I honestly forgot to double-check the schedule. It won't happen again.",
+    "The plates were slippery due to condensation. I will be more careful next time.",
+    "I believe there was a miscount during the shift changeover. I can assist in reviewing the logs.",
+    "My alarm did not go off due to a power outage. I arrived as soon as I could.",
+    "I wasn't feeling well and forgot to message the group chat. Sorry for the inconvenience."
+  ];
+
   const reportsData = [];
   const TOTAL_REPORTS = 75; 
   const oneYearAgo = new Date();
@@ -365,21 +375,34 @@ async function seed() {
 
   for (let i = 0; i < TOTAL_REPORTS; i++) {
     const template = reportTemplates[Math.floor(Math.random() * reportTemplates.length)];
-    const reporter = employees[Math.floor(Math.random() * employees.length)];
+    
+    // Logic: Managers report Employees usually
+    const reporter = managers[Math.floor(Math.random() * managers.length)];
+    const subject = employees[Math.floor(Math.random() * employees.length)];
     
     const randomTime = oneYearAgo.getTime() + Math.random() * (new Date().getTime() - oneYearAgo.getTime());
     const dateOccurred = new Date(randomTime);
     const isResolved = Math.random() > 0.4;
 
-    // Pick random staff for involved parties sidebar
-    const numInvolved = Math.floor(Math.random() * 2) + 1;
-    const involved = Array.from({ length: numInvolved }, () => {
-        const p = allStaff[Math.floor(Math.random() * allStaff.length)];
-        return `${p.firstName} ${p.lastName}`;
-    }).join(", ");
+    // Determine NTE Requirement based on Category
+    let requiresNTE = false;
+    if (['awol', 'cashier_shortage', 'tardiness'].includes(template.category)) {
+        requiresNTE = Math.random() > 0.1; // 90% chance
+    } else if (template.category === 'breakages') {
+        requiresNTE = Math.random() > 0.6; // 40% chance
+    }
+
+    // Determine if NTE was submitted (if required)
+    let nteContent = null;
+    if (requiresNTE && Math.random() > 0.3) {
+        nteContent = nteExplanations[Math.floor(Math.random() * nteExplanations.length)];
+    }
+
+    // Prepare involved parties string
+    const involved = `${subject.firstName} ${subject.lastName}`;
     
     reportsData.push({
-      userId: reporter.id, // String UUID
+      userId: reporter.id, // The Manager filing the report
       category: template.category,
       title: template.title,
       description: template.desc,
@@ -390,7 +413,12 @@ async function seed() {
       timeOccurred: `${10 + Math.floor(Math.random() * 12)}:${Math.floor(Math.random() * 6) * 10}`,
       partiesInvolved: involved,
       witnesses: "Shift Lead / On-duty Staff",
-      // If resolved, ensure actionTaken is present as per your new logic
+      
+      // NTE Fields
+      nteRequired: requiresNTE,
+      assignedTo: requiresNTE ? subject.id : null, // Assign to the subject if NTE required
+      nteContent: nteContent,
+
       actionTaken: isResolved ? `Resolution: ${template.actionTaken}` : template.actionTaken,
       details: template.details || {},
       images: [],
@@ -400,9 +428,9 @@ async function seed() {
     });
   }
 
-  // Ensure a few recent critical reports for your new Priority sorting
+  // Ensure a few recent critical reports for priority sorting
   reportsData.push({
-      userId: employees[0].id,
+      userId: mainManager.id,
       category: "others",
       title: "Health & Safety Hazard",
       description: "Water leak near POS terminals causing electrical sparks.",
@@ -413,7 +441,32 @@ async function seed() {
       timeOccurred: "08:30",
       partiesInvolved: `${employees[0].firstName} ${employees[0].lastName}`,
       witnesses: "Front of House Team",
+      nteRequired: false, // Usually safety hazards don't need NTE from specific staff unless negligent
+      assignedTo: null,
+      nteContent: null,
       actionTaken: "Maintenance called, area cordoned off.",
+      details: {},
+      images: [],
+      createdAt: new Date()
+  });
+
+  // Ensure a specific recent Pending NTE for testing
+  reportsData.push({
+      userId: mainManager.id,
+      category: "tardiness",
+      title: "Late Arrival - No Call",
+      description: "Arrived 1 hour late without prior notice.",
+      severity: "medium",
+      status: "pending",
+      location: "Entrance",
+      dateOccurred: new Date(), // Today
+      timeOccurred: "09:00",
+      partiesInvolved: `${employees[0].firstName} ${employees[0].lastName}`,
+      witnesses: "Reception",
+      nteRequired: true,
+      assignedTo: employees[0].id, // Assign to first employee for testing
+      nteContent: null, // Empty content to show "Action Required"
+      actionTaken: "Waiting for explanation.",
       details: {},
       images: [],
       createdAt: new Date()
@@ -424,7 +477,7 @@ async function seed() {
   // =========================================================================
   // 5. ATTENDANCE & PAYSLIP GENERATION (12 Months)
   // =========================================================================
-  console.log("Generating attendance and payslips...");
+  console.log("Generating attendance and payslips (Employees Only)...");
   const now = new Date(); 
   const periods = [];
   for (let i = 0; i < 12; i++) {
@@ -438,7 +491,8 @@ async function seed() {
   periods.reverse();
 
   const payslipsToInsert = [];
-  for (const emp of allStaff) {
+  // UPDATED: Iterate only over `employees`, excluding `managers`
+  for (const emp of employees) {
     for (const p of periods) {
         let periodRegHours = 0; let periodOtHours = 0; let periodNdHours = 0;
         let periodRegHolidayHours = 0; let periodRegHolidayOtHours = 0;
@@ -513,7 +567,7 @@ async function seed() {
   // =========================================================================
   // 6. SCHEDULE GENERATION (Current Week)
   // =========================================================================
-  console.log("Generating future schedules...");
+  console.log("Generating future schedules (Employees Only)...");
   const startOfWeek = new Date(now);
   const day = startOfWeek.getDay();
   const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
@@ -521,7 +575,8 @@ async function seed() {
   startOfWeek.setHours(0,0,0,0);
 
   const shiftData = [];
-  for (const emp of allStaff) {
+  // UPDATED: Iterate only over `employees`, excluding `managers`
+  for (const emp of employees) {
     for (let d = 0; d < 6; d++) { // Mon-Sat
       const workDate = new Date(startOfWeek);
       workDate.setDate(startOfWeek.getDate() + d);

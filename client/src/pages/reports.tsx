@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,11 +20,10 @@ import {
   AlertTriangle, UserX, Hammer, Plus, Calendar as CalendarIcon, Clock, 
   FileText, MapPin, CheckCircle2, AlertCircle, X, Users,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, 
-  List as ListIcon, Banknote, Search, History, Filter,Check,
-  Loader2,
-  ChevronsUpDown
+  List as ListIcon, Banknote, Search, History, Filter, Check,
+  Loader2, ChevronsUpDown, Send
 } from "lucide-react";
-import { format, isWithinInterval, startOfDay, endOfDay, subMonths, parseISO } from "date-fns";
+import { format, subMonths } from "date-fns"; // Removed unused imports
 import { cn } from "@/lib/utils";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
@@ -45,7 +45,9 @@ const reportFormSchema = insertReportSchema.omit({ userId: true, partiesInvolved
   timeOccurred: z.string().min(1, "Time is required"),
   category: z.string().min(1, "Category is required"),
   severity: z.string().min(1, "Severity is required"),
-  // Note: details is kept optional as per your shared schema
+  // New Fields
+  nteRequired: z.boolean().default(false),
+  assignedTo: z.string().optional(), // ID of the employee to write NTE
 });
 
 const SEVERITY_WEIGHTS: Record<string, number> = {
@@ -69,11 +71,10 @@ export default function Reports() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [monthFilter, setMonthFilter] = useState<string>("all");
-  const [personFilter, setPersonFilter] = useState<string>(""); // NEW: Person Filter
+  const [personFilter, setPersonFilter] = useState<string>(""); 
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [sortBy, setSortBy] = useState<"date" | "priority">("date");
   const [openFilterPicker, setOpenFilterPicker] = useState(false);
-
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -84,54 +85,22 @@ export default function Reports() {
   const [newPerson, setNewPerson] = useState("");
   const [staffSearchTerm, setStaffSearchTerm] = useState(""); 
   const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false);
-const [resolutionAction, setResolutionAction] = useState("");
-const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
-
+  const [resolutionAction, setResolutionAction] = useState("");
+  const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
+  
+  // New State for NTE assignment picker
+  const [openNteAssignPicker, setOpenNteAssignPicker] = useState(false);
+  // State for Employee writing NTE
+  const [nteResponse, setNteResponse] = useState("");
 
   // --- CONFIGURATION CONSTANTS ---
   const categories = [
-    { 
-        id: "awan", 
-        label: "AWAN (Away With Advanced Notice)", 
-        icon: Clock, 
-        color: "bg-blue-100 text-blue-700", 
-        fill: "#3b82f6" 
-    },
-    { 
-        id: "awol", 
-        label: "AWOL (Absent Without Offical Leave)", 
-        icon: UserX, 
-        color: "bg-red-100 text-red-700", 
-        fill: "#ef4444" 
-    },
-    { 
-        id: "tardiness", 
-        label: "Tardiness", 
-        icon: History, 
-        color: "bg-amber-100 text-amber-700", 
-        fill: "#f59e0b" 
-    },
-    { 
-        id: "cashier_shortage", 
-        label: "Cashier Shortage", 
-        icon: Banknote, 
-        color: "bg-emerald-100 text-emerald-700", 
-        fill: "#10b981" 
-    },
-    { 
-        id: "breakages", 
-        label: "Breakages", 
-        icon: Hammer, 
-        color: "bg-orange-100 text-orange-700", 
-        fill: "#f97316" 
-    },
-    { 
-        id: "others", 
-        label: "Others", 
-        icon: FileText, 
-        color: "bg-slate-100 text-slate-700", 
-        fill: "#64748b" 
-    },
+    { id: "awan", label: "AWAN (Away With Advanced Notice)", icon: Clock, color: "bg-blue-100 text-blue-700", fill: "#3b82f6" },
+    { id: "awol", label: "AWOL (Absent Without Offical Leave)", icon: UserX, color: "bg-red-100 text-red-700", fill: "#ef4444" },
+    { id: "tardiness", label: "Tardiness", icon: History, color: "bg-amber-100 text-amber-700", fill: "#f59e0b" },
+    { id: "cashier_shortage", label: "Cashier Shortage", icon: Banknote, color: "bg-emerald-100 text-emerald-700", fill: "#10b981" },
+    { id: "breakages", label: "Breakages", icon: Hammer, color: "bg-orange-100 text-orange-700", fill: "#f97316" },
+    { id: "others", label: "Others", icon: FileText, color: "bg-slate-100 text-slate-700", fill: "#64748b" },
   ];
 
   // --- DATA FETCHING ---
@@ -146,10 +115,7 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
     const options = [];
     for (let i = 0; i < 12; i++) {
         const d = subMonths(new Date(), i);
-        options.push({
-            value: format(d, "yyyy-MM"),
-            label: format(d, "MMMM yyyy")
-        });
+        options.push({ value: format(d, "yyyy-MM"), label: format(d, "MMMM yyyy") });
     }
     return options;
   }, []);
@@ -164,42 +130,34 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
     return emp ? emp.role : "Unknown";
   };
 
-
   // --- FILTERING LOGIC ---
   const filteredReports = useMemo(() => {
     if (!reports) return [];
     return reports.filter((r: any) => {
         if (statusFilter !== "all" && r.status !== statusFilter) return false;
         if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
-        
-        // Month Filter
         if (monthFilter !== "all" && r.dateOccurred) {
             const reportMonth = format(new Date(r.dateOccurred), "yyyy-MM");
             if (reportMonth !== monthFilter) return false;
         }
-
-        // NEW: Person Filter (Check against partiesInvolved string)
         if (personFilter.trim() !== "") {
             const search = personFilter.toLowerCase();
             const parties = (r.partiesInvolved || "").toLowerCase();
-            if (!parties.includes(search)) return false;
+            const assignedName = getEmployeeName(r.assignedTo).toLowerCase();
+            if (!parties.includes(search) && !assignedName.includes(search)) return false;
         }
-
         return true;
     }).sort((a: any, b: any) => {
     if (sortBy === "priority") {
       const weightA = SEVERITY_WEIGHTS[a.severity] || 0;
       const weightB = SEVERITY_WEIGHTS[b.severity] || 0;
-      // Sort by weight first, then by date for reports with same weight
       if (weightB !== weightA) return weightB - weightA;
     }
-    
-    // Default or fallback: Date sorting
     const timeA = new Date(a.dateOccurred).getTime();
     const timeB = new Date(b.dateOccurred).getTime();
     return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
   });
-}, [reports, statusFilter, categoryFilter, monthFilter, personFilter, sortOrder, sortBy]);
+}, [reports, statusFilter, categoryFilter, monthFilter, personFilter, sortOrder, sortBy, teamMembers]);
 
   const paginatedReports = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -219,9 +177,7 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
     
     reports.forEach((r: any) => {
         const key = format(new Date(r.dateOccurred), "MMM yyyy");
-        if (months.hasOwnProperty(key)) {
-            months[key]++;
-        }
+        if (months.hasOwnProperty(key)) months[key]++;
     });
     const monthlyData = Object.entries(months).map(([name, count]) => ({ name, count }));
 
@@ -243,9 +199,7 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
             });
         }
     });
-    const mostInvolved = Object.entries(peopleCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
+    const mostInvolved = Object.entries(peopleCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
     return { monthly: monthlyData, byCategory: categoryData, mostInvolved };
   }, [reports]);
@@ -259,13 +213,16 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
       dateOccurred: new Date(),
       timeOccurred: format(new Date(), "HH:mm"),
       involvedPeople: [], 
-      details: { items: [] }
+      details: { items: [] },
+      nteRequired: false
     },
   });
 
   const selectedCategory = form.watch("category");
   const currentPeople = form.watch("involvedPeople");
   const currentItems = form.watch("details.items") || [];
+  const watchNteRequired = form.watch("nteRequired");
+  const watchAssignedTo = form.watch("assignedTo");
 
   const createReportMutation = useMutation({
     mutationFn: async (data: ReportForm) => {
@@ -291,7 +248,8 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
         dateOccurred: new Date(),
         timeOccurred: format(new Date(), "HH:mm"),
         involvedPeople: [],
-        details: { items: [] }
+        details: { items: [] },
+        nteRequired: false
       });
     },
     onError: (err) => {
@@ -300,26 +258,29 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, actionTaken }: { id: number; status: string; actionTaken?: string }) => {
-        const payload: any = { status };
-        if (actionTaken) payload.actionTaken = actionTaken; // Update action only if provided
+    mutationFn: async ({ id, status, actionTaken, nteContent }: { id: number; status?: string; actionTaken?: string; nteContent?: string }) => {
+        const payload: any = {};
+        if (status) payload.status = status;
+        if (actionTaken) payload.actionTaken = actionTaken;
+        if (nteContent) payload.nteContent = nteContent;
         
         const res = await apiRequest("PATCH", `/api/reports/${id}`, payload);
         return await res.json();
     },
     onSuccess: (updatedReport) => {
-        toast.success(`Report marked as ${updatedReport.status}`);
+        toast.success("Report updated successfully");
         queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
-        setIsResolveDialogOpen(false); // Close the popup
-        setResolutionAction(""); // Clear the text
+        setIsResolveDialogOpen(false); 
+        setResolutionAction(""); 
+        setNteResponse(""); // Clear NTE
         if (selectedReport) {
-        setSelectedReport(updatedReport);
+          setSelectedReport(updatedReport);
         }
     },
     onError: (err) => {
         toast.error("Failed to update status", { description: err.message });
     }
-    });
+  });
 
   const onInvalid = (errors: FieldErrors<ReportForm>) => {
     const firstErrorKey = Object.keys(errors)[0];
@@ -339,11 +300,19 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
       setNewPerson("");
   };
 
-  const addStaffFromSelect = (name: string) => {
+  const addStaffFromSelect = (member: UserType) => {
+      const name = `${member.firstName} ${member.lastName}`;
       const current = form.getValues("involvedPeople");
+      
+      // Add name to list
       if (!current.includes(name)) {
           form.setValue("involvedPeople", [...current, name]);
           form.trigger("involvedPeople");
+      }
+
+      // If NTE is required and no one is assigned, auto-assign this person
+      if (form.getValues("nteRequired") && !form.getValues("assignedTo")) {
+        form.setValue("assignedTo", member.id);
       }
   };
 
@@ -389,20 +358,10 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
         </div>
         <div className="flex items-center gap-2">
             <div className="flex items-center bg-slate-100 p-1 rounded-lg">
-                <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => setView("list")}
-                    className={cn("text-xs", view === "list" && "bg-white shadow-sm text-slate-900")}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setView("list")} className={cn("text-xs", view === "list" && "bg-white shadow-sm text-slate-900")}>
                     <ListIcon className="w-4 h-4 mr-2" /> Reports
                 </Button>
-                <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => setView("analytics")}
-                    className={cn("text-xs", view === "analytics" && "bg-white shadow-sm text-slate-900")}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setView("analytics")} className={cn("text-xs", view === "analytics" && "bg-white shadow-sm text-slate-900")}>
                     <BarChart3 className="w-4 h-4 mr-2" /> Analytics
                 </Button>
             </div>
@@ -451,25 +410,15 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                   <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                           <Label>Date</Label>
-                          <Input 
-                            type="date" 
-                            value={format(new Date(form.watch("dateOccurred")), "yyyy-MM-dd")} 
-                            onChange={(e) => {
-                                const value = e.target.value;
-                                if (value) form.setValue("dateOccurred", new Date(value), { shouldValidate: true });
-                            }} 
-                          />
-                          {form.formState.errors.dateOccurred && <p className="text-xs text-red-500">{form.formState.errors.dateOccurred.message}</p>}
+                          <Input type="date" value={format(new Date(form.watch("dateOccurred")), "yyyy-MM-dd")} onChange={(e) => { const value = e.target.value; if (value) form.setValue("dateOccurred", new Date(value), { shouldValidate: true }); }} />
                       </div>
                       <div className="space-y-2">
                           <Label>Time</Label>
                           <Input type="time" {...form.register("timeOccurred")} />
-                          {form.formState.errors.timeOccurred && <p className="text-xs text-red-500">{form.formState.errors.timeOccurred.message}</p>}
                       </div>
                       <div className="space-y-2">
                           <Label>Location</Label>
                           <Input placeholder="e.g. Kitchen / POS" {...form.register("location")} />
-                          {form.formState.errors.location && <p className="text-xs text-red-500">{form.formState.errors.location.message}</p>}
                       </div>
                   </div>
 
@@ -477,12 +426,10 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                   <div className="space-y-2">
                       <Label>Title</Label>
                       <Input placeholder="Brief summary" {...form.register("title")} />
-                      {form.formState.errors.title && <p className="text-xs text-red-500">{form.formState.errors.title.message}</p>}
                   </div>
                   <div className="space-y-2">
                       <Label>Description</Label>
                       <Textarea placeholder="Detailed description..." {...form.register("description")} />
-                      {form.formState.errors.description && <p className="text-xs text-red-500">{form.formState.errors.description.message}</p>}
                   </div>
                   
                   {/* Actions & Witnesses */}
@@ -505,90 +452,48 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                           <div className="flex flex-col gap-1.5">
                               <span className="text-xs text-slate-500 font-medium">Add Staff Member</span>
                               
-                              {/* People Involved Autocomplete */}
-                                
-                                
                                 <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
                                     <PopoverTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        role="combobox"
-                                        aria-expanded={openEmployeePicker}
-                                        className="w-full justify-between bg-white border-slate-200 font-normal hover:bg-slate-50"
-                                    >
-                                        <div className="flex items-center gap-2">
-                                        <Search className="h-4 w-4 opacity-50" />
-                                        <span>Search from team members...</span>
-                                        </div>
-                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    <Button variant="outline" role="combobox" aria-expanded={openEmployeePicker} className="w-full justify-between bg-white border-slate-200 font-normal hover:bg-slate-50">
+                                            <div className="flex items-center gap-2">
+                                            <Search className="h-4 w-4 opacity-50" />
+                                            <span>Search from team members...</span>
+                                            </div>
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                     </Button>
                                     </PopoverTrigger>
                                     <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-  <Command>
-    <CommandInput placeholder="Type staff name..." />
-    {/* Setting a max-height and overflow here allows mouse wheel scrolling */}
-    <CommandList className="max-h-[300px] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-200">
-      <CommandEmpty className="p-4 text-sm text-slate-500 flex flex-col items-center gap-2">
-        <UserX className="w-8 h-8 opacity-20" />
-        No staff member found.
-      </CommandEmpty>
-      <CommandGroup heading="Active Staff">
-        {filteredEmployees.map((member) => {
-          const fullName = `${member.firstName} ${member.lastName}`;
-          const isAlreadyAdded = currentPeople.includes(fullName);
-          
-          return (
-            <CommandItem
-              key={member.id}
-              value={fullName}
-              disabled={isAlreadyAdded}
-              onSelect={() => {
-                addStaffFromSelect(fullName);
-                setOpenEmployeePicker(false);
-              }}
-              className={cn(
-                "flex items-center justify-between py-2 px-4 cursor-pointer",
-                isAlreadyAdded && "opacity-50 grayscale pointer-events-none"
-              )}
-            >
-              <div className="flex items-center gap-3">
-                <Avatar className="h-7 w-7">
-                  <AvatarFallback className="text-[10px] bg-slate-100">
-                    {member.firstName[0]}{member.lastName[0]}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex flex-col">
-                  <span className="font-medium text-xs">{fullName}</span>
-                  <span className="text-[9px] text-slate-400 uppercase">{member.position}</span>
-                </div>
-              </div>
-              {isAlreadyAdded ? (
-                <Badge variant="secondary" className="text-[8px] bg-emerald-50 text-emerald-600">Added</Badge>
-              ) : (
-                <Plus className="w-3 h-3 text-slate-300" />
-              )}
-            </CommandItem>
-          );
-        })}
-      </CommandGroup>
-    </CommandList>
-  </Command>
-</PopoverContent>
+                                      <Command>
+                                        <CommandInput placeholder="Type staff name..." />
+                                        <CommandList className="max-h-[300px] overflow-y-auto">
+                                          <CommandEmpty className="p-4 text-sm text-slate-500 text-center">No staff member found.</CommandEmpty>
+                                          <CommandGroup heading="Active Staff">
+                                            {filteredEmployees.map((member) => {
+                                              const fullName = `${member.firstName} ${member.lastName}`;
+                                              const isAlreadyAdded = currentPeople.includes(fullName);
+                                              
+                                              return (
+                                                <CommandItem key={member.id} value={fullName} disabled={isAlreadyAdded} onSelect={() => { addStaffFromSelect(member); setOpenEmployeePicker(false); }} className={cn("flex items-center justify-between py-2 px-4 cursor-pointer", isAlreadyAdded && "opacity-50 grayscale pointer-events-none")}>
+                                                  <div className="flex items-center gap-3">
+                                                    <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px] bg-slate-100">{member.firstName[0]}{member.lastName[0]}</AvatarFallback></Avatar>
+                                                    <div className="flex flex-col"><span className="font-medium text-xs">{fullName}</span><span className="text-[9px] text-slate-400 uppercase">{member.position}</span></div>
+                                                  </div>
+                                                  {isAlreadyAdded ? <Badge variant="secondary" className="text-[8px] bg-emerald-50 text-emerald-600">Added</Badge> : <Plus className="w-3 h-3 text-slate-300" />}
+                                                </CommandItem>
+                                              );
+                                            })}
+                                          </CommandGroup>
+                                        </CommandList>
+                                      </Command>
+                                    </PopoverContent>
                                 </Popover>
-                                
                           </div>
 
                           {/* Manual Input */}
                           <div className="flex flex-col gap-1.5">
                               <span className="text-xs text-slate-500 font-medium">Add Guest / Other</span>
                               <div className="flex gap-2">
-                                  <Input 
-                                      value={newPerson} 
-                                      onChange={(e) => setNewPerson(e.target.value)} 
-                                      placeholder="Type name manually..." 
-                                      className="bg-white"
-                                      onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); addPerson(); } }}
-                                  />
+                                  <Input value={newPerson} onChange={(e) => setNewPerson(e.target.value)} placeholder="Type name manually..." className="bg-white" onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); addPerson(); } }} />
                                   <Button type="button" onClick={addPerson} variant="outline" className="bg-white">Add</Button>
                               </div>
                           </div>
@@ -606,6 +511,64 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                       )}
                       {form.formState.errors.involvedPeople && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {form.formState.errors.involvedPeople.message}</p>}
                   </div>
+
+                  {/* NTE SECTION - VISIBLE ONLY TO MANAGERS */}
+                  {['admin', 'manager'].includes(user?.role || '') && (
+                    <div className="space-y-3 p-4 bg-orange-50/50 rounded-lg border border-orange-100">
+                       <div className="flex items-center space-x-2">
+                         <Checkbox 
+                            id="nteRequired" 
+                            checked={watchNteRequired} 
+                            onCheckedChange={(checked) => form.setValue("nteRequired", checked as boolean)}
+                         />
+                         <Label htmlFor="nteRequired" className="font-medium text-orange-900 cursor-pointer">
+                            Require Notice to Explain (NTE)
+                         </Label>
+                       </div>
+                       
+                       {watchNteRequired && (
+                         <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
+                            <Label className="text-xs text-orange-800">Assign to Employee for NTE</Label>
+                            <Popover open={openNteAssignPicker} onOpenChange={setOpenNteAssignPicker}>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" role="combobox" className="w-full justify-between bg-white border-orange-200 text-orange-900 hover:bg-orange-50">
+                                  {watchAssignedTo 
+                                    ? getEmployeeName(watchAssignedTo) 
+                                    : "Select employee..."}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                                <Command>
+                                  <CommandInput placeholder="Search employee..." />
+                                  <CommandList>
+                                    <CommandEmpty>No employee found.</CommandEmpty>
+                                    <CommandGroup>
+                                      {filteredEmployees.map((member) => (
+                                        <CommandItem
+                                          key={member.id}
+                                          value={`${member.firstName} ${member.lastName}`}
+                                          onSelect={() => {
+                                            form.setValue("assignedTo", member.id);
+                                            setOpenNteAssignPicker(false);
+                                          }}
+                                        >
+                                          <Check className={cn("mr-2 h-4 w-4", watchAssignedTo === member.id ? "opacity-100" : "opacity-0")} />
+                                          {member.firstName} {member.lastName}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                            <p className="text-[10px] text-orange-600/80">
+                                This employee will be notified to submit a written explanation.
+                            </p>
+                         </div>
+                       )}
+                    </div>
+                  )}
 
                   {/* Property Details (Only for Breakages) */}
                   {selectedCategory === 'breakages' && (
@@ -642,84 +605,44 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                         <Filter className="w-4 h-4 text-slate-400" />
                         
                         <div className="flex items-center gap-2">
-  <Popover open={openFilterPicker} onOpenChange={setOpenFilterPicker}>
-    <PopoverTrigger asChild>
-      <Button
-        variant="outline"
-        role="combobox"
-        aria-expanded={openFilterPicker}
-        className="w-[200px] h-8 justify-between text-xs bg-white font-normal"
-      >
-        <div className="flex items-center gap-2 truncate">
-          <Search className="h-3 w-3 opacity-50" />
-          {personFilter || "Filter by person..."}
-        </div>
-        {personFilter && (
-          <X 
-            className="h-3 w-3 opacity-50 hover:opacity-100" 
-            onClick={(e) => {
-              e.stopPropagation();
-              setPersonFilter("");
-            }} 
-          />
-        )}
-      </Button>
-    </PopoverTrigger>
-    <PopoverContent className="w-[200px] p-0" align="start">
-      <Command>
-        <CommandInput placeholder="Search name..." className="h-8 text-xs" />
-        <CommandList className="max-h-[200px]">
-          <CommandEmpty className="py-2 px-4 text-xs text-slate-500">No one found.</CommandEmpty>
-          <CommandGroup heading="Staff Members">
-            {teamMembers?.map((member) => {
-              const fullName = `${member.firstName} ${member.lastName}`;
-              return (
-                <CommandItem
-                  key={member.id}
-                  value={fullName}
-                  onSelect={(currentValue) => {
-                    setPersonFilter(currentValue === personFilter ? "" : currentValue);
-                    setOpenFilterPicker(false);
-                  }}
-                  className="text-xs"
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-3 w-3",
-                      personFilter === fullName ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  <div className="flex flex-col">
-                    <span>{fullName}</span>
-                    <span className="text-[10px] text-slate-400">{member.position}</span>
-                  </div>
-                </CommandItem>
-              );
-            })}
-          </CommandGroup>
-          
-          {/* Include logic for "manual" names that might be in reports but not in team list */}
-          <CommandGroup heading="Recent Involved Parties">
-            {stats.mostInvolved.map(([name]) => (
-               <CommandItem
-                  key={name}
-                  value={name}
-                  onSelect={(val) => {
-                    setPersonFilter(val);
-                    setOpenFilterPicker(false);
-                  }}
-                  className="text-xs"
-               >
-                 <History className="mr-2 h-3 w-3 opacity-50" />
-                 {name}
-               </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </Command>
-    </PopoverContent>
-  </Popover>
-</div>
+                          <Popover open={openFilterPicker} onOpenChange={setOpenFilterPicker}>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" role="combobox" aria-expanded={openFilterPicker} className="w-[200px] h-8 justify-between text-xs bg-white font-normal">
+                                <div className="flex items-center gap-2 truncate">
+                                  <Search className="h-3 w-3 opacity-50" />
+                                  {personFilter || "Filter by person..."}
+                                </div>
+                                {personFilter && <X className="h-3 w-3 opacity-50 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setPersonFilter(""); }} />}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[200px] p-0" align="start">
+                              <Command>
+                                <CommandInput placeholder="Search name..." className="h-8 text-xs" />
+                                <CommandList className="max-h-[200px]">
+                                  <CommandEmpty className="py-2 px-4 text-xs text-slate-500">No one found.</CommandEmpty>
+                                  <CommandGroup heading="Staff Members">
+                                    {teamMembers?.map((member) => {
+                                      const fullName = `${member.firstName} ${member.lastName}`;
+                                      return (
+                                        <CommandItem key={member.id} value={fullName} onSelect={(currentValue) => { setPersonFilter(currentValue === personFilter ? "" : currentValue); setOpenFilterPicker(false); }} className="text-xs">
+                                          <Check className={cn("mr-2 h-3 w-3", personFilter === fullName ? "opacity-100" : "opacity-0")} />
+                                          <div className="flex flex-col"><span>{fullName}</span><span className="text-[10px] text-slate-400">{member.position}</span></div>
+                                        </CommandItem>
+                                      );
+                                    })}
+                                  </CommandGroup>
+                                  <CommandGroup heading="Recent Involved Parties">
+                                    {stats.mostInvolved.map(([name]) => (
+                                       <CommandItem key={name} value={name} onSelect={(val) => { setPersonFilter(val); setOpenFilterPicker(false); }} className="text-xs">
+                                         <History className="mr-2 h-3 w-3 opacity-50" />{name}
+                                       </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
 
                         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                             <SelectTrigger className="w-[160px] h-8 text-xs bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
@@ -734,19 +657,6 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                             <SelectContent>
                                 <SelectItem value="all">All Months</SelectItem>
                                 {monthOptions.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-
-                        <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
-                            <SelectTrigger className="w-[140px] h-8 text-xs bg-white">
-                                <div className="flex items-center gap-2">
-                                <BarChart3 className="w-3 h-3" />
-                                <SelectValue placeholder="Sort By" />
-                                </div>
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="date">Sort by Date</SelectItem>
-                                <SelectItem value="priority">Sort by Priority</SelectItem>
                             </SelectContent>
                         </Select>
 
@@ -766,43 +676,41 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                         paginatedReports.length === 0 ? <div className="p-8 text-center text-slate-400">No reports found.</div> :
                         paginatedReports.map((report: any) => (
                             <div 
-  key={report.id} 
-  onClick={() => { setSelectedReport(report); setIsViewOpen(true); }} 
-  className={cn(
-    "flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors border-l-4",
-    report.severity === 'critical' ? "border-l-red-600 bg-red-50/30" : 
-    report.severity === 'high' ? "border-l-orange-500" : "border-l-transparent"
-  )}
->
-  <div className="flex items-center gap-4">
-    <div className="relative">
-      <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color || "bg-slate-100 text-slate-600")}>
-        {(() => { const Icon = categories.find(c=>c.id===report.category)?.icon || FileText; return <Icon className="w-5 h-5" /> })()}
-      </div>
-      
-      {/* ADD DANGER ICON OVERLAY */}
-      {(report.severity === 'critical' || report.severity === 'high') && (
-        <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
-          <AlertTriangle className={cn("w-3.5 h-3.5", report.severity === 'critical' ? "text-red-600" : "text-orange-500")} />
-        </div>
-      )}
-    </div>
-
-    <div>
-      <div className="flex items-center gap-2">
-        <h4 className="text-sm font-bold text-slate-800">{report.title}</h4>
-        {report.severity === 'critical' && (
-          <Badge variant="destructive" className="h-4 px-1.5 text-[8px] animate-pulse">CRITICAL</Badge>
-        )}
-      </div>
-      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-        <span>{format(new Date(report.dateOccurred), "MMM dd")}</span>
-        {/* ... existing badges ... */}
-      </div>
-    </div>
-  </div>
-  <Badge variant={report.status === 'resolved' ? 'default' : 'secondary'} className="capitalize">{report.status}</Badge>
-</div>
+                              key={report.id} 
+                              onClick={() => { setSelectedReport(report); setIsViewOpen(true); }} 
+                              className={cn(
+                                "flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors border-l-4",
+                                report.severity === 'critical' ? "border-l-red-600 bg-red-50/30" : 
+                                report.severity === 'high' ? "border-l-orange-500" : "border-l-transparent"
+                              )}
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className="relative">
+                                  <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color || "bg-slate-100 text-slate-600")}>
+                                    {(() => { const Icon = categories.find(c=>c.id===report.category)?.icon || FileText; return <Icon className="w-5 h-5" /> })()}
+                                  </div>
+                                  {(report.severity === 'critical' || report.severity === 'high') && (
+                                    <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
+                                      <AlertTriangle className={cn("w-3.5 h-3.5", report.severity === 'critical' ? "text-red-600" : "text-orange-500")} />
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-sm font-bold text-slate-800">{report.title}</h4>
+                                    {report.nteRequired && (
+                                        <Badge variant="outline" className="text-[9px] border-orange-200 text-orange-600 bg-orange-50 px-1.5 h-4">
+                                            NTE REQ
+                                        </Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                    <span>{format(new Date(report.dateOccurred), "MMM dd")}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <Badge variant={report.status === 'resolved' ? 'default' : 'secondary'} className="capitalize">{report.status}</Badge>
+                            </div>
                         ))}
                     </div>
                     
@@ -835,48 +743,22 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                 <CardContent>
                     <div className="space-y-2">
                         {stats.mostInvolved?.map(([name, count], i) => (
-                            <button 
-                                key={name} 
-                                onClick={() => setPersonFilter(name)}
-                                className={cn(
-                                    "w-full flex items-center justify-between text-sm p-2 rounded-lg transition-colors hover:bg-slate-100 text-left",
-                                    personFilter === name ? "bg-blue-50 border border-blue-100" : "bg-transparent"
-                                )}
-                            >
+                            <button key={name} onClick={() => setPersonFilter(name)} className={cn("w-full flex items-center justify-between text-sm p-2 rounded-lg transition-colors hover:bg-slate-100 text-left", personFilter === name ? "bg-blue-50 border border-blue-100" : "bg-transparent")}>
                                 <div className="flex items-center gap-2">
-                                    <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold", i === 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600")}>
-                                        {i + 1}
-                                    </span>
-                                    <span className={cn("font-medium truncate max-w-[120px]", personFilter === name ? "text-blue-700" : "text-slate-700")} title={name}>
-                                        {name}
-                                    </span>
+                                    <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold", i === 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600")}>{i + 1}</span>
+                                    <span className={cn("font-medium truncate max-w-[120px]", personFilter === name ? "text-blue-700" : "text-slate-700")} title={name}>{name}</span>
                                 </div>
                                 <Badge variant="secondary" className="text-[10px] bg-white border border-slate-100">{count}</Badge>
                             </button>
                         ))}
-                        {(!stats.mostInvolved || stats.mostInvolved.length === 0) && <div className="text-center text-slate-400 text-xs py-4">No data available</div>}
-                        
-                        {personFilter && !stats.mostInvolved.some(([n]) => n === personFilter) && (
-                            <div className="mt-4 pt-4 border-t border-slate-100">
-                                <p className="text-xs text-slate-400 mb-1">Active Filter:</p>
-                                <Badge variant="outline" className="text-blue-600 bg-blue-50 border-blue-100 flex justify-between">
-                                    {personFilter} 
-                                    <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => setPersonFilter("")} />
-                                </Badge>
-                            </div>
-                        )}
                     </div>
                 </CardContent>
             </Card>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Chart 1: Trend Over Time */}
             <Card>
-                <CardHeader>
-                    <CardTitle className="text-lg">Report Trend (Last 6 Months)</CardTitle>
-                    <CardDescription>Number of reports filed per month</CardDescription>
-                </CardHeader>
+                <CardHeader><CardTitle className="text-lg">Report Trend</CardTitle></CardHeader>
                 <CardContent>
                     <div className="h-[300px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
@@ -884,39 +766,21 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                 <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
                                 <YAxis fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
-                                <RechartsTooltip 
-                                    cursor={{fill: 'transparent'}}
-                                    contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
-                                />
+                                <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
                                 <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </CardContent>
             </Card>
-
-            {/* Chart 2: Category Breakdown */}
             <Card>
-                <CardHeader>
-                    <CardTitle className="text-lg">Reports by Category</CardTitle>
-                    <CardDescription>Distribution of report types</CardDescription>
-                </CardHeader>
+                <CardHeader><CardTitle className="text-lg">Reports by Category</CardTitle></CardHeader>
                 <CardContent>
                     <div className="h-[300px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                                <Pie
-                                    data={stats.byCategory}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={60}
-                                    outerRadius={80}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {stats.byCategory.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                                    ))}
+                                <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                                    {stats.byCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
                                 </Pie>
                                 <RechartsTooltip />
                                 <Legend />
@@ -931,8 +795,11 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
 
       {/* View Details Dialog */}
         <Dialog open={isViewOpen} onOpenChange={(open) => {
-        setIsViewOpen(open);
-        if (!open) setSelectedReport(null); // Clear selection on close
+          setIsViewOpen(open);
+          if (!open) {
+             setSelectedReport(null);
+             setNteResponse("");
+          }
         }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             {!selectedReport ? (
@@ -960,89 +827,151 @@ const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
                 </DialogHeader>
 
                 <div className="space-y-6 py-4">
-                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="space-y-1">
-                    <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
-                    <div className="flex items-center gap-2 font-medium text-slate-900">
-                        <MapPin className="w-4 h-4 text-slate-400" />
-                        {selectedReport.location}
-                    </div>
-                    </div>
-                    <div className="space-y-1">
-                    <span className="text-xs font-semibold text-slate-400 uppercase">Status</span>
-                    <div className="flex items-center gap-2 font-medium text-slate-900 capitalize">
-                        {selectedReport.status === 'resolved' ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <AlertCircle className="w-4 h-4 text-amber-500" />}
-                        {selectedReport.status}
-                    </div>
-                    </div>
-                </div>
-                
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
-                            <Users className="w-5 h-5 text-slate-500" />
-                        </div>
-                        <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Filed By</p>
-                            <p className="text-sm font-bold text-slate-900">{getEmployeeName(selectedReport.userId)}</p>
-                            <p className="text-xs text-slate-500 capitalize">{getEmployeeRole(selectedReport.userId)}</p>
-                        </div>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Submission Date</p>
-                        <p className="text-xs font-medium text-slate-700">
-                            {format(new Date(selectedReport.createdAt), "MMM dd, yyyy p")}
-                        </p>
-                    </div>
-                </div>
+                  {/* Status & Location Bar */}
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
+                      <div className="flex items-center gap-2 font-medium text-slate-900">
+                          <MapPin className="w-4 h-4 text-slate-400" />
+                          {selectedReport.location}
+                      </div>
+                      </div>
+                      <div className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-400 uppercase">Status</span>
+                      <div className="flex items-center gap-2 font-medium text-slate-900 capitalize">
+                          {selectedReport.status === 'resolved' ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <AlertCircle className="w-4 h-4 text-amber-500" />}
+                          {selectedReport.status}
+                      </div>
+                      </div>
+                  </div>
+                  
+                  {/* Reporter Info */}
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+                              <Users className="w-5 h-5 text-slate-500" />
+                          </div>
+                          <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Filed By</p>
+                              <p className="text-sm font-bold text-slate-900">{getEmployeeName(selectedReport.userId)}</p>
+                              <p className="text-xs text-slate-500 capitalize">{getEmployeeRole(selectedReport.userId)}</p>
+                          </div>
+                      </div>
+                      <div className="text-right">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Submission Date</p>
+                          <p className="text-xs font-medium text-slate-700">
+                              {format(new Date(selectedReport.createdAt), "MMM dd, yyyy p")}
+                          </p>
+                      </div>
+                  </div>
 
-                <div className="space-y-4">
-                    <div>
-                    <h4 className="text-sm font-bold text-slate-900 mb-2">Incident Description</h4>
-                    <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.description}</p>
-                    </div>
-                    <div>
-                    <h4 className="text-sm font-bold text-slate-900 mb-2">Immediate Action Taken</h4>
-                    <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.actionTaken || "No immediate action recorded."}</p>
-                    </div>
-                </div>
+                  {/* Incident Description */}
+                  <div className="space-y-4">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 mb-2">Incident Description</h4>
+                        <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.description}</p>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 mb-2">Immediate Action Taken</h4>
+                        <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.actionTaken || "No immediate action recorded."}</p>
+                      </div>
+                  </div>
+                  
+                  {/* NTE SECTION: Display/Input */}
+                  {selectedReport.nteRequired && (
+                    <div className="bg-orange-50/50 border border-orange-100 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="bg-white text-orange-600 border-orange-200">Action Required</Badge>
+                            <span className="font-semibold text-sm text-orange-900">Notice to Explain (NTE)</span>
+                        </div>
+                        
+                        {/* CASE 1: Manager View (Show content or pending status) */}
+                        {['admin', 'manager'].includes(user?.role || '') && (
+                            <div className="text-sm">
+                                {selectedReport.nteContent ? (
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-semibold text-orange-800">Employee Explanation:</p>
+                                        <p className="bg-white p-3 rounded border border-orange-100 text-slate-700">{selectedReport.nteContent}</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-orange-600 italic">Waiting for employee explanation...</p>
+                                )}
+                            </div>
+                        )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                    <span className="text-xs font-semibold text-slate-400 uppercase">Witnesses</span>
-                    <p className="text-sm font-medium text-slate-900">{selectedReport.witnesses || "None listed"}</p>
+                        {/* CASE 2: Employee View (Show Input if Assigned & Pending) */}
+                        {user?.id === selectedReport.assignedTo && !['admin', 'manager'].includes(user?.role || '') && (
+                            <div className="space-y-3">
+                                {selectedReport.nteContent ? (
+                                     <div className="space-y-1">
+                                        <p className="text-xs font-semibold text-orange-800">Your Submitted Explanation:</p>
+                                        <p className="bg-white p-3 rounded border border-orange-100 text-slate-700">{selectedReport.nteContent}</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-xs text-orange-800">Please provide your explanation regarding this incident.</p>
+                                        <Textarea 
+                                            placeholder="Write your explanation here..."
+                                            value={nteResponse}
+                                            onChange={(e) => setNteResponse(e.target.value)}
+                                            className="bg-white border-orange-200 focus-visible:ring-orange-500"
+                                        />
+                                        <Button 
+                                            size="sm" 
+                                            className="bg-orange-600 hover:bg-orange-700 text-white w-full"
+                                            disabled={!nteResponse.trim() || updateStatusMutation.isPending}
+                                            onClick={() => updateStatusMutation.mutate({ 
+                                                id: selectedReport.id, 
+                                                nteContent: nteResponse 
+                                            })}
+                                        >
+                                            {updateStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <Send className="w-3 h-3 mr-2" />}
+                                            Submit Explanation
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </div>
-                    <div className="space-y-1">
-                    <span className="text-xs font-semibold text-slate-400 uppercase">Parties Involved</span>
-                    <p className="text-sm font-medium text-slate-900">{selectedReport.partiesInvolved || "None listed"}</p>
-                    </div>
-                </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-400 uppercase">Witnesses</span>
+                        <p className="text-sm font-medium text-slate-900">{selectedReport.witnesses || "None listed"}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-400 uppercase">Parties Involved</span>
+                        <p className="text-sm font-medium text-slate-900">{selectedReport.partiesInvolved || "None listed"}</p>
+                      </div>
+                  </div>
                 </div>
 
                 <DialogFooter className="flex-row justify-between sm:justify-between border-t pt-4">
                 <Button variant="ghost" onClick={() => setIsViewOpen(false)}>Close</Button>
                 
-                {selectedReport.status === 'resolved' ? (
-                    <Button 
-                    variant="outline"
-                    className="border-amber-500 text-amber-600 hover:bg-amber-50"
-                    onClick={() => updateStatusMutation.mutate({ id: selectedReport.id, status: 'pending' })}
-                    disabled={updateStatusMutation.isPending}
-                    >
-                    <Clock className="w-4 h-4 mr-2" /> Mark as Pending
-                    </Button>
-                ) : (
-                    <Button 
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                    onClick={() => {
-                        setResolutionAction(selectedReport.actionTaken || ""); 
-                        setIsViewOpen(false); 
-                        // Delay slightly to allow the first dialog to close
-                        setTimeout(() => setIsResolveDialogOpen(true), 150);
-                    }}
-                    >
-                    <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as Resolved
-                    </Button>
+                {['admin', 'manager'].includes(user?.role || '') && (
+                    selectedReport.status === 'resolved' ? (
+                        <Button 
+                        variant="outline"
+                        className="border-amber-500 text-amber-600 hover:bg-amber-50"
+                        onClick={() => updateStatusMutation.mutate({ id: selectedReport.id, status: 'pending' })}
+                        disabled={updateStatusMutation.isPending}
+                        >
+                        <Clock className="w-4 h-4 mr-2" /> Mark as Pending
+                        </Button>
+                    ) : (
+                        <Button 
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => {
+                            setResolutionAction(selectedReport.actionTaken || ""); 
+                            setIsViewOpen(false); 
+                            setTimeout(() => setIsResolveDialogOpen(true), 150);
+                        }}
+                        >
+                        <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as Resolved
+                        </Button>
+                    )
                 )}
                 </DialogFooter>
             </>

@@ -138,6 +138,9 @@ export const reports = sqliteTable("reports", {
   details: json<Record<string, any>>("details"),
   images: json<string[]>("images"), 
 
+  nteRequired: integer("nte_required", { mode: 'boolean' }).default(false),
+  nteContent: text("nte_content"),
+
   assignedTo: text("assigned_to").references(() => users.id),
   resolvedBy: text("resolved_by").references(() => users.id),
   resolvedAt: integer("resolved_at", { mode: 'timestamp_ms' }),
@@ -241,10 +244,10 @@ export const insertActivitySchema = createInsertSchema(activities).omit({
 // UPDATED: Added date coercion to handle JSON payloads correctly
 export const insertReportSchema = createInsertSchema(reports, {
   dateOccurred: z.number(),
+  nteRequired: z.boolean().optional(),
 }).omit({
   id: true,
   status: true,
-  assignedTo: true,
   resolvedBy: true,
   resolvedAt: true,
   createdAt: true,

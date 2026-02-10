@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../db";
-import { announcements, leaveRequests, payslips } from "@shared/schema";
+import { announcements, leaveRequests, payslips, reports } from "@shared/schema";
 import { eq, and, desc, gt, or, gte } from "drizzle-orm";
 import { subDays } from "date-fns";
 
@@ -58,6 +58,30 @@ router.get("/", async (req, res) => {
       ))
       .orderBy(desc(payslips.generatedAt));
 
+    // 4. NEW: NTE Notifications
+    // A. For Employee: "Action Required: Submit NTE"
+    const pendingNTEs = await db.select()
+        .from(reports)
+        .where(and(
+            eq(reports.assignedTo, user.id),
+            eq(reports.nteRequired, true),
+            or(eq(reports.nteContent, ""), eq(reports.nteContent, null))
+        ));
+
+    // B. For Manager: "Update: NTE Submitted"
+    let submittedNTEs: typeof reports.$inferSelect[] = [];
+    if (['admin', 'manager'].includes(user.role)) {
+        submittedNTEs = await db.select()
+            .from(reports)
+            .where(and(
+                eq(reports.userId, user.id), // Created by this manager
+                eq(reports.nteRequired, true),
+                gte(reports.updatedAt, cutoffDate) // Recently updated
+            ))
+            // Filter in JS for non-null content to be safe
+            .then(rows => rows.filter(r => r.nteContent && r.nteContent.length > 0));
+    }
+    
     // Combine into a unified notification structure
     const notifications = [
         ...relevantAnnouncements.map(a => ({
@@ -86,6 +110,26 @@ router.get("/", async (req, res) => {
             message: `Payslip for ${p.month} (${p.period || 'N/A'}) /${p.year} is now available.`,
             timestamp: p.generatedAt,
             link: '/payslips',
+            read: false
+        })),
+        ...pendingNTEs.map(r => ({
+            id: `nte-req-${r.id}`,
+            type: 'alert', // Use specific styling in frontend if available
+            title: 'Action Required: Submit NTE',
+            message: `You are required to submit a Notice to Explain regarding: ${r.title}`,
+            timestamp: r.createdAt,
+            link: '/reports',
+            read: false
+        })),
+
+        // Map Submitted NTEs (For Manager)
+        ...submittedNTEs.map(r => ({
+            id: `nte-sub-${r.id}`,
+            type: 'info',
+            title: 'NTE Submitted',
+            message: `Employee has submitted their explanation for: ${r.title}`,
+            timestamp: r.updatedAt,
+            link: '/reports',
             read: false
         }))
     ];

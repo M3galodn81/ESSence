@@ -1,39 +1,38 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { 
   Clock, ChevronLeft, ChevronRight, Plus, Edit, Trash2, 
-  Copy, Users, CalendarDays, MapPin, Grid, List, Calendar as CalendarIcon, 
-  Sun, Moon, Sunset, Filter, LayoutPanelLeft
+  Copy, Users, CalendarDays, MapPin, Grid, List, 
+  Sun, Moon, Sunset, LayoutPanelLeft, Check, ChevronsUpDown
 } from "lucide-react";
 import type { Schedule, User } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Check, ChevronsUpDown } from "lucide-react";
 
 // --- Configuration ---
 const ROLES = ["cashier", "bar", "server", "kitchen"];
 
 const SHIFT_PRESETS = {
-  morning: { start: "08:00", end: "17:00", label: "AM", color: "bg-emerald-100 border-emerald-200 text-emerald-800", indicator: "bg-emerald-500" },
-  afternoon: { start: "13:00", end: "00:00", label: "PM", color: "bg-amber-100 border-amber-200 text-amber-800", indicator: "bg-amber-500" },
-  night: { start: "21:00", end: "06:00", label: "GY", color: "bg-indigo-100 border-indigo-200 text-indigo-800", indicator: "bg-indigo-500" },
-  off: { start: "00:00", end: "23:59", label: "Day Off", color: "bg-slate-100 border-slate-200 text-slate-500", indicator: "bg-slate-400" }
+  morning: { start: "08:00", end: "17:00", label: "AM", color: "bg-emerald-100 border-emerald-200 text-emerald-800", indicator: "bg-emerald-500", ring: "ring-emerald-500", text: "text-emerald-900", icon: "text-emerald-200", title: "text-emerald-600" },
+  afternoon: { start: "13:00", end: "00:00", label: "PM", color: "bg-amber-100 border-amber-200 text-amber-800", indicator: "bg-amber-500", ring: "ring-amber-500", text: "text-amber-900", icon: "text-amber-200", title: "text-amber-600" },
+  night: { start: "21:00", end: "06:00", label: "GY", color: "bg-indigo-100 border-indigo-200 text-indigo-800", indicator: "bg-indigo-500", ring: "ring-indigo-500", text: "text-indigo-900", icon: "text-indigo-200", title: "text-indigo-600" },
+  off: { start: "00:00", end: "23:59", label: "Day Off", color: "bg-slate-100 border-slate-200 text-slate-500", indicator: "bg-slate-400", ring: "ring-slate-900", text: "text-slate-900", icon: "text-slate-100", title: "text-slate-400" }
 };
 
 const shiftFormSchema = z.object({
@@ -48,20 +47,79 @@ const shiftFormSchema = z.object({
 
 type ShiftForm = z.infer<typeof shiftFormSchema>;
 
+// --- Styles Definition ---
+const styles = {
+  page: {
+    wrapper: "max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6 pb-20 md:pb-8",
+  },
+  header: {
+    container: "flex flex-col md:flex-row md:items-center justify-between gap-4",
+    title: "text-2xl md:text-3xl font-bold tracking-tight text-slate-900",
+    subtitle: "text-slate-500 mt-1 text-sm",
+    actions: "flex flex-col sm:flex-row items-stretch sm:items-center gap-3",
+    btnCopy: "bg-white/60 w-full sm:w-auto",
+    btnCreate: "bg-slate-900 text-white rounded-full px-6 shadow-lg w-full sm:w-auto hover:bg-slate-800",
+  },
+  toolbar: {
+    container: "flex flex-col lg:flex-row items-center justify-between gap-4 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm",
+    leftGroup: "flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto",
+    employeePickerBtn: "w-full sm:w-[200px] justify-between font-medium p-2 h-auto hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-md transition-all",
+    dateNav: {
+      container: "flex items-center bg-slate-50 rounded-lg p-1 w-full sm:w-auto justify-between sm:justify-center",
+      text: "px-2 sm:px-4 text-sm font-semibold text-slate-700 min-w-[140px] text-center flex items-center justify-center gap-2",
+      btn: "h-8 w-8 text-slate-500 hover:bg-white hover:shadow-sm"
+    },
+    rightGroup: "flex flex-wrap items-center gap-2 w-full lg:w-auto justify-between sm:justify-end",
+    tabsList: "bg-slate-100 h-9 p-1 w-full sm:w-auto",
+    tabTrigger: "flex-1 sm:flex-none h-7 text-xs px-3 gap-2"
+  },
+  stats: {
+    grid: "grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4",
+    card: "bg-white border-slate-200 shadow-sm p-3 md:p-4 flex items-center justify-between cursor-pointer transition-all hover:border-slate-400 select-none",
+    cardActive: "ring-2 ring-offset-2",
+    label: "text-[10px] font-bold uppercase",
+    count: "text-xl md:text-2xl font-bold"
+  },
+  kanban: {
+    grid: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start",
+    column: "flex flex-col bg-slate-100/50 rounded-xl border border-slate-200 p-1",
+    columnHeader: "p-3 border-b border-slate-100 mb-2 flex items-center justify-between",
+    columnTitle: "font-bold text-sm text-slate-700 uppercase tracking-wider",
+    cardList: "flex-1 space-y-2 p-2 min-h-[100px] md:min-h-[150px]"
+  },
+  roster: {
+    card: "border-slate-200 shadow-sm overflow-hidden bg-white",
+    scrollArea: "overflow-x-auto w-full",
+    tableWrapper: "min-w-[800px] md:min-w-[1000px]",
+    th: "p-3 md:p-4 text-left border-b border-r border-slate-200",
+    tdUser: "p-3 md:p-4 border-b border-r border-slate-200 bg-white sticky left-0 z-10 group-hover:bg-slate-50/30",
+    tdCell: "p-1 md:p-2 border-b border-r border-slate-200 align-top h-[100px]"
+  },
+  list: {
+    row: "hover:bg-slate-50/50 transition-colors",
+    cell: "px-4 md:px-6 py-3",
+    header: "bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500"
+  },
+  form: {
+    grid2: "grid grid-cols-1 sm:grid-cols-2 gap-4",
+    input: "rounded-xl",
+    timeWrapper: "bg-slate-50 p-3 rounded-xl"
+  }
+};
+
 export default function ShiftManagement() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"roster" | "kanban" | "list">("kanban");
   const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
-   
+    
   // Dialogs
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
 
-   
   // Filter State
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
   const [filterType, setFilterType] = useState<string | null>(null);
@@ -99,7 +157,6 @@ export default function ShiftManagement() {
     return emp ? `${emp.firstName} ${emp.lastName}` : "Unknown";
   };
   
-  // FIX: Helper for robust time formatting (HH:mm)
   const formatTimeForInput = (dateInput: string | number | Date) => {
     const date = new Date(dateInput);
     const hours = date.getHours().toString().padStart(2, '0');
@@ -109,7 +166,7 @@ export default function ShiftManagement() {
 
   const navigate = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate);
-    const delta = view === 'kanban' ? 1 : 7; // Move by day in Kanban, by week in Roster
+    const delta = view === 'kanban' ? 1 : 7;
     newDate.setDate(currentDate.getDate() + (direction === 'next' ? delta : -delta));
     setCurrentDate(newDate);
   };
@@ -121,7 +178,7 @@ export default function ShiftManagement() {
         const d = new Date(s.date);
         const inRange = view === 'roster' || view === 'list' 
             ? d >= weekStart && d <= weekEnd 
-            : true; // For Kanban (Day view), we filter specifically below
+            : true;
         const employeeMatch = selectedEmployee === "all" || s.userId === selectedEmployee;
         return inRange && employeeMatch;
     });
@@ -140,42 +197,27 @@ export default function ShiftManagement() {
     );
   };
 
-  const getShiftTypeFromTime = (timeStr: string): "morning" | "afternoon" | "night" => {
-    const hour = parseInt(timeStr.split(':')[0], 10);
-    if (hour >= 7 && hour < 12) return "morning";
-    if (hour >= 13 && hour < 18) return "afternoon";
-    if (hour >= 18 || hour <= 1) return "night";
-    return "night"; // Default rest to GY
-  };
-
-  // --- Forms & Mutations (Simplified for brevity, logic same as before) ---
+  // --- Forms & Mutations ---
   const createForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema), defaultValues: { shiftType: "morning", shiftRole: "server" } });
   const editForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema) });
 
-  // 1. MODIFIED: Only sets the label/color, does NOT force the time anymore
   const handleShiftTypeChange = (val: string, form: any) => {
     form.setValue("shiftType", val);
-    
-    // Set starting time based on first hour of range
     let startTime = "07:00";
     if (val === "afternoon") startTime = "13:00";
     if (val === "night") startTime = "18:00";
     if (val === "off") startTime = "00:00";
 
-    // Trigger the full time logic to set the 9hr end time
     const pseudoEvent = { target: { value: startTime } } as React.ChangeEvent<HTMLInputElement>;
     onStartTimeChange(pseudoEvent, form);
   };
 
-  // 2. NEW: Automatically sets End Time to Start Time + 9 Hours
   const onStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>, form: any) => {
     const newStartTime = e.target.value;
     if (!newStartTime) return;
 
-    // 1. Update form value for Start Time
     form.setValue("startTime", newStartTime);
 
-    // 2. Detect Shift Type (AM/PM/GY)
     const hour = parseInt(newStartTime.split(':')[0], 10);
     let detectedType: "morning" | "afternoon" | "night" = "night";
     
@@ -185,7 +227,6 @@ export default function ShiftManagement() {
 
     form.setValue("shiftType", detectedType);
 
-    // 3. Set End Time (+9 Hours)
     const [h, m] = newStartTime.split(':').map(Number);
     const date = new Date();
     date.setHours(h, m, 0);
@@ -253,8 +294,6 @@ export default function ShiftManagement() {
   const handleEdit = (schedule: Schedule) => {
     setSelectedSchedule(schedule);
     const dateStr = new Date(schedule.date).toISOString().split('T')[0];
-    
-    // FIX: Use manual extraction for accurate HH:mm for HTML inputs
     const startStr = formatTimeForInput(schedule.startTime);
     const endStr = formatTimeForInput(schedule.endTime);
 
@@ -274,18 +313,18 @@ export default function ShiftManagement() {
     e?.stopPropagation(); setSelectedSchedule(schedule); setIsDeleteDialogOpen(true);
   };
 
-  // --- UI Components ---
+  // --- Sub-Components ---
   const Header = () => (
-    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className={styles.header.container}>
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Shift Management</h1>
-        <p className="text-slate-500 mt-1 text-sm">Assign and manage employee work schedules</p>
+        <h1 className={styles.header.title}>Shift Management</h1>
+        <p className={styles.header.subtitle}>Assign and manage employee work schedules</p>
       </div>
-      <div className="flex items-center gap-3">
-        <Button variant="outline" className="bg-white/60" onClick={() => copyWeekMutation.mutate()} disabled={copyWeekMutation.isPending}>
-          <Copy className="w-4 h-4 mr-2" /> Copy Previous Week
+      <div className={styles.header.actions}>
+        <Button variant="outline" className={styles.header.btnCopy} onClick={() => copyWeekMutation.mutate()} disabled={copyWeekMutation.isPending}>
+          <Copy className="w-4 h-4 mr-2" /> <span className="hidden sm:inline">Copy Previous Week</span><span className="sm:hidden">Copy Week</span>
         </Button>
-        <Button onClick={() => setIsCreateDialogOpen(true)} className="bg-slate-900 text-white rounded-full px-6 shadow-lg">
+        <Button onClick={() => setIsCreateDialogOpen(true)} className={styles.header.btnCreate}>
           <Plus className="w-4 h-4 mr-2" /> Assign Shift
         </Button>
       </div>
@@ -293,78 +332,58 @@ export default function ShiftManagement() {
   );
 
   const Toolbar = () => (
-    <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
+    <div className={styles.toolbar.container}>
       {/* 1. Autocomplete Employee Filter */}
-    <div className="flex items-center gap-3 px-3 w-full lg:w-auto">
-      <Users className="w-4 h-4 text-slate-400" />
-      <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            role="combobox"
-            aria-expanded={openEmployeePicker}
-            className="w-[200px] justify-between font-medium p-0 h-auto hover:bg-transparent"
-          >
-            {selectedEmployee === "all" 
-              ? "All Employees" 
-              : teamMembers?.find((m) => m.id === selectedEmployee)?.firstName + " " + teamMembers?.find((m) => m.id === selectedEmployee)?.lastName}
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[200px] p-0">
-          <Command>
-            <CommandInput placeholder="Search employee..." />
-            <CommandList>
-              <CommandEmpty>No employee found.</CommandEmpty>
-              <CommandGroup>
-                <CommandItem
-                  value="all"
-                  onSelect={() => {
-                    setSelectedEmployee("all");
-                    setOpenEmployeePicker(false);
-                  }}
-                >
-                  <Check className={cn("mr-2 h-4 w-4", selectedEmployee === "all" ? "opacity-100" : "opacity-0")} />
-                  All Employees
-                </CommandItem>
-                {teamMembers?.map((m) => (
-                  <CommandItem
-                    key={m.id}
-                    value={`${m.firstName} ${m.lastName}`}
-                    onSelect={() => {
-                      setSelectedEmployee(m.id);
-                      setOpenEmployeePicker(false);
-                    }}
-                  >
-                    <Check className={cn("mr-2 h-4 w-4", selectedEmployee === m.id ? "opacity-100" : "opacity-0")} />
-                    {m.firstName} {m.lastName}
+      <div className={styles.toolbar.leftGroup}>
+        <Users className="w-4 h-4 text-slate-400 hidden lg:block" />
+        <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" role="combobox" aria-expanded={openEmployeePicker} className={styles.toolbar.employeePickerBtn}>
+              {selectedEmployee === "all" ? "All Employees" : getEmployeeName(selectedEmployee)}
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Search employee..." />
+              <CommandList>
+                <CommandEmpty>No employee found.</CommandEmpty>
+                <CommandGroup>
+                  <CommandItem value="all" onSelect={() => { setSelectedEmployee("all"); setOpenEmployeePicker(false); }}>
+                    <Check className={cn("mr-2 h-4 w-4", selectedEmployee === "all" ? "opacity-100" : "opacity-0")} /> All Employees
                   </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-    </div>
+                  {teamMembers?.map((m) => (
+                    <CommandItem key={m.id} value={`${m.firstName} ${m.lastName}`} onSelect={() => { setSelectedEmployee(m.id); setOpenEmployeePicker(false); }}>
+                      <Check className={cn("mr-2 h-4 w-4", selectedEmployee === m.id ? "opacity-100" : "opacity-0")} /> {m.firstName} {m.lastName}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </div>
 
-      <div className="flex items-center bg-slate-50 rounded-lg p-1">
-        <Button variant="ghost" size="icon" onClick={() => navigate('prev')} className="h-8 w-8 text-slate-500 hover:bg-white hover:shadow-sm"><ChevronLeft className="w-4 h-4" /></Button>
-        <div className="px-4 text-sm font-semibold text-slate-700 min-w-[160px] text-center flex items-center justify-center gap-2">
+      {/* 2. Date Navigator */}
+      <div className={styles.toolbar.dateNav.container}>
+        <Button variant="ghost" size="icon" onClick={() => navigate('prev')} className={styles.toolbar.dateNav.btn}><ChevronLeft className="w-4 h-4" /></Button>
+        <div className={styles.toolbar.dateNav.text}>
             <CalendarDays className="w-4 h-4 text-slate-400" />
             {view === 'kanban' ? currentDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric'}) : 
              `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
         </div>
-        <Button variant="ghost" size="icon" onClick={() => navigate('next')} className="h-8 w-8 text-slate-500 hover:bg-white hover:shadow-sm"><ChevronRight className="w-4 h-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={() => navigate('next')} className={styles.toolbar.dateNav.btn}><ChevronRight className="w-4 h-4" /></Button>
       </div>
 
-      <div className="flex items-center gap-2 w-full lg:w-auto justify-end">
-        <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())}>Today</Button>
-        <div className="h-4 w-px bg-slate-200 mx-2" />
-        <Tabs value={view} onValueChange={(v) => setView(v as any)} className="w-auto">
-          <TabsList className="bg-slate-100 h-9 p-1">
-            <TabsTrigger value="kanban" className="h-7 text-xs px-3 gap-2"><LayoutPanelLeft className="w-3.5 h-3.5"/> Day</TabsTrigger>
-            <TabsTrigger value="roster" className="h-7 text-xs px-3 gap-2"><Grid className="w-3.5 h-3.5"/> Roster</TabsTrigger>
-            <TabsTrigger value="list" className="h-7 text-xs px-3 gap-2"><List className="w-3.5 h-3.5"/> List</TabsTrigger>
+      {/* 3. Controls */}
+      <div className={styles.toolbar.rightGroup}>
+        <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())} className="w-full sm:w-auto">Today</Button>
+        <div className="h-4 w-px bg-slate-200 mx-2 hidden sm:block" />
+        <Tabs value={view} onValueChange={(v) => setView(v as any)} className="w-full sm:w-auto">
+          <TabsList className={styles.toolbar.tabsList}>
+            <TabsTrigger value="kanban" className={styles.toolbar.tabTrigger}><LayoutPanelLeft className="w-3.5 h-3.5"/> Day</TabsTrigger>
+            <TabsTrigger value="roster" className={styles.toolbar.tabTrigger}><Grid className="w-3.5 h-3.5"/> Roster</TabsTrigger>
+            <TabsTrigger value="list" className={styles.toolbar.tabTrigger}><List className="w-3.5 h-3.5"/> List</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -372,73 +391,51 @@ export default function ShiftManagement() {
   );
 
   const StatsBar = () => {
-  const shifts = getSchedulesForDay(currentDate).filter(s => s.type !== 'off');
-  const counts = {
-    total: shifts.length,
-    morning: shifts.filter(s => s.type === 'morning').length,
-    afternoon: shifts.filter(s => s.type === 'afternoon').length,
-    night: shifts.filter(s => s.type === 'night').length
-  };
+    const shifts = getSchedulesForDay(currentDate).filter(s => s.type !== 'off');
+    const counts = {
+      total: shifts.length,
+      morning: shifts.filter(s => s.type === 'morning').length,
+      afternoon: shifts.filter(s => s.type === 'afternoon').length,
+      night: shifts.filter(s => s.type === 'night').length
+    };
 
-  const toggleFilter = (type: string | null) => {
-    setFilterType(prev => prev === type ? null : type);
+    const toggleFilter = (type: string | null) => setFilterType(prev => prev === type ? null : type);
+
+    // Helper to render stats cards cleanly
+    const StatCard = ({ type, count, icon: Icon, presetKey }: any) => {
+        const preset = presetKey ? SHIFT_PRESETS[presetKey as keyof typeof SHIFT_PRESETS] : null;
+        const isActive = presetKey ? filterType === presetKey : filterType === null;
+        
+        return (
+            <div 
+                onClick={() => toggleFilter(presetKey || null)}
+                className={cn(
+                    styles.stats.card,
+                    preset ? `${preset.color} hover:border-current` : "hover:border-slate-400",
+                    isActive && (preset ? preset.ring : "ring-slate-900") + " " + styles.stats.cardActive
+                )}
+            >
+                <div>
+                    <p className={cn(styles.stats.label, preset ? preset.title : "text-slate-400")}>{type}</p>
+                    <p className={cn(styles.stats.count, preset ? preset.text : "text-slate-900")}>{count}</p>
+                </div>
+                <Icon className={cn("w-8 h-8", preset ? preset.icon : "text-slate-100")} />
+            </div>
+        );
+    };
+
+    return (
+      <div className={styles.stats.grid}>
+        <StatCard type="Total Staff" count={counts.total} icon={Users} />
+        <StatCard type="Morning" count={counts.morning} icon={Sun} presetKey="morning" />
+        <StatCard type="Afternoon" count={counts.afternoon} icon={Sunset} presetKey="afternoon" />
+        <StatCard type="Night" count={counts.night} icon={Moon} presetKey="night" />
+      </div>
+    );
   };
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {/* Total Staff - Resets filter */}
-      <Card 
-        onClick={() => toggleFilter(null)}
-        className={cn(
-          "bg-white border-slate-200 shadow-sm p-4 flex items-center justify-between cursor-pointer transition-all hover:border-slate-400",
-          filterType === null && "ring-2 ring-slate-900 ring-offset-2"
-        )}
-      >
-        <div><p className="text-[10px] font-bold uppercase text-slate-400">Total Staff</p><p className="text-2xl font-bold text-slate-900">{counts.total}</p></div>
-        <Users className="w-8 h-8 text-slate-100" />
-      </Card>
-
-      {/* Morning Filter */}
-      <Card 
-        onClick={() => toggleFilter('morning')}
-        className={cn(
-          "bg-emerald-50 border-emerald-100 shadow-sm p-4 flex items-center justify-between cursor-pointer transition-all hover:border-emerald-300",
-          filterType === 'morning' && "ring-2 ring-emerald-500 ring-offset-2"
-        )}
-      >
-        <div><p className="text-[10px] font-bold uppercase text-emerald-600">Morning</p><p className="text-2xl font-bold text-emerald-900">{counts.morning}</p></div>
-        <Sun className="w-8 h-8 text-emerald-200" />
-      </Card>
-
-      {/* Afternoon Filter */}
-      <Card 
-        onClick={() => toggleFilter('afternoon')}
-        className={cn(
-          "bg-amber-50 border-amber-100 shadow-sm p-4 flex items-center justify-between cursor-pointer transition-all hover:border-amber-300",
-          filterType === 'afternoon' && "ring-2 ring-amber-500 ring-offset-2"
-        )}
-      >
-        <div><p className="text-[10px] font-bold uppercase text-amber-600">Afternoon</p><p className="text-2xl font-bold text-amber-900">{counts.afternoon}</p></div>
-        <Sunset className="w-8 h-8 text-amber-200" />
-      </Card>
-
-      {/* Night Filter */}
-      <Card 
-        onClick={() => toggleFilter('night')}
-        className={cn(
-          "bg-indigo-50 border-indigo-100 shadow-sm p-4 flex items-center justify-between cursor-pointer transition-all hover:border-indigo-300",
-          filterType === 'night' && "ring-2 ring-indigo-500 ring-offset-2"
-        )}
-      >
-        <div><p className="text-[10px] font-bold uppercase text-indigo-600">Night</p><p className="text-2xl font-bold text-indigo-900">{counts.night}</p></div>
-        <Moon className="w-8 h-8 text-indigo-200" />
-      </Card>
-    </div>
-  );
-};
-
-  return (
-    <div className="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
+    <div className={styles.page.wrapper}>
       <Header />
       <Toolbar />
 
@@ -446,17 +443,17 @@ export default function ShiftManagement() {
           <div className="text-center py-20 text-slate-400">Loading schedule...</div>
       ) : (
           <>
-            {/* --- VIEW: ROSTER (Employees x Days) --- */}
+            {/* --- VIEW: ROSTER --- */}
             {view === 'roster' && (
-                <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
-                    <div className="overflow-x-auto">
-                        <div className="min-w-[1000px]">
+                <Card className={styles.roster.card}>
+                    <div className={styles.roster.scrollArea}>
+                        <div className={styles.roster.tableWrapper}>
                             <table className="w-full border-collapse">
                                 <thead>
                                     <tr>
-                                        <th className="w-[200px] p-4 text-left bg-slate-50 border-b border-r border-slate-200 text-xs font-bold text-slate-500 uppercase sticky left-0 z-20">Employee</th>
+                                        <th className={cn(styles.roster.th, "w-[200px] bg-slate-50 text-xs font-bold text-slate-500 uppercase sticky left-0 z-20")}>Employee</th>
                                         {getDaysOfWeek().map((day, i) => (
-                                            <th key={i} className={cn("p-3 text-center border-b border-r border-slate-200 min-w-[140px]", isToday(day) && "bg-blue-50/50")}>
+                                            <th key={i} className={cn(styles.roster.th, "text-center min-w-[140px]", isToday(day) && "bg-blue-50/50")}>
                                                 <div className={cn("text-[10px] font-bold uppercase", isToday(day) ? "text-blue-600" : "text-slate-400")}>{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>
                                                 <div className={cn("text-lg font-bold", isToday(day) ? "text-blue-700" : "text-slate-700")}>{day.getDate()}</div>
                                             </th>
@@ -466,7 +463,7 @@ export default function ShiftManagement() {
                                 <tbody>
                                     {teamMembers?.map((employee) => (
                                         <tr key={employee.id} className="group hover:bg-slate-50/30 transition-colors">
-                                            <td className="p-4 border-b border-r border-slate-200 bg-white sticky left-0 z-10 group-hover:bg-slate-50/30">
+                                            <td className={styles.roster.tdUser}>
                                                 <div className="flex flex-col">
                                                     <span className="font-bold text-sm text-slate-900">{employee.firstName} {employee.lastName}</span>
                                                     <span className="text-xs text-slate-500 capitalize">{employee.position || "Staff"}</span>
@@ -475,7 +472,7 @@ export default function ShiftManagement() {
                                             {getDaysOfWeek().map((day, i) => {
                                                 const shifts = getShiftsForEmployeeAndDate(employee.id, day);
                                                 return (
-                                                    <td key={i} className={cn("p-2 border-b border-r border-slate-200 align-top h-[100px]", isToday(day) && "bg-blue-50/10")}>
+                                                    <td key={i} className={cn(styles.roster.tdCell, isToday(day) && "bg-blue-50/10")}>
                                                         <div className="flex flex-col gap-2 h-full">
                                                             {shifts.map(shift => <RosterCard key={shift.id} schedule={shift} onEdit={handleEdit} onDelete={handleDelete} />)}
                                                             {shifts.length === 0 && (
@@ -494,26 +491,26 @@ export default function ShiftManagement() {
                 </Card>
             )}
 
-            {/* --- VIEW: DAY KANBAN (Roles Columns) --- */}
+            {/* --- VIEW: DAY KANBAN --- */}
             {view === 'kanban' && (
                 <div className="space-y-6">
                     <StatsBar />
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
+                    <div className={styles.kanban.grid}>
                         {ROLES.map(role => {
                             const roleShifts = getSchedulesForDay(currentDate)
                                 .filter(s => {
                                   const roleMatch = s.shiftRole === role && s.type !== 'off';
-                                  const typeMatch = filterType ? s.type === filterType : true; // Apply the card filter
+                                  const typeMatch = filterType ? s.type === filterType : true; 
                                   return roleMatch && typeMatch;
                                 })
                                 .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
                             return (
-                                <div key={role} className="flex flex-col bg-slate-100/50 rounded-xl border border-slate-200 p-1">
-                                    <div className="p-3 border-b border-slate-100 mb-2 flex items-center justify-between">
-                                        <span className="font-bold text-sm text-slate-700 uppercase tracking-wider">{role}</span>
+                                <div key={role} className={styles.kanban.column}>
+                                    <div className={styles.kanban.columnHeader}>
+                                        <span className={styles.kanban.columnTitle}>{role}</span>
                                         <Badge variant="secondary" className="bg-white">{roleShifts.length}</Badge>
                                     </div>
-                                    <div className="flex-1 space-y-2 p-2 min-h-[150px]">
+                                    <div className={styles.kanban.cardList}>
                                         {roleShifts.length === 0 ? <div className="text-center py-8 text-slate-400 text-xs italic">No Staff</div> : 
                                             roleShifts.map(s => <KanbanCard key={s.id} schedule={s} employeeName={getEmployeeName(s.userId)} onEdit={handleEdit} onDelete={handleDelete} />)
                                         }
@@ -527,33 +524,32 @@ export default function ShiftManagement() {
 
             {/* --- VIEW: LIST --- */}
             {view === 'list' && (
-                <Card className="border-slate-200 shadow-sm">
-                  <CardContent className="p-0">
-                    <table className="w-full text-sm text-left">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500">
+                <Card className={styles.roster.card}>
+                  <CardContent className="p-0 overflow-x-auto">
+                    <table className="w-full text-sm text-left min-w-[600px]">
+                      <thead className={styles.list.header}>
                         <tr>
-                          <th className="px-6 py-3 font-semibold">Date</th>
-                          <th className="px-6 py-3 font-semibold">Employee</th>
-                          <th className="px-6 py-3 font-semibold">Shift</th>
-                          <th className="px-6 py-3 font-semibold">Time</th>
-                          <th className="px-6 py-3 font-semibold text-right">Actions</th>
+                          <th className={styles.list.cell}>Date</th>
+                          <th className={styles.list.cell}>Employee</th>
+                          <th className={styles.list.cell}>Shift</th>
+                          <th className={styles.list.cell}>Time</th>
+                          <th className={cn(styles.list.cell, "text-right")}>Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredSchedules.map(s => (<tr key={s.id} className="hover:bg-slate-50/50">
-                        <td className="px-6 py-3 font-medium">{new Date(s.date).toLocaleDateString()}</td>
-                        <td className="px-6 py-3">{getEmployeeName(s.userId)}</td>
-                        <td className="px-6 py-3">
-                          <Badge 
-                            variant="outline" 
-                            className={cn("capitalize", SHIFT_PRESETS[s.type as keyof typeof SHIFT_PRESETS]?.color)}
-                          >
-                            {/* Access the label property based on the type */}
+                        {filteredSchedules.map(s => (<tr key={s.id} className={styles.list.row}>
+                        <td className={cn(styles.list.cell, "font-medium")}>{new Date(s.date).toLocaleDateString()}</td>
+                        <td className={styles.list.cell}>{getEmployeeName(s.userId)}</td>
+                        <td className={styles.list.cell}>
+                          <Badge variant="outline" className={cn("capitalize", SHIFT_PRESETS[s.type as keyof typeof SHIFT_PRESETS]?.color)}>
                             {SHIFT_PRESETS[s.type as keyof typeof SHIFT_PRESETS]?.label || s.type}
                           </Badge>
                         </td>
-                        <td className="px-6 py-3 text-slate-500 text-xs font-mono">{s.type !== 'off' ? `${new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'OFF'}</td>
-                        <td className="px-6 py-3 text-right"><Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(s)}><Edit className="w-4 h-4" /></Button><Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s)}><Trash2 className="w-4 h-4" /></Button></td></tr>))}
+                        <td className={cn(styles.list.cell, "text-slate-500 text-xs font-mono")}>{s.type !== 'off' ? `${new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'OFF'}</td>
+                        <td className={cn(styles.list.cell, "text-right")}>
+                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(s)}><Edit className="w-4 h-4" /></Button>
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s)}><Trash2 className="w-4 h-4" /></Button>
+                        </td></tr>))}
                       </tbody>
                     </table>
                   </CardContent>
@@ -564,33 +560,31 @@ export default function ShiftManagement() {
 
       {/* --- Dialogs --- */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-lg rounded-2xl">
+        <DialogContent className="max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Assign New Shift</DialogTitle></DialogHeader>
           <form onSubmit={createForm.handleSubmit((d) => createShiftMutation.mutate(d))} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Employee</Label><Select onValueChange={(v) => createForm.setValue("userId", v)}><SelectTrigger className="rounded-xl"><SelectValue placeholder="Select..." /></SelectTrigger><SelectContent>{teamMembers?.map(m => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>Date</Label><Input type="date" className="rounded-xl" {...createForm.register("date")} /></div>
+            <div className={styles.form.grid2}>
+              <div className="space-y-2"><Label>Employee</Label><Select onValueChange={(v) => createForm.setValue("userId", v)}><SelectTrigger className={styles.form.input}><SelectValue placeholder="Select..." /></SelectTrigger><SelectContent>{teamMembers?.map(m => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Date</Label><Input type="date" className={styles.form.input} {...createForm.register("date")} /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Shift Type</Label><Select onValueChange={(v) => handleShiftTypeChange(v, createForm)} defaultValue="morning"><SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(SHIFT_PRESETS).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
+            <div className={styles.form.grid2}>
+              <div className="space-y-2"><Label>Shift Type</Label><Select onValueChange={(v) => handleShiftTypeChange(v, createForm)} defaultValue="morning"><SelectTrigger className={styles.form.input}><SelectValue /></SelectTrigger><SelectContent>{Object.entries(SHIFT_PRESETS).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
               <div className="space-y-2"><Label>Role</Label><Select onValueChange={(v) => createForm.setValue("shiftRole", v as any)} defaultValue="server"><SelectTrigger className="rounded-xl capitalize"><SelectValue /></SelectTrigger><SelectContent>{ROLES.map(r => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}</SelectContent></Select></div>
             </div>
-            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-xl">
+            <div className={cn(styles.form.grid2, styles.form.timeWrapper)}>
               <div className="space-y-1"><Label className="text-xs">Start Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("startTime")} onChange={(e) => onStartTimeChange(e, createForm)}/></div>
               <div className="space-y-1"><Label className="text-xs">End Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("endTime")} readOnly /></div>
             </div>
-            <div className="space-y-2"><Label>Location</Label><Input className="rounded-xl" placeholder="e.g. Main Hall" {...createForm.register("location")} /></div>
+            <div className="space-y-2"><Label>Location</Label><Input className={styles.form.input} placeholder="e.g. Main Hall" {...createForm.register("location")} /></div>
             <DialogFooter><Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button><Button type="submit" disabled={createShiftMutation.isPending}>Create Shift</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-       
+        
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-lg rounded-2xl">
+        <DialogContent className="max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle>Edit Shift</DialogTitle></DialogHeader>
             <form onSubmit={editForm.handleSubmit((d) => selectedSchedule && updateShiftMutation.mutate({ id: selectedSchedule.id, data: d }))} className="space-y-4 mt-2">
-                
-                {/* --- FIX: Display Employee Name --- */}
                 <div className="space-y-2">
                     <Label>Employee</Label>
                     <div className="flex items-center px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-medium">
@@ -599,8 +593,8 @@ export default function ShiftManagement() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>Date</Label><Input type="date" className="rounded-xl" {...editForm.register("date")} /></div>
+                <div className={styles.form.grid2}>
+                    <div className="space-y-2"><Label>Date</Label><Input type="date" className={styles.form.input} {...editForm.register("date")} /></div>
                     <div className="space-y-2">
                         <Label>Role</Label>
                         <Select onValueChange={(value) => editForm.setValue("shiftRole", value as any)} value={editForm.watch("shiftRole")}>
@@ -612,15 +606,15 @@ export default function ShiftManagement() {
                 <div className="space-y-2">
                     <Label>Shift Type</Label>
                     <Select onValueChange={(val) => handleShiftTypeChange(val, editForm)} value={editForm.watch("shiftType")}>
-                        <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className={styles.form.input}><SelectValue /></SelectTrigger>
                         <SelectContent>{Object.entries(SHIFT_PRESETS).map(([k,v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
                     </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-xl">
+                <div className={cn(styles.form.grid2, styles.form.timeWrapper)}>
                     <div className="space-y-1"><Label className="text-xs">Start Time</Label><Input type="time" className="bg-white h-8" {...editForm.register("startTime")} onChange={(e) => onStartTimeChange(e, editForm)}/></div>
                     <div className="space-y-1"><Label className="text-xs">End Time</Label><Input type="time" className="bg-white h-8" {...editForm.register("endTime")} /></div>
                 </div>
-                <div className="space-y-2"><Label>Location</Label><Input {...editForm.register("location")} className="rounded-xl" /></div>
+                <div className="space-y-2"><Label>Location</Label><Input {...editForm.register("location")} className={styles.form.input} /></div>
                 <DialogFooter>
                     <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
                     <Button type="submit" disabled={updateShiftMutation.isPending} className="bg-slate-900 text-white">Update Shift</Button>
@@ -628,6 +622,7 @@ export default function ShiftManagement() {
             </form>
         </DialogContent>
       </Dialog>
+
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent className="rounded-2xl">
             <AlertDialogHeader><AlertDialogTitle>Delete Shift</AlertDialogTitle><AlertDialogDescription>Are you sure?</AlertDialogDescription></AlertDialogHeader>
