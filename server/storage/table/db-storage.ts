@@ -60,6 +60,7 @@ export class DbStorage implements IStorage {
   async getLeaveRequestById(id: string) { return this.leaves.getLeaveRequestById(id); }
   async updateLeaveRequest(id: string, updates: Partial<LeaveRequest>) { return this.leaves.updateLeaveRequest(id, updates); }
   async getPendingLeaveRequests(mgrId?: string) { return this.leaves.getPendingLeaveRequests(mgrId); }
+  async getAllLeaveRequests() { return this.leaves.getAllLeaveRequests(); }
 
   // --- Attendance Methods ---
   async clockIn(userId: string, date: Date, notes?: string) { return this.attendance.clockIn(userId, date, notes); }

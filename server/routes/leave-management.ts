@@ -34,6 +34,13 @@ const router = Router();
     res.json(leaveRequests);
   });
 
+   // --- Get Leave Requests ---
+  router.get("/all", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    const leaveRequests = await storage.getAllLeaveRequests();
+    res.json(leaveRequests);
+  });
+
   // --- Get Pending Leave Requests (for Managers/Admins) ---
   router.get("/pending", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);

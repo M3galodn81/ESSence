@@ -79,4 +79,8 @@ async createLeaveRequest(request: InsertLeaveRequest): Promise<LeaveRequest> {
 
     return await query.orderBy(desc(leaveRequests.createdAt));
   }
+
+  async getAllLeaveRequests(): Promise<LeaveRequest[]> {
+    return await db.select().from(leaveRequests).orderBy(desc(leaveRequests.createdAt));
+  }
 }

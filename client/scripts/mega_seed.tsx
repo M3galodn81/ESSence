@@ -299,7 +299,112 @@ async function seed() {
   ]);
 
   // =========================================================================
-  // 4. INCIDENT REPORTS (Updated with NTE & Assignment Logic)
+  // 4. LEAVE REQUESTS (UPDATED WITH PENDING)
+  // =========================================================================
+  console.log("Generating leave requests...");
+  const leaveTypes = ["annual", "sick"];
+  const leaveReasons = [
+    "Family vacation", "Not feeling well", "Personal appointment", 
+    "Emergency at home", "Scheduled medical checkup", "Out of town trip"
+  ];
+  const rejectionReasons = [
+    "Shortage of staff on these dates", 
+    "Filed too close to the date", 
+    "Peak season blackout period"
+  ];
+
+  const leaveRequestsData = [];
+  
+  for (const emp of employees) {
+    // Generate 2-5 requests per employee
+    const numRequests = Math.floor(Math.random() * 4) + 2; 
+
+    for (let i = 0; i < numRequests; i++) {
+        // Random date in the past 6 months or next 1 month
+        const dateOffset = Math.floor(Math.random() * 210) - 180; // -180 to +30 days
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() + dateOffset);
+        
+        const days = Math.floor(Math.random() * 3) + 1; // 1-3 days
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + (days - 1));
+
+        const type = leaveTypes[Math.floor(Math.random() * leaveTypes.length)];
+        const reason = leaveReasons[Math.floor(Math.random() * leaveReasons.length)];
+        
+        // Determine status (UPDATED LOGIC)
+        const randStatus = Math.random();
+        let status = "approved";
+        let comments = null;
+        let managerId = mainManager.id;
+
+        // Logic: 20% Pending, 20% Rejected, 60% Approved
+        if (randStatus < 0.20) {
+            status = "pending";
+        } else if (randStatus < 0.40) {
+            status = "rejected";
+            comments = rejectionReasons[Math.floor(Math.random() * rejectionReasons.length)];
+        } else {
+            status = "approved";
+        }
+
+        leaveRequestsData.push({
+            userId: emp.id,
+            type,
+            startDate,
+            endDate,
+            days,
+            reason,
+            status,
+            managerId,
+            comments,
+            createdAt: new Date(startDate.getTime() - (7 * 24 * 60 * 60 * 1000)) // Applied 7 days before
+        });
+    }
+  }
+
+  // Add EXPLICIT PENDING REQUESTS for Demo Visibility
+  const explicitPending = [
+    {
+      userId: employees[0].id,
+      type: "annual",
+      startDate: new Date(new Date().setDate(new Date().getDate() + 10)),
+      endDate: new Date(new Date().setDate(new Date().getDate() + 12)),
+      days: 3,
+      reason: "Family Reunion (Pending Review)",
+      status: "pending",
+      managerId: mainManager.id,
+      createdAt: new Date()
+    },
+    {
+      userId: employees[1].id,
+      type: "sick",
+      startDate: new Date(new Date().setDate(new Date().getDate() + 5)),
+      endDate: new Date(new Date().setDate(new Date().getDate() + 5)),
+      days: 1,
+      reason: "Dental Surgery (Pending)",
+      status: "pending",
+      managerId: mainManager.id,
+      createdAt: new Date()
+    },
+    {
+      userId: employees[2].id,
+      type: "annual",
+      startDate: new Date(new Date().setDate(new Date().getDate() + 20)),
+      endDate: new Date(new Date().setDate(new Date().getDate() + 25)),
+      days: 5,
+      reason: "Planned Trip Abroad",
+      status: "pending",
+      managerId: mainManager.id,
+      createdAt: new Date()
+    }
+  ];
+  leaveRequestsData.push(...explicitPending);
+
+  await db.insert(leaveRequests).values(leaveRequestsData);
+
+  // =========================================================================
+  // 5. INCIDENT REPORTS (Updated with NTE & Assignment Logic)
   // =========================================================================
   console.log("Generating 1 year of incident reports...");
   
@@ -475,7 +580,7 @@ async function seed() {
   await db.insert(reports).values(reportsData);
 
   // =========================================================================
-  // 5. ATTENDANCE & PAYSLIP GENERATION (12 Months)
+  // 6. ATTENDANCE & PAYSLIP GENERATION (12 Months)
   // =========================================================================
   console.log("Generating attendance and payslips (Employees Only)...");
   const now = new Date(); 
@@ -565,7 +670,7 @@ async function seed() {
   await db.insert(payslips).values(payslipsToInsert);
 
   // =========================================================================
-  // 6. SCHEDULE GENERATION (Current Week)
+  // 7. SCHEDULE GENERATION (Current Week)
   // =========================================================================
   console.log("Generating future schedules (Employees Only)...");
   const startOfWeek = new Date(now);
@@ -600,7 +705,7 @@ async function seed() {
   }
   await db.insert(schedules).values(shiftData);
 
-  // 7. Analytics Data
+  // 8. Analytics Data
   console.log("Generating analytics with 9-13% labor cost variance...");
   const laborData = [];
   const payrollByMonth = payslipsToInsert.reduce((acc: any, p: any) => {
