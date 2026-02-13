@@ -1,12 +1,24 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { CalendarPlus, FileText, UserCog, ArrowRight } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { 
+  CalendarPlus, 
+  FileText, 
+  UserCog, 
+  ArrowRight, 
+  ClipboardCheck, 
+  BarChart3, 
+  AlertTriangle,
+  Users
+} from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function QuickActionsCard() {
   const [, navigate] = useLocation();
+  const { user } = useAuth();
+  const isManager = user?.role === 'manager' || user?.role === 'admin';
 
-  const quickActions = [
+  // Base actions for all employees
+  const baseActions = [
     {
       icon: CalendarPlus,
       label: "Apply Leave",
@@ -33,13 +45,45 @@ export default function QuickActionsCard() {
     },
   ];
 
+  // Additional actions for Managers/Admins
+  const managerActions = [
+    {
+      icon: ClipboardCheck,
+      label: "Approvals",
+      desc: "Review leave requests",
+      action: () => navigate("/leave-management?tab=pending"),
+      color: "text-amber-600",
+      bg: "bg-amber-50 hover:bg-amber-100",
+    },
+    {
+      icon: AlertTriangle,
+      label: "File Report",
+      desc: "Log incident/breakage",
+      action: () => navigate("/reports"),
+      color: "text-orange-600",
+      bg: "bg-orange-50 hover:bg-orange-100",
+    },
+    {
+      icon: BarChart3,
+      label: "Analytics",
+      desc: "Labor cost & trends",
+      action: () => navigate("/analytics"),
+      color: "text-indigo-600",
+      bg: "bg-indigo-50 hover:bg-indigo-100",
+    },
+  ];
+
+  const actions = isManager ? [...managerActions, ...baseActions] : baseActions;
+
   return (
     <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl" data-testid="quick-actions-card">
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg font-bold text-slate-800">Quick Actions</CardTitle>
+        <CardTitle className="text-lg font-bold text-slate-800">
+          {isManager ? "Management Actions" : "Quick Actions"}
+        </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
-        {quickActions.map((action, i) => (
+        {actions.map((action, i) => (
           <button
             key={i}
             onClick={action.action}

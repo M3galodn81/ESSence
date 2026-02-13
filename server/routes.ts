@@ -42,7 +42,7 @@ export function registerRoutes(app: Express): Server {
     const usedDays = approvedLeaves.reduce((sum, req) => sum + req.days, 0);
     const leaveBalance = Math.max(0, 25 - usedDays);
     let pendingApprovals = 0;
-    if (user.role === 'manager' || user.role === 'hr') {
+    if (user.role === 'manager') {
       const pending = await storage.getPendingLeaveRequests(user.role === 'manager' ? user.id : undefined);
       pendingApprovals = pending.length;
     }

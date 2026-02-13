@@ -23,7 +23,7 @@ import {
   List as ListIcon, Banknote, Search, History, Filter, Check,
   Loader2, ChevronsUpDown, Send, FileDown, Download
 } from "lucide-react";
-import { format, subMonths, isSameMonth, startOfMonth } from "date-fns"; 
+import { format, subMonths, startOfMonth } from "date-fns"; 
 import { cn } from "@/lib/utils";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
@@ -122,7 +122,7 @@ export default function Reports() {
     return options;
   }, []);
 
-  // UPDATED: Last Name First Format
+  // UPDATED: Name Format (Last Name, First Name)
   const getEmployeeName = (userId: string) => {
     const emp = teamMembers?.find((m) => m.id === userId);
     return emp ? `${emp.lastName}, ${emp.firstName}` : "Unknown";
@@ -136,13 +136,12 @@ export default function Reports() {
   // --- SORTED EMPLOYEES (Last Name) ---
   const sortedEmployees = useMemo(() => {
     if (!teamMembers) return [];
-    // Filter out admins from selection if needed, sort by Last Name
     return [...teamMembers]
         .filter(u => u.role !== 'admin')
         .sort((a, b) => a.lastName.localeCompare(b.lastName));
   }, [teamMembers]);
 
-  // --- FILTERING LOGIC ---
+  // --- FILTERING LOGIC (LIST VIEW) ---
   const filteredReports = useMemo(() => {
     if (!reports) return [];
     return reports.filter((r: any) => {
@@ -153,11 +152,9 @@ export default function Reports() {
             if (reportMonth !== monthFilter) return false;
         }
         if (personFilter.trim() !== "") {
-            // Check involved parties string OR assignedTo ID
             const search = personFilter.toLowerCase();
             const parties = (r.partiesInvolved || "").toLowerCase();
             const assignedName = getEmployeeName(r.assignedTo).toLowerCase();
-            // If personFilter matches an ID, check assignedTo, otherwise check string match
             const isIdMatch = r.assignedTo === personFilter; 
             if (!parties.includes(search) && !assignedName.includes(search) && !isIdMatch) return false;
         }
@@ -189,9 +186,10 @@ export default function Reports() {
     const startDate = startOfMonth(subMonths(new Date(), range - 1));
 
     // 1. FILTER DATASET BY DATE RANGE FIRST
+    // This ensures ALL charts (Bar, Pie, List) reflect the selected months
     const rangeReports = reports.filter((r: any) => new Date(r.dateOccurred) >= startDate);
 
-    // 2. Prepare Month Keys based on Range
+    // 2. Prepare Month Keys based on Range (For Bar Chart)
     const monthsMap = new Map(); 
     for (let i = range - 1; i >= 0; i--) {
         const d = subMonths(new Date(), i);
@@ -201,7 +199,7 @@ export default function Reports() {
         monthsMap.set(key, initObj);
     }
 
-    // 3. Aggregate Monthly Stacked Data
+    // 3. Aggregate Monthly Stacked Data (Bar Chart)
     rangeReports.forEach((r: any) => {
         const d = new Date(r.dateOccurred);
         const key = format(d, "MMM yyyy");
@@ -215,7 +213,7 @@ export default function Reports() {
 
     const monthlyStacked = Array.from(monthsMap.values());
 
-    // 4. Category Pie Data (Based on Range Reports)
+    // 4. Category Pie Data (Using filtered rangeReports)
     const catCounts: Record<string, number> = {};
     rangeReports.forEach((r: any) => {
         catCounts[r.category] = (catCounts[r.category] || 0) + 1;
@@ -225,7 +223,7 @@ export default function Reports() {
         return { name: cat?.label || id, value, fill: cat?.fill || "#cbd5e1" };
     });
 
-    // 5. Most Involved (Based on Range Reports)
+    // 5. Most Involved (Using filtered rangeReports)
     const peopleCounts: Record<string, number> = {};
     rangeReports.forEach((r: any) => {
         if (r.partiesInvolved) {
@@ -241,7 +239,6 @@ export default function Reports() {
   }, [reports, analyticsRange]);
 
   // --- PDF GENERATION ---
-
   const generateSinglePDF = (report: any) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -334,7 +331,6 @@ export default function Reports() {
 
   const generateAllReportsPDF = () => {
     const doc = new jsPDF();
-    
     doc.setFontSize(18);
     doc.text("Incident Reports Summary", 14, 20);
     doc.setFontSize(10);
@@ -398,15 +394,7 @@ export default function Reports() {
       toast.success("Report Filed Successfully");
       queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
       setIsDialogOpen(false);
-      form.reset({
-        category: "others",
-        severity: "low",
-        dateOccurred: new Date(),
-        timeOccurred: format(new Date(), "HH:mm"),
-        involvedPeople: [],
-        details: { items: [] },
-        nteRequired: false
-      });
+      form.reset();
     },
     onError: (err) => {
         toast.error("Failed to file report", { description: err.message });
@@ -457,7 +445,7 @@ export default function Reports() {
   };
 
   const addStaffFromSelect = (member: UserType) => {
-      const name = `${member.lastName}, ${member.firstName}`; // UPDATED: Last, First
+      const name = `${member.lastName}, ${member.firstName}`;
       const current = form.getValues("involvedPeople");
       
       if (!current.includes(name)) {
@@ -509,7 +497,6 @@ export default function Reports() {
                 </Button>
             </div>
             
-            {/* EXPORT ALL BUTTON */}
             {view === "list" && (
                 <Button variant="outline" size="sm" onClick={generateAllReportsPDF} className="bg-white border-slate-200">
                     <Download className="w-4 h-4 mr-2" /> Export List
