@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
+import { Checkbox } from "@/components/ui/checkbox"; 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -21,17 +21,19 @@ import {
   FileText, MapPin, CheckCircle2, AlertCircle, X, Users,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, 
   List as ListIcon, Banknote, Search, History, Filter, Check,
-  Loader2, ChevronsUpDown, Send
+  Loader2, ChevronsUpDown, Send, FileDown, Download
 } from "lucide-react";
-import { format, subMonths } from "date-fns"; // Removed unused imports
+import { format, subMonths, isSameMonth, startOfMonth } from "date-fns"; 
 import { cn } from "@/lib/utils";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, Legend 
+  PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Avatar, AvatarFallback } from "@radix-ui/react-avatar";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 /**
  * REPORT FORM SCHEMA CONFIGURATION
@@ -45,9 +47,8 @@ const reportFormSchema = insertReportSchema.omit({ userId: true, partiesInvolved
   timeOccurred: z.string().min(1, "Time is required"),
   category: z.string().min(1, "Category is required"),
   severity: z.string().min(1, "Severity is required"),
-  // New Fields
   nteRequired: z.boolean().default(false),
-  assignedTo: z.string().optional(), // ID of the employee to write NTE
+  assignedTo: z.string().optional(), 
 });
 
 const SEVERITY_WEIGHTS: Record<string, number> = {
@@ -74,7 +75,14 @@ export default function Reports() {
   const [personFilter, setPersonFilter] = useState<string>(""); 
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [sortBy, setSortBy] = useState<"date" | "priority">("date");
+  
+  // Combobox States
   const [openFilterPicker, setOpenFilterPicker] = useState(false);
+  const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
+  const [openNteAssignPicker, setOpenNteAssignPicker] = useState(false);
+
+  // Analytics State
+  const [analyticsRange, setAnalyticsRange] = useState<string>("6"); // 3, 6, 9, 12 months
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -83,22 +91,16 @@ export default function Reports() {
   // --- DYNAMIC FORM STATE ---
   const [newItem, setNewItem] = useState({ name: "", quantity: 1 });
   const [newPerson, setNewPerson] = useState("");
-  const [staffSearchTerm, setStaffSearchTerm] = useState(""); 
   const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false);
   const [resolutionAction, setResolutionAction] = useState("");
-  const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
-  
-  // New State for NTE assignment picker
-  const [openNteAssignPicker, setOpenNteAssignPicker] = useState(false);
-  // State for Employee writing NTE
   const [nteResponse, setNteResponse] = useState("");
 
   // --- CONFIGURATION CONSTANTS ---
   const categories = [
-    { id: "awan", label: "AWAN (Away With Advanced Notice)", icon: Clock, color: "bg-blue-100 text-blue-700", fill: "#3b82f6" },
-    { id: "awol", label: "AWOL (Absent Without Offical Leave)", icon: UserX, color: "bg-red-100 text-red-700", fill: "#ef4444" },
+    { id: "awan", label: "AWAN", icon: Clock, color: "bg-blue-100 text-blue-700", fill: "#3b82f6" },
+    { id: "awol", label: "AWOL", icon: UserX, color: "bg-red-100 text-red-700", fill: "#ef4444" },
     { id: "tardiness", label: "Tardiness", icon: History, color: "bg-amber-100 text-amber-700", fill: "#f59e0b" },
-    { id: "cashier_shortage", label: "Cashier Shortage", icon: Banknote, color: "bg-emerald-100 text-emerald-700", fill: "#10b981" },
+    { id: "cashier_shortage", label: "Shortage", icon: Banknote, color: "bg-emerald-100 text-emerald-700", fill: "#10b981" },
     { id: "breakages", label: "Breakages", icon: Hammer, color: "bg-orange-100 text-orange-700", fill: "#f97316" },
     { id: "others", label: "Others", icon: FileText, color: "bg-slate-100 text-slate-700", fill: "#64748b" },
   ];
@@ -120,15 +122,25 @@ export default function Reports() {
     return options;
   }, []);
 
+  // UPDATED: Last Name First Format
   const getEmployeeName = (userId: string) => {
     const emp = teamMembers?.find((m) => m.id === userId);
-    return emp ? `${emp.firstName} ${emp.lastName}` : "Unknown";
+    return emp ? `${emp.lastName}, ${emp.firstName}` : "Unknown";
   };
 
   const getEmployeeRole = (userId: string) => {
     const emp = teamMembers?.find((m) => m.id === userId);
     return emp ? emp.role : "Unknown";
   };
+
+  // --- SORTED EMPLOYEES (Last Name) ---
+  const sortedEmployees = useMemo(() => {
+    if (!teamMembers) return [];
+    // Filter out admins from selection if needed, sort by Last Name
+    return [...teamMembers]
+        .filter(u => u.role !== 'admin')
+        .sort((a, b) => a.lastName.localeCompare(b.lastName));
+  }, [teamMembers]);
 
   // --- FILTERING LOGIC ---
   const filteredReports = useMemo(() => {
@@ -141,10 +153,13 @@ export default function Reports() {
             if (reportMonth !== monthFilter) return false;
         }
         if (personFilter.trim() !== "") {
+            // Check involved parties string OR assignedTo ID
             const search = personFilter.toLowerCase();
             const parties = (r.partiesInvolved || "").toLowerCase();
             const assignedName = getEmployeeName(r.assignedTo).toLowerCase();
-            if (!parties.includes(search) && !assignedName.includes(search)) return false;
+            // If personFilter matches an ID, check assignedTo, otherwise check string match
+            const isIdMatch = r.assignedTo === personFilter; 
+            if (!parties.includes(search) && !assignedName.includes(search) && !isIdMatch) return false;
         }
         return true;
     }).sort((a: any, b: any) => {
@@ -166,23 +181,43 @@ export default function Reports() {
 
   const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
 
+  // --- ADVANCED ANALYTICS CALCULATION (Filtered by Date Range) ---
   const stats = useMemo(() => {
-    if (!reports) return { monthly: [], byCategory: [], mostInvolved: [] };
+    if (!reports) return { monthlyStacked: [], byCategory: [], mostInvolved: [] };
 
-    const months: Record<string, number> = {};
-    for (let i = 5; i >= 0; i--) {
+    const range = parseInt(analyticsRange);
+    const startDate = startOfMonth(subMonths(new Date(), range - 1));
+
+    // 1. FILTER DATASET BY DATE RANGE FIRST
+    const rangeReports = reports.filter((r: any) => new Date(r.dateOccurred) >= startDate);
+
+    // 2. Prepare Month Keys based on Range
+    const monthsMap = new Map(); 
+    for (let i = range - 1; i >= 0; i--) {
         const d = subMonths(new Date(), i);
-        months[format(d, "MMM yyyy")] = 0;
+        const key = format(d, "MMM yyyy");
+        const initObj: any = { name: key };
+        categories.forEach(c => initObj[c.id] = 0); 
+        monthsMap.set(key, initObj);
     }
-    
-    reports.forEach((r: any) => {
-        const key = format(new Date(r.dateOccurred), "MMM yyyy");
-        if (months.hasOwnProperty(key)) months[key]++;
-    });
-    const monthlyData = Object.entries(months).map(([name, count]) => ({ name, count }));
 
+    // 3. Aggregate Monthly Stacked Data
+    rangeReports.forEach((r: any) => {
+        const d = new Date(r.dateOccurred);
+        const key = format(d, "MMM yyyy");
+        if (monthsMap.has(key)) {
+            const entry = monthsMap.get(key);
+            if (entry[r.category] !== undefined) {
+                entry[r.category]++;
+            }
+        }
+    });
+
+    const monthlyStacked = Array.from(monthsMap.values());
+
+    // 4. Category Pie Data (Based on Range Reports)
     const catCounts: Record<string, number> = {};
-    reports.forEach((r: any) => {
+    rangeReports.forEach((r: any) => {
         catCounts[r.category] = (catCounts[r.category] || 0) + 1;
     });
     const categoryData = Object.entries(catCounts).map(([id, value]) => {
@@ -190,8 +225,9 @@ export default function Reports() {
         return { name: cat?.label || id, value, fill: cat?.fill || "#cbd5e1" };
     });
 
+    // 5. Most Involved (Based on Range Reports)
     const peopleCounts: Record<string, number> = {};
-    reports.forEach((r: any) => {
+    rangeReports.forEach((r: any) => {
         if (r.partiesInvolved) {
             r.partiesInvolved.split(',').forEach((name: string) => {
                 const n = name.trim();
@@ -201,8 +237,128 @@ export default function Reports() {
     });
     const mostInvolved = Object.entries(peopleCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-    return { monthly: monthlyData, byCategory: categoryData, mostInvolved };
-  }, [reports]);
+    return { monthlyStacked, byCategory: categoryData, mostInvolved };
+  }, [reports, analyticsRange]);
+
+  // --- PDF GENERATION ---
+
+  const generateSinglePDF = (report: any) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Incident Report", pageWidth / 2, 20, { align: "center" });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Reference ID: #${report.id.toString().padStart(6, '0')}`, pageWidth / 2, 27, { align: "center" });
+    
+    // Status Badge visual
+    doc.setDrawColor(report.status === 'resolved' ? 16 : 245, report.status === 'resolved' ? 185 : 158, report.status === 'resolved' ? 129 : 11);
+    doc.setFillColor(report.status === 'resolved' ? 220 : 254, report.status === 'resolved' ? 252 : 251, report.status === 'resolved' ? 231 : 235);
+    doc.roundedRect(160, 15, 30, 8, 2, 2, "FD");
+    doc.setFontSize(9);
+    doc.setTextColor(report.status === 'resolved' ? 21 : 180, report.status === 'resolved' ? 128 : 83, report.status === 'resolved' ? 61 : 33);
+    doc.text(report.status.toUpperCase(), 175, 20, { align: "center" });
+
+    // Meta Data Grid
+    let y = 40;
+    doc.setTextColor(0);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text(report.title, 14, y);
+    
+    y += 10;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    
+    const details = [
+        ["Date", format(new Date(report.dateOccurred), "MMM dd, yyyy")],
+        ["Time", report.timeOccurred],
+        ["Location", report.location],
+        ["Category", categories.find(c=>c.id===report.category)?.label || report.category],
+        ["Severity", report.severity.toUpperCase()],
+        ["Filed By", getEmployeeName(report.userId)]
+    ];
+
+    autoTable(doc, {
+        startY: y,
+        head: [],
+        body: details,
+        theme: 'plain',
+        styles: { fontSize: 10, cellPadding: 1.5 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 30 } },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 10;
+
+    // Sections
+    const drawSection = (title: string, content: string) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(50);
+        doc.text(title, 14, y);
+        y += 5;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(0);
+        
+        const splitText = doc.splitTextToSize(content || "N/A", pageWidth - 28);
+        doc.text(splitText, 14, y);
+        y += (splitText.length * 5) + 8;
+    };
+
+    drawSection("Description", report.description);
+    drawSection("Involved Parties", report.partiesInvolved);
+    drawSection("Immediate Action Taken", report.actionTaken);
+    
+    if (report.nteRequired) {
+        y += 5;
+        doc.setDrawColor(251, 146, 60); // Orange
+        doc.line(14, y, pageWidth - 14, y);
+        y += 8;
+        drawSection("Notice to Explain (NTE)", report.nteContent ? `Employee Response: ${report.nteContent}` : "Pending employee response.");
+    }
+
+    // Footer
+    const footerY = doc.internal.pageSize.getHeight() - 20;
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text(`Generated on ${new Date().toLocaleString()}`, 14, footerY);
+    doc.text("Internal Use Only", pageWidth - 14, footerY, { align: "right" });
+
+    doc.save(`report_${report.id}.pdf`);
+  };
+
+  const generateAllReportsPDF = () => {
+    const doc = new jsPDF();
+    
+    doc.setFontSize(18);
+    doc.text("Incident Reports Summary", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 26);
+
+    const rows = filteredReports.map((r: any) => [
+        format(new Date(r.dateOccurred), "MMM dd, yyyy"),
+        r.category.toUpperCase(),
+        r.severity.toUpperCase(),
+        r.title,
+        r.status.toUpperCase(),
+        r.partiesInvolved
+    ]);
+
+    autoTable(doc, {
+        head: [["Date", "Cat", "Sev", "Title", "Status", "Involved"]],
+        body: rows,
+        startY: 35,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [15, 23, 42] }
+    });
+
+    doc.save("all_reports_summary.pdf");
+  };
 
   // --- FORM HANDLING ---
   const form = useForm<ReportForm>({
@@ -272,7 +428,7 @@ export default function Reports() {
         queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
         setIsResolveDialogOpen(false); 
         setResolutionAction(""); 
-        setNteResponse(""); // Clear NTE
+        setNteResponse(""); 
         if (selectedReport) {
           setSelectedReport(updatedReport);
         }
@@ -301,16 +457,14 @@ export default function Reports() {
   };
 
   const addStaffFromSelect = (member: UserType) => {
-      const name = `${member.firstName} ${member.lastName}`;
+      const name = `${member.lastName}, ${member.firstName}`; // UPDATED: Last, First
       const current = form.getValues("involvedPeople");
       
-      // Add name to list
       if (!current.includes(name)) {
           form.setValue("involvedPeople", [...current, name]);
           form.trigger("involvedPeople");
       }
 
-      // If NTE is required and no one is assigned, auto-assign this person
       if (form.getValues("nteRequired") && !form.getValues("assignedTo")) {
         form.setValue("assignedTo", member.id);
       }
@@ -337,17 +491,6 @@ export default function Reports() {
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
-  const filteredEmployees = useMemo(() => {
-    if (!teamMembers) return [];
-    if (!staffSearchTerm) return teamMembers.filter(m => m.role !== 'admin');
-    
-    return teamMembers.filter(m => 
-        m.role !== 'admin' && 
-        (m.firstName.toLowerCase().includes(staffSearchTerm.toLowerCase()) || 
-         m.lastName.toLowerCase().includes(staffSearchTerm.toLowerCase()))
-    );
-  }, [teamMembers, staffSearchTerm]);
-
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
       {/* --- PAGE HEADER --- */}
@@ -366,6 +509,13 @@ export default function Reports() {
                 </Button>
             </div>
             
+            {/* EXPORT ALL BUTTON */}
+            {view === "list" && (
+                <Button variant="outline" size="sm" onClick={generateAllReportsPDF} className="bg-white border-slate-200">
+                    <Download className="w-4 h-4 mr-2" /> Export List
+                </Button>
+            )}
+
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800 ml-2">
@@ -379,7 +529,7 @@ export default function Reports() {
                 </DialogHeader>
 
                 <form onSubmit={form.handleSubmit((d) => createReportMutation.mutate(d), onInvalid)} className="space-y-6 pt-4">
-                  {/* Classification */}
+                  {/* Category & Severity */}
                   <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                           <Label>Category</Label>
@@ -432,7 +582,6 @@ export default function Reports() {
                       <Textarea placeholder="Detailed description..." {...form.register("description")} />
                   </div>
                   
-                  {/* Actions & Witnesses */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                         <Label>Action Taken</Label>
@@ -448,7 +597,6 @@ export default function Reports() {
                   <div className="space-y-3 p-4 bg-slate-50/50 rounded-lg border border-slate-100">
                       <Label>People Involved <span className="text-red-500">*</span></Label>
                       <div className="flex flex-col gap-3">
-                          {/* Staff Search & Dropdown */}
                           <div className="flex flex-col gap-1.5">
                               <span className="text-xs text-slate-500 font-medium">Add Staff Member</span>
                               
@@ -468,8 +616,8 @@ export default function Reports() {
                                         <CommandList className="max-h-[300px] overflow-y-auto">
                                           <CommandEmpty className="p-4 text-sm text-slate-500 text-center">No staff member found.</CommandEmpty>
                                           <CommandGroup heading="Active Staff">
-                                            {filteredEmployees.map((member) => {
-                                              const fullName = `${member.firstName} ${member.lastName}`;
+                                            {sortedEmployees.map((member) => {
+                                              const fullName = `${member.lastName}, ${member.firstName}`;
                                               const isAlreadyAdded = currentPeople.includes(fullName);
                                               
                                               return (
@@ -489,7 +637,6 @@ export default function Reports() {
                                 </Popover>
                           </div>
 
-                          {/* Manual Input */}
                           <div className="flex flex-col gap-1.5">
                               <span className="text-xs text-slate-500 font-medium">Add Guest / Other</span>
                               <div className="flex gap-2">
@@ -499,7 +646,6 @@ export default function Reports() {
                           </div>
                       </div>
 
-                      {/* Chips for Selected People */}
                       {currentPeople.length > 0 && (
                           <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-200/60">
                               {currentPeople.map((p, i) => (
@@ -512,29 +658,27 @@ export default function Reports() {
                       {form.formState.errors.involvedPeople && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {form.formState.errors.involvedPeople.message}</p>}
                   </div>
 
-                  {/* NTE SECTION - VISIBLE ONLY TO MANAGERS */}
+                  {/* NTE SECTION */}
                   {['admin', 'manager'].includes(user?.role || '') && (
                     <div className="space-y-3 p-4 bg-orange-50/50 rounded-lg border border-orange-100">
-                       <div className="flex items-center space-x-2">
-                         <Checkbox 
+                        <div className="flex items-center space-x-2">
+                          <Checkbox 
                             id="nteRequired" 
                             checked={watchNteRequired} 
                             onCheckedChange={(checked) => form.setValue("nteRequired", checked as boolean)}
-                         />
-                         <Label htmlFor="nteRequired" className="font-medium text-orange-900 cursor-pointer">
+                          />
+                          <Label htmlFor="nteRequired" className="font-medium text-orange-900 cursor-pointer">
                             Require Notice to Explain (NTE)
-                         </Label>
-                       </div>
-                       
-                       {watchNteRequired && (
-                         <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
+                          </Label>
+                        </div>
+                        
+                        {watchNteRequired && (
+                          <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
                             <Label className="text-xs text-orange-800">Assign to Employee for NTE</Label>
                             <Popover open={openNteAssignPicker} onOpenChange={setOpenNteAssignPicker}>
                               <PopoverTrigger asChild>
                                 <Button variant="outline" role="combobox" className="w-full justify-between bg-white border-orange-200 text-orange-900 hover:bg-orange-50">
-                                  {watchAssignedTo 
-                                    ? getEmployeeName(watchAssignedTo) 
-                                    : "Select employee..."}
+                                  {watchAssignedTo ? getEmployeeName(watchAssignedTo) : "Select employee..."}
                                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                 </Button>
                               </PopoverTrigger>
@@ -544,17 +688,14 @@ export default function Reports() {
                                   <CommandList>
                                     <CommandEmpty>No employee found.</CommandEmpty>
                                     <CommandGroup>
-                                      {filteredEmployees.map((member) => (
+                                      {sortedEmployees.map((member) => (
                                         <CommandItem
                                           key={member.id}
-                                          value={`${member.firstName} ${member.lastName}`}
-                                          onSelect={() => {
-                                            form.setValue("assignedTo", member.id);
-                                            setOpenNteAssignPicker(false);
-                                          }}
+                                          value={`${member.lastName}, ${member.firstName}`}
+                                          onSelect={() => { form.setValue("assignedTo", member.id); setOpenNteAssignPicker(false); }}
                                         >
                                           <Check className={cn("mr-2 h-4 w-4", watchAssignedTo === member.id ? "opacity-100" : "opacity-0")} />
-                                          {member.firstName} {member.lastName}
+                                          {member.lastName}, {member.firstName}
                                         </CommandItem>
                                       ))}
                                     </CommandGroup>
@@ -562,15 +703,11 @@ export default function Reports() {
                                 </Command>
                               </PopoverContent>
                             </Popover>
-                            <p className="text-[10px] text-orange-600/80">
-                                This employee will be notified to submit a written explanation.
-                            </p>
-                         </div>
-                       )}
+                          </div>
+                        )}
                     </div>
                   )}
 
-                  {/* Property Details (Only for Breakages) */}
                   {selectedCategory === 'breakages' && (
                       <div className="bg-slate-50 p-4 rounded-lg space-y-4 border border-slate-200">
                           <h4 className="font-medium text-sm text-slate-900">Damaged Items</h4>
@@ -600,49 +737,43 @@ export default function Reports() {
             {/* Main Reports List */}
             <Card className="bg-white border-slate-200 shadow-sm md:col-span-2">
                 <CardContent className="p-0">
-                    {/* --- FILTER BAR (Embedded) --- */}
+                    {/* --- FILTER BAR --- */}
                     <div className="flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl items-center">
                         <Filter className="w-4 h-4 text-slate-400" />
                         
-                        <div className="flex items-center gap-2">
-                          <Popover open={openFilterPicker} onOpenChange={setOpenFilterPicker}>
+                        {/* CUSTOM EMPLOYEE SEARCH COMBOBOX */}
+                        <Popover open={openFilterPicker} onOpenChange={setOpenFilterPicker}>
                             <PopoverTrigger asChild>
-                              <Button variant="outline" role="combobox" aria-expanded={openFilterPicker} className="w-[200px] h-8 justify-between text-xs bg-white font-normal">
-                                <div className="flex items-center gap-2 truncate">
-                                  <Search className="h-3 w-3 opacity-50" />
-                                  {personFilter || "Filter by person..."}
-                                </div>
-                                {personFilter && <X className="h-3 w-3 opacity-50 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setPersonFilter(""); }} />}
-                              </Button>
+                                <Button variant="outline" role="combobox" aria-expanded={openFilterPicker} className="w-[180px] h-8 justify-between text-xs bg-white font-normal border-slate-200">
+                                    <span className="truncate">{personFilter || "Filter by person..."}</span>
+                                    {personFilter ? 
+                                        <X className="h-3 w-3 opacity-50 hover:opacity-100 ml-1" onClick={(e) => { e.stopPropagation(); setPersonFilter(""); }} /> :
+                                        <ChevronsUpDown className="ml-1 h-3 w-3 opacity-50" />
+                                    }
+                                </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-[200px] p-0" align="start">
-                              <Command>
-                                <CommandInput placeholder="Search name..." className="h-8 text-xs" />
-                                <CommandList className="max-h-[200px]">
-                                  <CommandEmpty className="py-2 px-4 text-xs text-slate-500">No one found.</CommandEmpty>
-                                  <CommandGroup heading="Staff Members">
-                                    {teamMembers?.map((member) => {
-                                      const fullName = `${member.firstName} ${member.lastName}`;
-                                      return (
-                                        <CommandItem key={member.id} value={fullName} onSelect={(currentValue) => { setPersonFilter(currentValue === personFilter ? "" : currentValue); setOpenFilterPicker(false); }} className="text-xs">
-                                          <Check className={cn("mr-2 h-3 w-3", personFilter === fullName ? "opacity-100" : "opacity-0")} />
-                                          <div className="flex flex-col"><span>{fullName}</span><span className="text-[10px] text-slate-400">{member.position}</span></div>
-                                        </CommandItem>
-                                      );
-                                    })}
-                                  </CommandGroup>
-                                  <CommandGroup heading="Recent Involved Parties">
-                                    {stats.mostInvolved.map(([name]) => (
-                                       <CommandItem key={name} value={name} onSelect={(val) => { setPersonFilter(val); setOpenFilterPicker(false); }} className="text-xs">
-                                         <History className="mr-2 h-3 w-3 opacity-50" />{name}
-                                       </CommandItem>
-                                    ))}
-                                  </CommandGroup>
-                                </CommandList>
-                              </Command>
+                            <PopoverContent className="w-[180px] p-0" align="start">
+                                <Command>
+                                    <CommandInput placeholder="Search staff..." className="h-8 text-xs" />
+                                    <CommandList>
+                                        <CommandEmpty className="py-2 text-xs text-center text-slate-500">No one found.</CommandEmpty>
+                                        <CommandGroup>
+                                            {sortedEmployees.map((member) => (
+                                                <CommandItem 
+                                                    key={member.id} 
+                                                    value={`${member.lastName}, ${member.firstName}`}
+                                                    onSelect={(val) => { setPersonFilter(val === personFilter ? "" : val); setOpenFilterPicker(false); }}
+                                                    className="text-xs"
+                                                >
+                                                    <Check className={cn("mr-2 h-3 w-3", personFilter === `${member.lastName}, ${member.firstName}` ? "opacity-100" : "opacity-0")} />
+                                                    {member.lastName}, {member.firstName}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
                             </PopoverContent>
-                          </Popover>
-                        </div>
+                        </Popover>
 
                         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                             <SelectTrigger className="w-[160px] h-8 text-xs bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
@@ -698,11 +829,7 @@ export default function Reports() {
                                 <div>
                                   <div className="flex items-center gap-2">
                                     <h4 className="text-sm font-bold text-slate-800">{report.title}</h4>
-                                    {report.nteRequired && (
-                                        <Badge variant="outline" className="text-[9px] border-orange-200 text-orange-600 bg-orange-50 px-1.5 h-4">
-                                            NTE REQ
-                                        </Badge>
-                                    )}
+                                    {report.nteRequired && <Badge variant="outline" className="text-[9px] border-orange-200 text-orange-600 bg-orange-50 px-1.5 h-4">NTE REQ</Badge>}
                                   </div>
                                   <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
                                     <span>{format(new Date(report.dateOccurred), "MMM dd")}</span>
@@ -714,7 +841,6 @@ export default function Reports() {
                         ))}
                     </div>
                     
-                    {/* --- PAGINATION FOOTER --- */}
                     {filteredReports.length > 0 && (
                         <div className="flex items-center justify-between p-3 border-t border-slate-100 bg-white rounded-b-xl">
                             <div className="text-xs text-slate-500 font-medium">
@@ -756,42 +882,69 @@ export default function Reports() {
             </Card>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-                <CardHeader><CardTitle className="text-lg">Report Trend</CardTitle></CardHeader>
-                <CardContent>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={stats.monthly}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                                <YAxis fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
-                                <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
-                                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </CardContent>
-            </Card>
-            <Card>
-                <CardHeader><CardTitle className="text-lg">Reports by Category</CardTitle></CardHeader>
-                <CardContent>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                                    {stats.byCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
-                                </Pie>
-                                <RechartsTooltip />
-                                <Legend />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </div>
-                </CardContent>
-            </Card>
+        /* --- ANALYTICS VIEW --- */
+        <div className="space-y-6">
+            <div className="flex justify-end">
+                {/* NEW: BUTTON GROUP FILTER FOR MONTHS */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+                    {['3', '6', '9', '12'].map((range) => (
+                        <Button 
+                            key={range}
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => setAnalyticsRange(range)} 
+                            className={cn("text-xs h-7 px-3", analyticsRange === range && "bg-white shadow-sm text-slate-900 font-medium")}
+                        >
+                            {range} Months
+                        </Button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 1. STACKED BAR CHART: Incident Trend by Category */}
+                <Card className="col-span-1 md:col-span-2 lg:col-span-1">
+                    <CardHeader><CardTitle className="text-lg">Incident Trends</CardTitle><CardDescription>Stacked Breakdown by Month</CardDescription></CardHeader>
+                    <CardContent>
+                        <div className="h-[350px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={stats.monthlyStacked} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                                    <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+                                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                                    
+                                    {/* Generate Bars for each Category */}
+                                    {categories.map((cat, index) => (
+                                        <Bar key={cat.id} dataKey={cat.id} stackId="a" fill={cat.fill} name={cat.label} radius={index === categories.length - 1 ? [4, 4, 0, 0] : [0,0,0,0]} />
+                                    ))}
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* 2. PIE CHART: Overall Breakdown */}
+                <Card className="col-span-1 md:col-span-2 lg:col-span-1">
+                    <CardHeader><CardTitle className="text-lg">Reports by Category</CardTitle><CardDescription>Distribution over {analyticsRange} months</CardDescription></CardHeader>
+                    <CardContent>
+                        <div className="h-[350px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={2} dataKey="value">
+                                        {stats.byCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                                    </Pie>
+                                    <RechartsTooltip contentStyle={{borderRadius: '8px', border: 'none'}} />
+                                    <Legend verticalAlign="middle" align="right" layout="vertical" wrapperStyle={{ fontSize: '11px' }} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
         </div>
       )}
-
 
       {/* View Details Dialog */}
         <Dialog open={isViewOpen} onOpenChange={(open) => {
@@ -809,15 +962,21 @@ export default function Reports() {
             ) : (
             <>
                 <DialogHeader>
-                <div className="flex items-center gap-3 mb-2">
-                    <Badge variant="outline" className="uppercase tracking-wider text-[10px]">
-                    {categories.find(c => c.id === selectedReport.category)?.label || selectedReport.category}
-                    </Badge>
-                    <Badge className={cn("capitalize", 
-                    selectedReport.severity === 'critical' ? "bg-red-100 text-red-700 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"
-                    )}>
-                    {selectedReport.severity} Priority
-                    </Badge>
+                <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="uppercase tracking-wider text-[10px]">
+                        {categories.find(c => c.id === selectedReport.category)?.label || selectedReport.category}
+                        </Badge>
+                        <Badge className={cn("capitalize", 
+                        selectedReport.severity === 'critical' ? "bg-red-100 text-red-700 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"
+                        )}>
+                        {selectedReport.severity} Priority
+                        </Badge>
+                    </div>
+                    {/* INDIVIDUAL DOWNLOAD BUTTON */}
+                    <Button variant="ghost" size="icon" onClick={() => generateSinglePDF(selectedReport)} title="Download PDF">
+                        <FileDown className="w-4 h-4 text-slate-500" />
+                    </Button>
                 </div>
                 <DialogTitle className="text-2xl font-bold text-slate-900">{selectedReport.title}</DialogTitle>
                 <DialogDescription className="flex items-center gap-2 text-slate-500">
@@ -903,12 +1062,12 @@ export default function Reports() {
                         {user?.id === selectedReport.assignedTo && !['admin', 'manager'].includes(user?.role || '') && (
                             <div className="space-y-3">
                                 {selectedReport.nteContent ? (
-                                     <div className="space-y-1">
+                                      <div className="space-y-1">
                                         <p className="text-xs font-semibold text-orange-800">Your Submitted Explanation:</p>
                                         <p className="bg-white p-3 rounded border border-orange-100 text-slate-700">{selectedReport.nteContent}</p>
-                                    </div>
+                                      </div>
                                 ) : (
-                                    <>
+                                      <>
                                         <p className="text-xs text-orange-800">Please provide your explanation regarding this incident.</p>
                                         <Textarea 
                                             placeholder="Write your explanation here..."
@@ -928,7 +1087,7 @@ export default function Reports() {
                                             {updateStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <Send className="w-3 h-3 mr-2" />}
                                             Submit Explanation
                                         </Button>
-                                    </>
+                                      </>
                                 )}
                             </div>
                         )}
@@ -1008,7 +1167,7 @@ export default function Reports() {
                 variant="ghost" 
                 onClick={() => {
                 setIsResolveDialogOpen(false);
-                setIsViewOpen(true); // Go back if cancelled
+                setIsViewOpen(true); 
                 }}
             >
                 Back
