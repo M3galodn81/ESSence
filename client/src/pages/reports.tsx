@@ -1,475 +1,1036 @@
-import { useState, useMemo } from "react";
-import { useAuth } from "@/hooks/use-auth";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { useForm } from "react-hook-form";
+import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertLeaveRequestSchema } from "@shared/schema";
+import { insertReportSchema, type User as UserType } from "@shared/schema";
 import { z } from "zod";
-import { Loader2, Calendar, Clock, Plus, Check, X, Activity, User, Download, FileDown } from "lucide-react";
-import type { LeaveRequest, User as UserType } from "@shared/schema";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { 
+  AlertTriangle, UserX, Hammer, Plus, Calendar as CalendarIcon, Clock, 
+  FileText, MapPin, CheckCircle2, AlertCircle, X, Users,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, 
+  List as ListIcon, Banknote, Search, History, Filter, Check,
+  Loader2, ChevronsUpDown, Send
+} from "lucide-react";
+import { format, subMonths } from "date-fns"; // Removed unused imports
+import { cn } from "@/lib/utils";
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
+  PieChart, Pie, Cell, Legend 
+} from 'recharts';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Avatar, AvatarFallback } from "@radix-ui/react-avatar";
 
-// ... (Keep your existing schemas: leaveFormSchema, rejectFormSchema, etc.)
-const leaveFormSchema = insertLeaveRequestSchema.extend({
-  startDate: z.string().min(1, "Start date is required")
-    .refine((date) => {
-      const selectedDate = new Date(date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const minDate = new Date(today);
-      minDate.setDate(today.getDate() + 7);
-      return selectedDate >= minDate;
-    }, "Start date must be at least 1 week from today"),
-  endDate: z.string().min(1, "End date is required"),
-}).omit({ userId: true }).refine((data) => {
-  const start = new Date(data.startDate);
-  const end = new Date(data.endDate);
-  return end >= start;
-}, {
-  message: "End date must be on or after start date",
-  path: ["endDate"],
+/**
+ * REPORT FORM SCHEMA CONFIGURATION
+ */
+const reportFormSchema = insertReportSchema.omit({ userId: true, partiesInvolved: true }).extend({
+  title: z.string().min(5, "Title must be at least 5 characters"),
+  description: z.string().min(10, "Description must be at least 10 characters"),
+  location: z.string().min(2, "Location is required"),
+  involvedPeople: z.array(z.string()).min(1, "At least one person must be involved"), 
+  dateOccurred: z.coerce.date({ required_error: "Date is required" }),
+  timeOccurred: z.string().min(1, "Time is required"),
+  category: z.string().min(1, "Category is required"),
+  severity: z.string().min(1, "Severity is required"),
+  // New Fields
+  nteRequired: z.boolean().default(false),
+  assignedTo: z.string().optional(), // ID of the employee to write NTE
 });
 
-type LeaveForm = z.infer<typeof leaveFormSchema>;
-
-const rejectFormSchema = z.object({
-  comments: z.string().min(10, "A detailed reason (at least 10 characters) is required for rejection"),
-});
-type RejectForm = z.infer<typeof rejectFormSchema>;
-
-const getMinStartDate = () => {
-  const date = new Date();
-  date.setDate(date.getDate() + 7);
-  return date.toISOString().split('T')[0];
+const SEVERITY_WEIGHTS: Record<string, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1
 };
 
-export default function LeaveManagement() {
+type ReportForm = z.infer<typeof reportFormSchema>;
+
+export default function Reports() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  
+  // --- UI STATE MANAGEMENT ---
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
-  const [rejectionRequestId, setRejectionRequestId] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "analytics">("list");
+  
+  // --- FILTER STATE ---
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [monthFilter, setMonthFilter] = useState<string>("all");
+  const [personFilter, setPersonFilter] = useState<string>(""); 
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [sortBy, setSortBy] = useState<"date" | "priority">("date");
+  const [openFilterPicker, setOpenFilterPicker] = useState(false);
 
-  const { data: leaveRequests, isLoading } = useQuery<LeaveRequest[]>({
-    queryKey: ["/api/leave-management"],
-  });
+  // --- PAGINATION STATE ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
-  const { data: pendingRequests, isLoading: pendingLoading } = useQuery<LeaveRequest[]>({
-    queryKey: ["/api/leave-management/pending"],
-    enabled: user?.role === 'manager' || user?.role === 'admin',
-  });
+  // --- DYNAMIC FORM STATE ---
+  const [newItem, setNewItem] = useState({ name: "", quantity: 1 });
+  const [newPerson, setNewPerson] = useState("");
+  const [staffSearchTerm, setStaffSearchTerm] = useState(""); 
+  const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false);
+  const [resolutionAction, setResolutionAction] = useState("");
+  const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
+  
+  // New State for NTE assignment picker
+  const [openNteAssignPicker, setOpenNteAssignPicker] = useState(false);
+  // State for Employee writing NTE
+  const [nteResponse, setNteResponse] = useState("");
 
-  const { data: users } = useQuery<UserType[]>({
-    queryKey: ["/api/users/"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/users/");
-      return res.json();
+  // --- CONFIGURATION CONSTANTS ---
+  const categories = [
+    { id: "awan", label: "AWAN (Away With Advanced Notice)", icon: Clock, color: "bg-blue-100 text-blue-700", fill: "#3b82f6" },
+    { id: "awol", label: "AWOL (Absent Without Offical Leave)", icon: UserX, color: "bg-red-100 text-red-700", fill: "#ef4444" },
+    { id: "tardiness", label: "Tardiness", icon: History, color: "bg-amber-100 text-amber-700", fill: "#f59e0b" },
+    { id: "cashier_shortage", label: "Cashier Shortage", icon: Banknote, color: "bg-emerald-100 text-emerald-700", fill: "#10b981" },
+    { id: "breakages", label: "Breakages", icon: Hammer, color: "bg-orange-100 text-orange-700", fill: "#f97316" },
+    { id: "others", label: "Others", icon: FileText, color: "bg-slate-100 text-slate-700", fill: "#64748b" },
+  ];
+
+  // --- DATA FETCHING ---
+  const { data: reports, isLoading } = useQuery({ queryKey: ["/api/reports"] });
+  const { data: teamMembers } = useQuery<UserType[]>({ queryKey: ["/api/team"] });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, categoryFilter, monthFilter, personFilter, sortOrder]);
+
+  const monthOptions = useMemo(() => {
+    const options = [];
+    for (let i = 0; i < 12; i++) {
+        const d = subMonths(new Date(), i);
+        options.push({ value: format(d, "yyyy-MM"), label: format(d, "MMMM yyyy") });
     }
+    return options;
+  }, []);
+
+  const getEmployeeName = (userId: string) => {
+    const emp = teamMembers?.find((m) => m.id === userId);
+    return emp ? `${emp.firstName} ${emp.lastName}` : "Unknown";
+  };
+
+  const getEmployeeRole = (userId: string) => {
+    const emp = teamMembers?.find((m) => m.id === userId);
+    return emp ? emp.role : "Unknown";
+  };
+
+  // --- FILTERING LOGIC ---
+  const filteredReports = useMemo(() => {
+    if (!reports) return [];
+    return reports.filter((r: any) => {
+        if (statusFilter !== "all" && r.status !== statusFilter) return false;
+        if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
+        if (monthFilter !== "all" && r.dateOccurred) {
+            const reportMonth = format(new Date(r.dateOccurred), "yyyy-MM");
+            if (reportMonth !== monthFilter) return false;
+        }
+        if (personFilter.trim() !== "") {
+            const search = personFilter.toLowerCase();
+            const parties = (r.partiesInvolved || "").toLowerCase();
+            const assignedName = getEmployeeName(r.assignedTo).toLowerCase();
+            if (!parties.includes(search) && !assignedName.includes(search)) return false;
+        }
+        return true;
+    }).sort((a: any, b: any) => {
+    if (sortBy === "priority") {
+      const weightA = SEVERITY_WEIGHTS[a.severity] || 0;
+      const weightB = SEVERITY_WEIGHTS[b.severity] || 0;
+      if (weightB !== weightA) return weightB - weightA;
+    }
+    const timeA = new Date(a.dateOccurred).getTime();
+    const timeB = new Date(b.dateOccurred).getTime();
+    return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
   });
+}, [reports, statusFilter, categoryFilter, monthFilter, personFilter, sortOrder, sortBy, teamMembers]);
 
-  const userMap = useMemo(() => {
-    if (!users) return new Map<string, string>();
-    return users.reduce((map, user) => {
-      map.set(user.id, `${user.firstName} ${user.lastName}`);
-      return map;
-    }, new Map<string, string>());
-  }, [users]);
+  const paginatedReports = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredReports.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredReports, currentPage]);
 
-  const getUserName = (userId: string) => userMap.get(userId) || "Unknown User";
+  const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
 
-  const form = useForm<LeaveForm>({
-    resolver: zodResolver(leaveFormSchema),
+  const stats = useMemo(() => {
+    if (!reports) return { monthly: [], byCategory: [], mostInvolved: [] };
+
+    const months: Record<string, number> = {};
+    for (let i = 5; i >= 0; i--) {
+        const d = subMonths(new Date(), i);
+        months[format(d, "MMM yyyy")] = 0;
+    }
+    
+    reports.forEach((r: any) => {
+        const key = format(new Date(r.dateOccurred), "MMM yyyy");
+        if (months.hasOwnProperty(key)) months[key]++;
+    });
+    const monthlyData = Object.entries(months).map(([name, count]) => ({ name, count }));
+
+    const catCounts: Record<string, number> = {};
+    reports.forEach((r: any) => {
+        catCounts[r.category] = (catCounts[r.category] || 0) + 1;
+    });
+    const categoryData = Object.entries(catCounts).map(([id, value]) => {
+        const cat = categories.find(c => c.id === id);
+        return { name: cat?.label || id, value, fill: cat?.fill || "#cbd5e1" };
+    });
+
+    const peopleCounts: Record<string, number> = {};
+    reports.forEach((r: any) => {
+        if (r.partiesInvolved) {
+            r.partiesInvolved.split(',').forEach((name: string) => {
+                const n = name.trim();
+                if (n && n !== 'N/A') peopleCounts[n] = (peopleCounts[n] || 0) + 1;
+            });
+        }
+    });
+    const mostInvolved = Object.entries(peopleCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+    return { monthly: monthlyData, byCategory: categoryData, mostInvolved };
+  }, [reports]);
+
+  // --- FORM HANDLING ---
+  const form = useForm<ReportForm>({
+    resolver: zodResolver(reportFormSchema),
     defaultValues: {
-      type: "annual",
-      startDate: "",
-      endDate: "",
-      days: 1,
-      reason: "",
+      category: "others",
+      severity: "low",
+      dateOccurred: new Date(),
+      timeOccurred: format(new Date(), "HH:mm"),
+      involvedPeople: [], 
+      details: { items: [] },
+      nteRequired: false
     },
   });
 
-  const rejectForm = useForm<RejectForm>({
-    resolver: zodResolver(rejectFormSchema),
-    defaultValues: { comments: "" },
-  });
+  const selectedCategory = form.watch("category");
+  const currentPeople = form.watch("involvedPeople");
+  const currentItems = form.watch("details.items") || [];
+  const watchNteRequired = form.watch("nteRequired");
+  const watchAssignedTo = form.watch("assignedTo");
 
-  const createLeaveRequestMutation = useMutation({
-    mutationFn: async (data: LeaveForm) => {
-      const startDate = new Date(data.startDate);
-      const endDate = new Date(data.endDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const oneWeekFromNow = new Date(today);
-      oneWeekFromNow.setDate(today.getDate() + 7);
-
-      if (startDate < oneWeekFromNow) throw new Error("Start date must be at least 1 week from today");
-      if (endDate < startDate) throw new Error("End date must be on or after start date");
-
-      const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-
-      const res = await apiRequest("POST", "/api/leave-management", {
-        ...data,
-        startDate,
-        endDate,
-        days,
-      });
+  const createReportMutation = useMutation({
+    mutationFn: async (data: ReportForm) => {
+      const { involvedPeople, ...cleanData } = data;
+      const payload = {
+          ...cleanData,
+          partiesInvolved: involvedPeople.join(", "),
+          userId: user?.id,
+          dateOccurred: new Date(data.dateOccurred).getTime(),
+          witnesses: cleanData.witnesses || "", 
+          images: [],
+      };
+      const res = await apiRequest("POST", "/api/reports", payload);
       return await res.json();
     },
     onSuccess: () => {
-      toast.success("Leave request submitted", { description: "Your leave request has been submitted for approval." });
-      queryClient.invalidateQueries({ queryKey: ["/api/leave-management"] });
+      toast.success("Report Filed Successfully");
+      queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
       setIsDialogOpen(false);
-      form.reset();
+      form.reset({
+        category: "others",
+        severity: "low",
+        dateOccurred: new Date(),
+        timeOccurred: format(new Date(), "HH:mm"),
+        involvedPeople: [],
+        details: { items: [] },
+        nteRequired: false
+      });
     },
-    onError: (error: Error) => {
-      console.error("Error submitting leave request:", error);
-      toast.error("Submission failed", { description: error.message });
-    },
+    onError: (err) => {
+        toast.error("Failed to file report", { description: err.message });
+    }
   });
 
-  const approveLeaveRequestMutation = useMutation({
-    mutationFn: async ({ id, status, comments }: { id: string; status: string; comments?: string }) => {
-      const res = await apiRequest("PATCH", `/api/leave-management/${id}`, { status, comments });
-      return await res.json();
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status, actionTaken, nteContent }: { id: number; status?: string; actionTaken?: string; nteContent?: string }) => {
+        const payload: any = {};
+        if (status) payload.status = status;
+        if (actionTaken) payload.actionTaken = actionTaken;
+        if (nteContent) payload.nteContent = nteContent;
+        
+        const res = await apiRequest("PATCH", `/api/reports/${id}`, payload);
+        return await res.json();
     },
-    onSuccess: (data, variables) => {
-      toast.success(`Leave request ${variables.status}`, { description: `The leave request has been ${variables.status} successfully.` });
-      queryClient.invalidateQueries({ queryKey: ["/api/leave-management/pending"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/leave-management"] });
+    onSuccess: (updatedReport) => {
+        toast.success("Report updated successfully");
+        queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+        setIsResolveDialogOpen(false); 
+        setResolutionAction(""); 
+        setNteResponse(""); // Clear NTE
+        if (selectedReport) {
+          setSelectedReport(updatedReport);
+        }
+    },
+    onError: (err) => {
+        toast.error("Failed to update status", { description: err.message });
+    }
+  });
 
-      if (variables.status === 'rejected') {
-        setIsRejectDialogOpen(false);
-        setRejectionRequestId(null);
-        rejectForm.reset();
+  const onInvalid = (errors: FieldErrors<ReportForm>) => {
+    const firstErrorKey = Object.keys(errors)[0];
+    const errorMessage = errors[firstErrorKey as keyof ReportForm]?.message;
+    toast.error("Validation Error", { description: errorMessage ? String(errorMessage) : "Please check the form fields." });
+  };
+
+  // --- HELPER FUNCTIONS ---
+
+  const addPerson = () => {
+      if (!newPerson.trim()) return;
+      const current = form.getValues("involvedPeople");
+      if (!current.includes(newPerson)) {
+          form.setValue("involvedPeople", [...current, newPerson]);
+          form.trigger("involvedPeople");
       }
-    },
-    onError: (error: Error) => {
-      toast.error("Update failed", { description: error.message });
-    },
-  });
-
-  const onSubmit = (data: LeaveForm) => createLeaveRequestMutation.mutate(data);
-  const handleApprove = (id: string) => approveLeaveRequestMutation.mutate({ id, status: "approved" });
-  const handleReject = (id: string) => {
-    setRejectionRequestId(id);
-    setIsRejectDialogOpen(true);
-  };
-  const onRejectSubmit = (data: RejectForm) => {
-    if (rejectionRequestId) {
-      approveLeaveRequestMutation.mutate({ id: rejectionRequestId, status: "rejected", comments: data.comments });
-    }
+      setNewPerson("");
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "approved": return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200">Approved</Badge>;
-      case "rejected": return <Badge className="bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-200">Rejected</Badge>;
-      default: return <Badge className="bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200">Pending</Badge>;
-    }
-  };
-
-  const formatDate = (date: string | Date) => new Date(date).toLocaleDateString();
-  const canManageLeaves = user?.role === 'manager' || user?.role === 'admin';
-  const pendingCount = pendingRequests?.filter(req => req.status === 'pending').length || 0;
-
-  // ---------------------------------------------------------
-  // PDF Table Download Logic
-  // ---------------------------------------------------------
-  const downloadPDF = () => {
-    const doc = new jsPDF();
-    
-    // Determine which dataset to use
-    const isManagerView = canManageLeaves;
-    const dataToExport = isManagerView ? pendingRequests : leaveRequests;
-    const reportTitle = isManagerView ? "Leave Requests Report" : "My Leave History";
-    const filename = isManagerView ? "leave_requests_report.pdf" : "my_leave_history.pdf";
-
-    if (!dataToExport || dataToExport.length === 0) {
-      toast.error("No data available to export");
-      return;
-    }
-
-    // Add Title
-    doc.setFontSize(18);
-    doc.text(reportTitle, 14, 22);
-    
-    doc.setFontSize(11);
-    doc.setTextColor(100);
-    const dateStr = new Date().toLocaleDateString();
-    doc.text(`Generated on: ${dateStr}`, 14, 30);
-
-    // Prepare Table Data
-    const tableColumn = ["Employee", "Type", "Start Date", "End Date", "Days", "Status", "Reason"];
-    const tableRows: any[] = [];
-
-    dataToExport.forEach(req => {
-      const name = req.userId ? getUserName(req.userId) : `${user?.firstName} ${user?.lastName}`;
-      const type = req.type === 'annual' ? 'Service Incentive' : 'Additional Benefit';
+  const addStaffFromSelect = (member: UserType) => {
+      const name = `${member.firstName} ${member.lastName}`;
+      const current = form.getValues("involvedPeople");
       
-      const rowData = [
-        name,
-        type,
-        formatDate(req.startDate),
-        formatDate(req.endDate),
-        req.days,
-        req.status?.toUpperCase() || "PENDING",
-        req.reason || "-"
-      ];
-      tableRows.push(rowData);
-    });
+      // Add name to list
+      if (!current.includes(name)) {
+          form.setValue("involvedPeople", [...current, name]);
+          form.trigger("involvedPeople");
+      }
 
-    // Generate Table
-    autoTable(doc, {
-      head: [tableColumn],
-      body: tableRows,
-      startY: 40,
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [15, 23, 42] }, // Slate-900 color for header
-      alternateRowStyles: { fillColor: [241, 245, 249] }, // Slate-100 for zebra striping
-    });
-
-    // Save
-    doc.save(filename);
+      // If NTE is required and no one is assigned, auto-assign this person
+      if (form.getValues("nteRequired") && !form.getValues("assignedTo")) {
+        form.setValue("assignedTo", member.id);
+      }
   };
+
+  const removePerson = (index: number) => {
+      const current = form.getValues("involvedPeople");
+      form.setValue("involvedPeople", current.filter((_, i) => i !== index));
+      form.trigger("involvedPeople");
+  };
+
+  const addItem = () => {
+      if (!newItem.name.trim()) return;
+      const current = form.getValues("details.items") || [];
+      form.setValue("details.items", [...current, newItem]);
+      setNewItem({ name: "", quantity: 1 });
+  };
+
+  const removeItem = (index: number) => {
+      const current = form.getValues("details.items") || [];
+      form.setValue("details.items", current.filter((_, i) => i !== index));
+  };
+
+  const [selectedReport, setSelectedReport] = useState<any>(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
+
+  const filteredEmployees = useMemo(() => {
+    if (!teamMembers) return [];
+    if (!staffSearchTerm) return teamMembers.filter(m => m.role !== 'admin');
+    
+    return teamMembers.filter(m => 
+        m.role !== 'admin' && 
+        (m.firstName.toLowerCase().includes(staffSearchTerm.toLowerCase()) || 
+         m.lastName.toLowerCase().includes(staffSearchTerm.toLowerCase()))
+    );
+  }, [teamMembers, staffSearchTerm]);
 
   return (
-    <div className="p-6 md:p-8 space-y-8">
-      {/* Header Section */}
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+      {/* --- PAGE HEADER --- */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900" data-testid="page-title">Leave Management</h1>
-          <p className="text-slate-500 mt-1 text-sm">Manage your leave requests and view balances</p>
+          <h1 className="text-3xl font-bold text-slate-900">Reporting</h1>
+          <p className="text-slate-500 mt-1">Document AWOL, breakage, and other incidents</p>
         </div>
-        
-        <div className="flex gap-2">
-            {/* Download PDF Button */}
-            <Button 
-                variant="outline" 
-                onClick={downloadPDF}
-                className="rounded-full border-slate-200 shadow-sm hover:bg-slate-50"
-            >
-                <FileDown className="w-4 h-4 mr-2" />
-                Download PDF Report
-            </Button>
+        <div className="flex items-center gap-2">
+            <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+                <Button variant="ghost" size="sm" onClick={() => setView("list")} className={cn("text-xs", view === "list" && "bg-white shadow-sm text-slate-900")}>
+                    <ListIcon className="w-4 h-4 mr-2" /> Reports
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setView("analytics")} className={cn("text-xs", view === "analytics" && "bg-white shadow-sm text-slate-900")}>
+                    <BarChart3 className="w-4 h-4 mr-2" /> Analytics
+                </Button>
+            </div>
+            
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800 ml-2">
+                  <Plus className="w-4 h-4 mr-2" /> File Report
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl">
+                <DialogHeader className="border-b border-slate-100 pb-4">
+                  <DialogTitle>File a Report</DialogTitle>
+                  <DialogDescription>Please provide factual, objective details.</DialogDescription>
+                </DialogHeader>
 
-            <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) form.reset(); }}>
-                <DialogTrigger asChild>
-                    <Button className="bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/20 rounded-full px-6" data-testid="button-apply-leave">
-                    <Plus className="w-4 h-4 mr-2" /> Apply for Leave
+                <form onSubmit={form.handleSubmit((d) => createReportMutation.mutate(d), onInvalid)} className="space-y-6 pt-4">
+                  {/* Classification */}
+                  <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                          <Label>Category</Label>
+                          <Select value={selectedCategory} onValueChange={(val: any) => form.setValue("category", val)}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                  {categories.map((cat) => (
+                                      <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
+                                  ))}
+                              </SelectContent>
+                          </Select>
+                      </div>
+                      <div className="space-y-2">
+                          <Label>Severity</Label>
+                          <Select onValueChange={(val) => form.setValue("severity", val)} defaultValue="low">
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value="low">Low</SelectItem>
+                                  <SelectItem value="medium">Medium</SelectItem>
+                                  <SelectItem value="high">High</SelectItem>
+                                  <SelectItem value="critical">Critical</SelectItem>
+                              </SelectContent>
+                          </Select>
+                      </div>
+                  </div>
+
+                  {/* Time & Location */}
+                  <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                          <Label>Date</Label>
+                          <Input type="date" value={format(new Date(form.watch("dateOccurred")), "yyyy-MM-dd")} onChange={(e) => { const value = e.target.value; if (value) form.setValue("dateOccurred", new Date(value), { shouldValidate: true }); }} />
+                      </div>
+                      <div className="space-y-2">
+                          <Label>Time</Label>
+                          <Input type="time" {...form.register("timeOccurred")} />
+                      </div>
+                      <div className="space-y-2">
+                          <Label>Location</Label>
+                          <Input placeholder="e.g. Kitchen / POS" {...form.register("location")} />
+                      </div>
+                  </div>
+
+                  {/* Narrative */}
+                  <div className="space-y-2">
+                      <Label>Title</Label>
+                      <Input placeholder="Brief summary" {...form.register("title")} />
+                  </div>
+                  <div className="space-y-2">
+                      <Label>Description</Label>
+                      <Textarea placeholder="Detailed description..." {...form.register("description")} />
+                  </div>
+                  
+                  {/* Actions & Witnesses */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>Action Taken</Label>
+                        <Textarea placeholder="Immediate actions..." {...form.register("actionTaken")} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Witnesses</Label>
+                        <Textarea placeholder="Names/Contacts..." {...form.register("witnesses")} />
+                    </div>
+                  </div>
+
+                  {/* People Involved (With Search) */}
+                  <div className="space-y-3 p-4 bg-slate-50/50 rounded-lg border border-slate-100">
+                      <Label>People Involved <span className="text-red-500">*</span></Label>
+                      <div className="flex flex-col gap-3">
+                          {/* Staff Search & Dropdown */}
+                          <div className="flex flex-col gap-1.5">
+                              <span className="text-xs text-slate-500 font-medium">Add Staff Member</span>
+                              
+                                <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
+                                    <PopoverTrigger asChild>
+                                    <Button variant="outline" role="combobox" aria-expanded={openEmployeePicker} className="w-full justify-between bg-white border-slate-200 font-normal hover:bg-slate-50">
+                                            <div className="flex items-center gap-2">
+                                            <Search className="h-4 w-4 opacity-50" />
+                                            <span>Search from team members...</span>
+                                            </div>
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                                      <Command>
+                                        <CommandInput placeholder="Type staff name..." />
+                                        <CommandList className="max-h-[300px] overflow-y-auto">
+                                          <CommandEmpty className="p-4 text-sm text-slate-500 text-center">No staff member found.</CommandEmpty>
+                                          <CommandGroup heading="Active Staff">
+                                            {filteredEmployees.map((member) => {
+                                              const fullName = `${member.firstName} ${member.lastName}`;
+                                              const isAlreadyAdded = currentPeople.includes(fullName);
+                                              
+                                              return (
+                                                <CommandItem key={member.id} value={fullName} disabled={isAlreadyAdded} onSelect={() => { addStaffFromSelect(member); setOpenEmployeePicker(false); }} className={cn("flex items-center justify-between py-2 px-4 cursor-pointer", isAlreadyAdded && "opacity-50 grayscale pointer-events-none")}>
+                                                  <div className="flex items-center gap-3">
+                                                    <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px] bg-slate-100">{member.firstName[0]}{member.lastName[0]}</AvatarFallback></Avatar>
+                                                    <div className="flex flex-col"><span className="font-medium text-xs">{fullName}</span><span className="text-[9px] text-slate-400 uppercase">{member.position}</span></div>
+                                                  </div>
+                                                  {isAlreadyAdded ? <Badge variant="secondary" className="text-[8px] bg-emerald-50 text-emerald-600">Added</Badge> : <Plus className="w-3 h-3 text-slate-300" />}
+                                                </CommandItem>
+                                              );
+                                            })}
+                                          </CommandGroup>
+                                        </CommandList>
+                                      </Command>
+                                    </PopoverContent>
+                                </Popover>
+                          </div>
+
+                          {/* Manual Input */}
+                          <div className="flex flex-col gap-1.5">
+                              <span className="text-xs text-slate-500 font-medium">Add Guest / Other</span>
+                              <div className="flex gap-2">
+                                  <Input value={newPerson} onChange={(e) => setNewPerson(e.target.value)} placeholder="Type name manually..." className="bg-white" onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); addPerson(); } }} />
+                                  <Button type="button" onClick={addPerson} variant="outline" className="bg-white">Add</Button>
+                              </div>
+                          </div>
+                      </div>
+
+                      {/* Chips for Selected People */}
+                      {currentPeople.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-200/60">
+                              {currentPeople.map((p, i) => (
+                                  <Badge key={i} variant="secondary" className="pl-2 pr-1 py-1 flex items-center gap-1 bg-white border border-slate-200">
+                                      {p} <button type="button" onClick={() => removePerson(i)} className="hover:bg-slate-100 rounded-full p-0.5"><X className="w-3 h-3 text-slate-400 hover:text-red-500" /></button>
+                                  </Badge>
+                              ))}
+                          </div>
+                      )}
+                      {form.formState.errors.involvedPeople && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {form.formState.errors.involvedPeople.message}</p>}
+                  </div>
+
+                  {/* NTE SECTION - VISIBLE ONLY TO MANAGERS */}
+                  {['admin', 'manager'].includes(user?.role || '') && (
+                    <div className="space-y-3 p-4 bg-orange-50/50 rounded-lg border border-orange-100">
+                       <div className="flex items-center space-x-2">
+                         <Checkbox 
+                            id="nteRequired" 
+                            checked={watchNteRequired} 
+                            onCheckedChange={(checked) => form.setValue("nteRequired", checked as boolean)}
+                         />
+                         <Label htmlFor="nteRequired" className="font-medium text-orange-900 cursor-pointer">
+                            Require Notice to Explain (NTE)
+                         </Label>
+                       </div>
+                       
+                       {watchNteRequired && (
+                         <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
+                            <Label className="text-xs text-orange-800">Assign to Employee for NTE</Label>
+                            <Popover open={openNteAssignPicker} onOpenChange={setOpenNteAssignPicker}>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" role="combobox" className="w-full justify-between bg-white border-orange-200 text-orange-900 hover:bg-orange-50">
+                                  {watchAssignedTo 
+                                    ? getEmployeeName(watchAssignedTo) 
+                                    : "Select employee..."}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                                <Command>
+                                  <CommandInput placeholder="Search employee..." />
+                                  <CommandList>
+                                    <CommandEmpty>No employee found.</CommandEmpty>
+                                    <CommandGroup>
+                                      {filteredEmployees.map((member) => (
+                                        <CommandItem
+                                          key={member.id}
+                                          value={`${member.firstName} ${member.lastName}`}
+                                          onSelect={() => {
+                                            form.setValue("assignedTo", member.id);
+                                            setOpenNteAssignPicker(false);
+                                          }}
+                                        >
+                                          <Check className={cn("mr-2 h-4 w-4", watchAssignedTo === member.id ? "opacity-100" : "opacity-0")} />
+                                          {member.firstName} {member.lastName}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                            <p className="text-[10px] text-orange-600/80">
+                                This employee will be notified to submit a written explanation.
+                            </p>
+                         </div>
+                       )}
+                    </div>
+                  )}
+
+                  {/* Property Details (Only for Breakages) */}
+                  {selectedCategory === 'breakages' && (
+                      <div className="bg-slate-50 p-4 rounded-lg space-y-4 border border-slate-200">
+                          <h4 className="font-medium text-sm text-slate-900">Damaged Items</h4>
+                          <div className="grid grid-cols-12 gap-2 items-end">
+                              <div className="col-span-9"><Label className="text-xs">Item Name</Label><Input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Plate" /></div>
+                              <div className="col-span-2"><Label className="text-xs">Qty</Label><Input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: +e.target.value})} /></div>
+                              <div className="col-span-1"><Button type="button" size="icon" onClick={addItem}><Plus className="w-4 h-4" /></Button></div>
+                          </div>
+                          <div className="space-y-2">{currentItems.map((item, i) => <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded border"><span>{item.quantity}x {item.name}</span><button type="button" onClick={() => removeItem(i)}><X className="w-4 h-4 hover:text-red-500" /></button></div>)}</div>
+                      </div>
+                  )}
+
+                  <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+                    <Button type="submit" disabled={createReportMutation.isPending}>
+                        {createReportMutation.isPending ? "Submitting..." : "Submit Report"}
                     </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-lg rounded-2xl">
-                    <DialogHeader>
-                    <DialogTitle className="text-xl">Apply for Leave</DialogTitle>
-                    <DialogDescription>Submit a new request for time off</DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 mt-2">
-                    <div className="space-y-2">
-                        <Label htmlFor="type">Leave Type</Label>
-                        <Select onValueChange={(value) => form.setValue("type", value)} defaultValue="annual">
-                        <SelectTrigger className="rounded-xl border-slate-200" data-testid="select-leave-type"><SelectValue /></SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                            <SelectItem value="annual">Service Incentive Leave</SelectItem>
-                            <SelectItem value="sick">Additional Leave Benefit</SelectItem>
-                        </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                        <Label htmlFor="startDate">Start Date</Label>
-                        <Input id="startDate" type="date" className="rounded-xl border-slate-200" min={getMinStartDate()} {...form.register("startDate")} data-testid="input-start-date" />
-                        {form.formState.errors.startDate && <p className="text-xs text-red-500">{form.formState.errors.startDate.message}</p>}
-                        </div>
-                        <div className="space-y-2">
-                        <Label htmlFor="endDate">End Date</Label>
-                        <Input id="endDate" type="date" className="rounded-xl border-slate-200" min={form.watch("startDate")} {...form.register("endDate")} data-testid="input-end-date" />
-                        {form.formState.errors.endDate && <p className="text-xs text-red-500">{form.formState.errors.endDate.message}</p>}
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="reason">Reason (Optional)</Label>
-                        <Textarea id="reason" className="rounded-xl border-slate-200 resize-none" rows={3} {...form.register("reason")} placeholder="Why are you taking leave?" data-testid="input-reason" />
-                    </div>
-                    <div className="flex justify-end gap-2 pt-2">
-                        <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="rounded-full">Cancel</Button>
-                        <Button type="submit" disabled={createLeaveRequestMutation.isPending} className="rounded-full bg-slate-900" data-testid="button-submit-leave">
-                        {createLeaveRequestMutation.isPending ? "Submitting..." : "Submit Request"}
-                        </Button>
-                    </div>
-                    </form>
-                </DialogContent>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
             </Dialog>
         </div>
       </div>
 
-      {/* Bento Stats - Leave Balances */}
-      {!canManageLeaves && (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl overflow-hidden">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Service Incentive</p>
-              <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><Calendar className="w-4 h-4" /></div>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <h3 className="text-3xl font-bold text-slate-800">{user?.annualLeaveBalance ?? 0}</h3>
-              <span className="text-sm text-slate-400 font-medium">/ {user?.annualLeaveBalanceLimit ?? 0} days</span>
-            </div>
-            <div className="mt-4 h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, ((user?.annualLeaveBalance || 0) / (user?.annualLeaveBalanceLimit || 1)) * 100)}%` }} />
-            </div>
-          </CardContent>
-        </Card>
+      {view === "list" ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Main Reports List */}
+            <Card className="bg-white border-slate-200 shadow-sm md:col-span-2">
+                <CardContent className="p-0">
+                    {/* --- FILTER BAR (Embedded) --- */}
+                    <div className="flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl items-center">
+                        <Filter className="w-4 h-4 text-slate-400" />
+                        
+                        <div className="flex items-center gap-2">
+                          <Popover open={openFilterPicker} onOpenChange={setOpenFilterPicker}>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" role="combobox" aria-expanded={openFilterPicker} className="w-[200px] h-8 justify-between text-xs bg-white font-normal">
+                                <div className="flex items-center gap-2 truncate">
+                                  <Search className="h-3 w-3 opacity-50" />
+                                  {personFilter || "Filter by person..."}
+                                </div>
+                                {personFilter && <X className="h-3 w-3 opacity-50 hover:opacity-100" onClick={(e) => { e.stopPropagation(); setPersonFilter(""); }} />}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[200px] p-0" align="start">
+                              <Command>
+                                <CommandInput placeholder="Search name..." className="h-8 text-xs" />
+                                <CommandList className="max-h-[200px]">
+                                  <CommandEmpty className="py-2 px-4 text-xs text-slate-500">No one found.</CommandEmpty>
+                                  <CommandGroup heading="Staff Members">
+                                    {teamMembers?.map((member) => {
+                                      const fullName = `${member.firstName} ${member.lastName}`;
+                                      return (
+                                        <CommandItem key={member.id} value={fullName} onSelect={(currentValue) => { setPersonFilter(currentValue === personFilter ? "" : currentValue); setOpenFilterPicker(false); }} className="text-xs">
+                                          <Check className={cn("mr-2 h-3 w-3", personFilter === fullName ? "opacity-100" : "opacity-0")} />
+                                          <div className="flex flex-col"><span>{fullName}</span><span className="text-[10px] text-slate-400">{member.position}</span></div>
+                                        </CommandItem>
+                                      );
+                                    })}
+                                  </CommandGroup>
+                                  <CommandGroup heading="Recent Involved Parties">
+                                    {stats.mostInvolved.map(([name]) => (
+                                       <CommandItem key={name} value={name} onSelect={(val) => { setPersonFilter(val); setOpenFilterPicker(false); }} className="text-xs">
+                                         <History className="mr-2 h-3 w-3 opacity-50" />{name}
+                                       </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
 
-        <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl overflow-hidden">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Additional Benefit</p>
-              <div className="p-2 bg-rose-100 rounded-lg text-rose-600"><Activity className="w-4 h-4" /></div>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <h3 className="text-3xl font-bold text-slate-800">{user?.sickLeaveBalance ?? 0}</h3>
-              <span className="text-sm text-slate-400 font-medium">/ {user?.sickLeaveBalanceLimit ?? 0} days</span>
-            </div>
-            <div className="mt-4 h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-full bg-rose-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(100, ((user?.sickLeaveBalance || 0) / (user?.sickLeaveBalanceLimit || 1)) * 100)}%` }} />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                            <SelectTrigger className="w-[160px] h-8 text-xs bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Categories</SelectItem>
+                                {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                        
+                        <Select value={monthFilter} onValueChange={setMonthFilter}>
+                            <SelectTrigger className="w-[140px] h-8 text-xs bg-white"><SelectValue placeholder="Month" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Months</SelectItem>
+                                {monthOptions.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                            <SelectTrigger className="w-[120px] h-8 text-xs bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+                            <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="resolved">Resolved</SelectItem></SelectContent>
+                        </Select>
+
+                        {(categoryFilter !== 'all' || statusFilter !== 'all' || monthFilter !== 'all' || personFilter !== "") && (
+                            <Button variant="ghost" size="sm" onClick={() => {setCategoryFilter('all'); setStatusFilter('all'); setMonthFilter('all'); setPersonFilter('');}} className="h-8 text-xs text-red-500 hover:text-red-600 hover:bg-red-50">Reset</Button>
+                        )}
+                    </div>
+
+                    {/* --- LIST ITEMS --- */}
+                    <div className="divide-y divide-slate-100 min-h-[300px]">
+                        {isLoading ? <div className="p-8 text-center text-slate-400">Loading...</div> : 
+                        paginatedReports.length === 0 ? <div className="p-8 text-center text-slate-400">No reports found.</div> :
+                        paginatedReports.map((report: any) => (
+                            <div 
+                              key={report.id} 
+                              onClick={() => { setSelectedReport(report); setIsViewOpen(true); }} 
+                              className={cn(
+                                "flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors border-l-4",
+                                report.severity === 'critical' ? "border-l-red-600 bg-red-50/30" : 
+                                report.severity === 'high' ? "border-l-orange-500" : "border-l-transparent"
+                              )}
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className="relative">
+                                  <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color || "bg-slate-100 text-slate-600")}>
+                                    {(() => { const Icon = categories.find(c=>c.id===report.category)?.icon || FileText; return <Icon className="w-5 h-5" /> })()}
+                                  </div>
+                                  {(report.severity === 'critical' || report.severity === 'high') && (
+                                    <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
+                                      <AlertTriangle className={cn("w-3.5 h-3.5", report.severity === 'critical' ? "text-red-600" : "text-orange-500")} />
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-sm font-bold text-slate-800">{report.title}</h4>
+                                    {report.nteRequired && (
+                                        <Badge variant="outline" className="text-[9px] border-orange-200 text-orange-600 bg-orange-50 px-1.5 h-4">
+                                            NTE REQ
+                                        </Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                    <span>{format(new Date(report.dateOccurred), "MMM dd")}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <Badge variant={report.status === 'resolved' ? 'default' : 'secondary'} className="capitalize">{report.status}</Badge>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    {/* --- PAGINATION FOOTER --- */}
+                    {filteredReports.length > 0 && (
+                        <div className="flex items-center justify-between p-3 border-t border-slate-100 bg-white rounded-b-xl">
+                            <div className="text-xs text-slate-500 font-medium">
+                                Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredReports.length)} of {filteredReports.length}
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}><ChevronsLeft className="w-3 h-3" /></Button>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="w-3 h-3" /></Button>
+                                <span className="text-xs font-medium px-2 min-w-[3rem] text-center">{currentPage} / {totalPages || 1}</span>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages}><ChevronRight className="w-3 h-3" /></Button>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}><ChevronsRight className="w-3 h-3" /></Button>
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* --- MOST INVOLVED SIDEBAR --- */}
+            <Card className="bg-white border-slate-200 shadow-sm h-fit">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                        <Users className="w-4 h-4" /> Most Involved
+                    </CardTitle>
+                    <CardDescription className="text-xs">Frequent names in recent incidents</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-2">
+                        {stats.mostInvolved?.map(([name, count], i) => (
+                            <button key={name} onClick={() => setPersonFilter(name)} className={cn("w-full flex items-center justify-between text-sm p-2 rounded-lg transition-colors hover:bg-slate-100 text-left", personFilter === name ? "bg-blue-50 border border-blue-100" : "bg-transparent")}>
+                                <div className="flex items-center gap-2">
+                                    <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold", i === 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600")}>{i + 1}</span>
+                                    <span className={cn("font-medium truncate max-w-[120px]", personFilter === name ? "text-blue-700" : "text-slate-700")} title={name}>{name}</span>
+                                </div>
+                                <Badge variant="secondary" className="text-[10px] bg-white border border-slate-100">{count}</Badge>
+                            </button>
+                        ))}
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+                <CardHeader><CardTitle className="text-lg">Report Trend</CardTitle></CardHeader>
+                <CardContent>
+                    <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={stats.monthly}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
+                                <YAxis fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
+                                <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+                                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </CardContent>
+            </Card>
+            <Card>
+                <CardHeader><CardTitle className="text-lg">Reports by Category</CardTitle></CardHeader>
+                <CardContent>
+                    <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                                    {stats.byCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                                </Pie>
+                                <RechartsTooltip />
+                                <Legend />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
       )}
 
-      {/* Tabs Section */}
-      <Tabs defaultValue={canManageLeaves ? "pending" : "my-requests"} className="w-full">
-        <div className="flex items-center mb-6">
-          <TabsList className="bg-white/40 backdrop-blur-md border border-slate-200/50 p-1 rounded-full h-auto" data-testid="leave-tabs">
-            {!canManageLeaves && (
-            <TabsTrigger value="my-requests" className="rounded-full px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm" data-testid="tab-my-requests">My Requests</TabsTrigger>
-            )}
-            {canManageLeaves && (
-              <TabsTrigger value="pending" className="rounded-full px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm" data-testid="tab-pending">
-                Pending Approvals
-                {pendingCount > 0 && <Badge className="ml-2 bg-rose-500 hover:bg-rose-600 border-none text-white h-5 px-1.5 rounded-full">{pendingCount}</Badge>}
-              </TabsTrigger>
-            )}
-          </TabsList>
-        </div>
 
-        <TabsContent value="my-requests" className="mt-0 focus-visible:outline-none">
-          <div className="space-y-4">
-            {isLoading ? (
-               <div className="text-center py-12"><Loader2 className="w-8 h-8 animate-spin mx-auto text-slate-300" /></div>
-            ) : leaveRequests && leaveRequests.length > 0 ? (
-               <div className="grid gap-4">
-                 {leaveRequests.map((request) => (
-                   <div key={request.id} className="group flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-2xl bg-white/60 hover:bg-white border border-slate-200/60 hover:border-blue-200/60 shadow-sm hover:shadow-md transition-all" data-testid={`request-${request.id}`}>
-                      <div className="flex items-start gap-4">
-                         <div className="h-12 w-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm">
-                            {request.type === 'annual' ? <Calendar className="w-6 h-6" /> : <Activity className="w-6 h-6" />}
-                         </div>
-                         <div className="space-y-1">
-                            <h4 className="font-semibold text-slate-800">{request.type === 'annual' ? 'Service Incentive' : 'Additional Benefit'} Leave</h4>
-                            <div className="flex flex-wrap gap-2 text-sm text-slate-500">
-                               <span className="font-medium text-slate-700">{formatDate(request.startDate)} - {formatDate(request.endDate)}</span>
-                               <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-xs font-mono">{request.days} days</span>
-                            </div>
-                            {request.reason && <p className="text-sm text-slate-500 mt-1 italic">"{request.reason}"</p>}
-                            {request.status === 'rejected' && request.comments && (
-                               <p className="text-sm text-rose-600 mt-1 font-medium bg-rose-50 p-2 rounded-lg inline-block">Reason: {request.comments}</p>
-                            )}
-                         </div>
-                      </div>
-                      <div className="mt-4 sm:mt-0 flex flex-row sm:flex-col items-center sm:items-end justify-between gap-2">
-                         {getStatusBadge(request.status!)}
-                         <span className="text-xs text-slate-400">Applied {formatDate(request.createdAt!)}</span>
-                      </div>
-                   </div>
-                 ))}
-               </div>
+      {/* View Details Dialog */}
+        <Dialog open={isViewOpen} onOpenChange={(open) => {
+          setIsViewOpen(open);
+          if (!open) {
+             setSelectedReport(null);
+             setNteResponse("");
+          }
+        }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            {!selectedReport ? (
+            <div className="p-8 text-center flex justify-center items-center h-40">
+                <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+            </div>
             ) : (
-               <div className="text-center py-20 bg-white/40 border border-dashed border-slate-200 rounded-3xl">
-                  <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                  <p className="text-slate-500">No leave requests history.</p>
-               </div>
-            )}
-          </div>
-        </TabsContent>
-
-        {canManageLeaves && (
-          <TabsContent value="pending" className="mt-0 focus-visible:outline-none">
-             {pendingLoading ? (
-                <div className="text-center py-12"><Loader2 className="w-8 h-8 animate-spin mx-auto text-slate-300" /></div>
-             ) : (
-                <div className="space-y-4">
-                  {pendingRequests?.filter(r => r.status === 'pending').length === 0 ? (
-                      <div className="text-center py-20 bg-white/40 border border-dashed border-slate-200 rounded-3xl">
-                         <Clock className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                         <p className="text-slate-500">All caught up! No pending approvals.</p>
-                      </div>
-                   ) : (
-                     pendingRequests?.filter(r => r.status === 'pending').map((request) => (
-                       <div key={request.id} className="group flex flex-col md:flex-row md:items-center justify-between p-5 rounded-2xl bg-white border border-amber-100 shadow-sm hover:shadow-md transition-all" data-testid={`pending-request-${request.id}`}>
-                          <div className="flex items-start gap-4">
-                             <div className="h-12 w-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
-                                <User className="w-6 h-6" />
-                             </div>
-                             <div className="space-y-1">
-                                <h4 className="font-bold text-slate-800 text-lg">{getUserName(request.userId)}</h4>
-                                <p className="text-sm text-slate-600">
-                                  Requested <span className="font-semibold text-amber-700">{request.type === 'annual' ? 'Service Incentive' : 'Additional'} Leave</span> for <span className="font-semibold">{request.days} days</span>
-                                </p>
-                                <p className="text-sm text-slate-500 flex items-center gap-2">
-                                   <Calendar className="w-3.5 h-3.5" /> {formatDate(request.startDate)} - {formatDate(request.endDate)}
-                                </p>
-                                {request.reason && <p className="text-sm text-slate-500 bg-slate-50 p-2 rounded-lg mt-2">"{request.reason}"</p>}
-                             </div>
-                          </div>
-                          <div className="mt-4 md:mt-0 flex items-center gap-3 pl-16 md:pl-0">
-                             <Button size="sm" onClick={() => handleApprove(request.id)} disabled={approveLeaveRequestMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700 rounded-full shadow-lg shadow-emerald-600/20" data-testid={`button-approve-${request.id}`}>
-                                <Check className="w-4 h-4 mr-2" /> Approve
-                             </Button>
-                             <Button size="sm" variant="outline" onClick={() => handleReject(request.id)} disabled={approveLeaveRequestMutation.isPending} className="border-rose-200 text-rose-700 hover:bg-rose-50 rounded-full" data-testid={`button-reject-${request.id}`}>
-                                <X className="w-4 h-4 mr-2" /> Reject
-                             </Button>
-                          </div>
-                       </div>
-                     ))
-                   )}
+            <>
+                <DialogHeader>
+                <div className="flex items-center gap-3 mb-2">
+                    <Badge variant="outline" className="uppercase tracking-wider text-[10px]">
+                    {categories.find(c => c.id === selectedReport.category)?.label || selectedReport.category}
+                    </Badge>
+                    <Badge className={cn("capitalize", 
+                    selectedReport.severity === 'critical' ? "bg-red-100 text-red-700 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"
+                    )}>
+                    {selectedReport.severity} Priority
+                    </Badge>
                 </div>
-             )}
-          </TabsContent>
-        )}
-      </Tabs>
+                <DialogTitle className="text-2xl font-bold text-slate-900">{selectedReport.title}</DialogTitle>
+                <DialogDescription className="flex items-center gap-2 text-slate-500">
+                    <CalendarIcon className="w-4 h-4" /> {format(new Date(selectedReport.dateOccurred), "MMMM dd, yyyy")} 
+                    <Clock className="w-4 h-4 ml-2" /> {selectedReport.timeOccurred}
+                </DialogDescription>
+                </DialogHeader>
 
-      {/* Reject Dialog */}
-      <Dialog open={isRejectDialogOpen} onOpenChange={(open) => { setIsRejectDialogOpen(open); if (!open) { setRejectionRequestId(null); rejectForm.reset(); }}}>
-        <DialogContent className="rounded-2xl">
-            <DialogHeader>
-                <DialogTitle className="text-rose-600">Reject Request</DialogTitle>
-                <DialogDescription>Provide a reason for rejecting this request.</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={rejectForm.handleSubmit(onRejectSubmit)} className="space-y-4">
-                <Textarea {...rejectForm.register("comments")} placeholder="Reason for rejection..." className="rounded-xl resize-none" rows={3} data-testid="input-reject-comments" />
-                {rejectForm.formState.errors.comments && <p className="text-xs text-rose-600">{rejectForm.formState.errors.comments.message}</p>}
-                <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setIsRejectDialogOpen(false)} className="rounded-full">Cancel</Button>
-                    <Button type="submit" variant="destructive" className="rounded-full" data-testid="button-confirm-reject">Confirm Rejection</Button>
+                <div className="space-y-6 py-4">
+                  {/* Status & Location Bar */}
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
+                      <div className="flex items-center gap-2 font-medium text-slate-900">
+                          <MapPin className="w-4 h-4 text-slate-400" />
+                          {selectedReport.location}
+                      </div>
+                      </div>
+                      <div className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-400 uppercase">Status</span>
+                      <div className="flex items-center gap-2 font-medium text-slate-900 capitalize">
+                          {selectedReport.status === 'resolved' ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <AlertCircle className="w-4 h-4 text-amber-500" />}
+                          {selectedReport.status}
+                      </div>
+                      </div>
+                  </div>
+                  
+                  {/* Reporter Info */}
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+                              <Users className="w-5 h-5 text-slate-500" />
+                          </div>
+                          <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Filed By</p>
+                              <p className="text-sm font-bold text-slate-900">{getEmployeeName(selectedReport.userId)}</p>
+                              <p className="text-xs text-slate-500 capitalize">{getEmployeeRole(selectedReport.userId)}</p>
+                          </div>
+                      </div>
+                      <div className="text-right">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Submission Date</p>
+                          <p className="text-xs font-medium text-slate-700">
+                              {format(new Date(selectedReport.createdAt), "MMM dd, yyyy p")}
+                          </p>
+                      </div>
+                  </div>
+
+                  {/* Incident Description */}
+                  <div className="space-y-4">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 mb-2">Incident Description</h4>
+                        <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.description}</p>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 mb-2">Immediate Action Taken</h4>
+                        <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.actionTaken || "No immediate action recorded."}</p>
+                      </div>
+                  </div>
+                  
+                  {/* NTE SECTION: Display/Input */}
+                  {selectedReport.nteRequired && (
+                    <div className="bg-orange-50/50 border border-orange-100 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="bg-white text-orange-600 border-orange-200">Action Required</Badge>
+                            <span className="font-semibold text-sm text-orange-900">Notice to Explain (NTE)</span>
+                        </div>
+                        
+                        {/* CASE 1: Manager View (Show content or pending status) */}
+                        {['admin', 'manager'].includes(user?.role || '') && (
+                            <div className="text-sm">
+                                {selectedReport.nteContent ? (
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-semibold text-orange-800">Employee Explanation:</p>
+                                        <p className="bg-white p-3 rounded border border-orange-100 text-slate-700">{selectedReport.nteContent}</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-orange-600 italic">Waiting for employee explanation...</p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* CASE 2: Employee View (Show Input if Assigned & Pending) */}
+                        {user?.id === selectedReport.assignedTo && !['admin', 'manager'].includes(user?.role || '') && (
+                            <div className="space-y-3">
+                                {selectedReport.nteContent ? (
+                                     <div className="space-y-1">
+                                        <p className="text-xs font-semibold text-orange-800">Your Submitted Explanation:</p>
+                                        <p className="bg-white p-3 rounded border border-orange-100 text-slate-700">{selectedReport.nteContent}</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-xs text-orange-800">Please provide your explanation regarding this incident.</p>
+                                        <Textarea 
+                                            placeholder="Write your explanation here..."
+                                            value={nteResponse}
+                                            onChange={(e) => setNteResponse(e.target.value)}
+                                            className="bg-white border-orange-200 focus-visible:ring-orange-500"
+                                        />
+                                        <Button 
+                                            size="sm" 
+                                            className="bg-orange-600 hover:bg-orange-700 text-white w-full"
+                                            disabled={!nteResponse.trim() || updateStatusMutation.isPending}
+                                            onClick={() => updateStatusMutation.mutate({ 
+                                                id: selectedReport.id, 
+                                                nteContent: nteResponse 
+                                            })}
+                                        >
+                                            {updateStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <Send className="w-3 h-3 mr-2" />}
+                                            Submit Explanation
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-400 uppercase">Witnesses</span>
+                        <p className="text-sm font-medium text-slate-900">{selectedReport.witnesses || "None listed"}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-400 uppercase">Parties Involved</span>
+                        <p className="text-sm font-medium text-slate-900">{selectedReport.partiesInvolved || "None listed"}</p>
+                      </div>
+                  </div>
+                </div>
+
+                <DialogFooter className="flex-row justify-between sm:justify-between border-t pt-4">
+                <Button variant="ghost" onClick={() => setIsViewOpen(false)}>Close</Button>
+                
+                {['admin', 'manager'].includes(user?.role || '') && (
+                    selectedReport.status === 'resolved' ? (
+                        <Button 
+                        variant="outline"
+                        className="border-amber-500 text-amber-600 hover:bg-amber-50"
+                        onClick={() => updateStatusMutation.mutate({ id: selectedReport.id, status: 'pending' })}
+                        disabled={updateStatusMutation.isPending}
+                        >
+                        <Clock className="w-4 h-4 mr-2" /> Mark as Pending
+                        </Button>
+                    ) : (
+                        <Button 
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => {
+                            setResolutionAction(selectedReport.actionTaken || ""); 
+                            setIsViewOpen(false); 
+                            setTimeout(() => setIsResolveDialogOpen(true), 150);
+                        }}
+                        >
+                        <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as Resolved
+                        </Button>
+                    )
+                )}
                 </DialogFooter>
-            </form>
+            </>
+            )}
         </DialogContent>
-      </Dialog>
+        </Dialog>
+
+        {/* Resolve Action Popup */}
+        <Dialog open={isResolveDialogOpen} onOpenChange={setIsResolveDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                Resolve Report
+            </DialogTitle>
+            <DialogDescription>
+                Document the final action taken to address this incident.
+            </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+            <div className="space-y-2">
+                <Label htmlFor="resolution">Immediate Action Taken</Label>
+                <Textarea 
+                id="resolution"
+                placeholder="e.g. Discussed with staff, issued warning, or item replaced..."
+                className="min-h-[120px]"
+                value={resolutionAction}
+                onChange={(e) => setResolutionAction(e.target.value)}
+                />
+            </div>
+            </div>
+            <DialogFooter>
+            <Button 
+                variant="ghost" 
+                onClick={() => {
+                setIsResolveDialogOpen(false);
+                setIsViewOpen(true); // Go back if cancelled
+                }}
+            >
+                Back
+            </Button>
+            <Button 
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={!resolutionAction.trim() || updateStatusMutation.isPending}
+                onClick={() => {
+                if (!selectedReport) return;
+                updateStatusMutation.mutate({ 
+                    id: selectedReport.id, 
+                    status: 'resolved',
+                    actionTaken: resolutionAction 
+                });
+                }}
+            >
+                {updateStatusMutation.isPending ? "Saving..." : "Confirm & Resolve"}
+            </Button>
+            </DialogFooter>
+        </DialogContent>
+        </Dialog>
+
     </div>
   );
 }
