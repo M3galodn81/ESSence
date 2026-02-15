@@ -22,9 +22,13 @@ export default function Dashboard() {
     queryKey: ["/api/announcements"],
   });
 
-  const { data: activities, isLoading: activitiesLoading } = useQuery({
+  const { data: activities, isLoading: activitiesLoading } = 
+  isManager ? useQuery({
     queryKey: ["/api/activities/all"],
+  }) : useQuery({
+    queryKey: ["/api/activities"],
   });
+
 
   const { data: schedules, isLoading: schedulesLoading } = useQuery({
     queryKey: ["/api/schedules"],

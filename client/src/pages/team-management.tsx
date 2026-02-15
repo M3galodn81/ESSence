@@ -1,31 +1,55 @@
 import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Users, Search, Mail, Phone, Calendar, Building, UserPlus, Briefcase, User, Hash, Shield, CheckCircle, XCircle } from "lucide-react";
+import { 
+  Users, Search, UserPlus, Briefcase, 
+  CheckCircle, XCircle, Filter, MoreHorizontal, Mail, Phone, Calendar, Hash, User as UserIcon, Building
+} from "lucide-react";
 import type { User as UserType } from "@shared/schema";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/queryClient";
 import { BentoCard } from "@/components/custom/bento-card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function TeamManagement() {
   const { user } = useAuth();
+  
+  // --- STATE ---
   const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("name_asc");
+
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<UserType | null>(null);
 
+  // --- QUERIES ---
   const { data: teamMembers, isLoading } = useQuery<UserType[]>({
     queryKey: ["/api/team"],
     enabled: user?.role === 'manager' || user?.role === 'admin',
   });
 
-  // Fetch ALL users for guaranteed manager lookup
   const { data: allUsers } = useQuery<UserType[]>({
     queryKey: ["/api/users/all"], 
     queryFn: async () => {
@@ -35,22 +59,55 @@ export default function TeamManagement() {
     enabled: user?.role === 'admin' || user?.role === 'manager',
   });
 
-  const filteredMembers = useMemo(() => {
+  // --- FILTERING & SORTING LOGIC ---
+  const filteredAndSortedMembers = useMemo(() => {
     if (!teamMembers) return [];
 
-    return teamMembers
-      .filter((member: UserType) => 
-        member.role !== 'admin' || member.id === user?.id 
-      )
-      .filter((member: UserType) =>
-        `${member.firstName} ${member.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        member.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        member.position?.toLowerCase().includes(searchTerm.toLowerCase())
-      ) || [];
-  }, [teamMembers, searchTerm, user?.id]);
+    let result = teamMembers
+      .filter((member: UserType) => member.role !== 'admin' || member.id === user?.id);
 
-  // move this to permissions.ts
+    // Search Filter
+    if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
+      result = result.filter((member) =>
+        `${member.lastName}, ${member.firstName}`.toLowerCase().includes(lowerTerm) ||
+        member.email.toLowerCase().includes(lowerTerm) ||
+        member.employeeId?.toLowerCase().includes(lowerTerm) ||
+        member.username.toLowerCase().includes(lowerTerm)
+      );
+    }
+
+    // Role Filter
+    if (roleFilter !== "all") {
+      result = result.filter((member) => member.role === roleFilter);
+    }
+
+    // Status Filter
+    if (statusFilter !== "all") {
+      const isActive = statusFilter === "active";
+      result = result.filter((member) => Boolean(member.isActive) === isActive);
+    }
+
+    // Sorting
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case "name_asc":
+          return a.lastName.localeCompare(b.lastName);
+        case "name_desc":
+          return b.lastName.localeCompare(a.lastName);
+        case "newest":
+          return (new Date(b.hireDate || 0).getTime()) - (new Date(a.hireDate || 0).getTime());
+        case "oldest":
+          return (new Date(a.hireDate || 0).getTime()) - (new Date(b.hireDate || 0).getTime());
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [teamMembers, searchTerm, roleFilter, statusFilter, sortBy, user?.id]);
+
+  // --- HELPERS ---
   const canManageTeam = user?.role === 'manager' || user?.role === 'admin';
 
   if (!canManageTeam) {
@@ -69,10 +126,10 @@ export default function TeamManagement() {
   }
   
   const getManagerName = (managerId: string | null | undefined) => {
-    if (!managerId || managerId === "") return "N/A";
+    if (!managerId || managerId === "") return "—";
     const userList = allUsers || teamMembers;
     const manager = userList?.find((m: UserType) => m.id === managerId);
-    return manager ? `${manager.firstName} ${manager.lastName}` : "Unknown Manager";
+    return manager ? `${manager.lastName}, ${manager.firstName}` : "Unknown";
   }
 
   const getInitials = (firstName: string, lastName: string) => {
@@ -93,23 +150,6 @@ export default function TeamManagement() {
         {role.replace(/_/g, " ")}
       </Badge>
     );
-  };
-
-  const getStatusBadge = (isActive: boolean) => {
-    return isActive ? (
-      <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-1 px-2 py-0.5 text-[10px]">
-        <CheckCircle className="w-3 h-3" /> Active
-      </Badge>
-    ) : (
-      <Badge variant="outline" className="bg-slate-100 text-slate-500 border-slate-200 flex items-center gap-1 px-2 py-0.5 text-[10px]">
-        <XCircle className="w-3 h-3" /> Inactive
-      </Badge>
-    );
-  };
-
-  const formatDate = (date: string | Date | null) => {
-    if (!date) return "Not specified";
-    return new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
   const getTeamStats = () => {
@@ -133,7 +173,7 @@ export default function TeamManagement() {
   };
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+    <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-8">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -152,98 +192,207 @@ export default function TeamManagement() {
         <BentoCard title="Managers" value={stats.managers} icon={Briefcase} variant="amber" testIdPrefix="manager-count" />
       </div>
 
-      {/* Tabs & List */}
-      <Tabs defaultValue="members" className="space-y-6">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white/80 backdrop-blur-md p-2 rounded-2xl border border-slate-200/60 shadow-sm">
-            <TabsList className="bg-transparent p-0 h-auto" data-testid="team-tabs">
-                <TabsTrigger value="members" className="rounded-full px-4 py-2 data-[state=active]:bg-white data-[state=active]:shadow-sm" data-testid="tab-members">Team Members</TabsTrigger>
-            </TabsList>
-
-            <div className="relative w-full sm:w-auto">
+      {/* Controls & Table */}
+      <div className="space-y-4">
+        {/* Controls Toolbar */}
+        <div className="flex flex-col xl:flex-row gap-4 justify-between items-start xl:items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            
+            {/* Search */}
+            <div className="relative w-full xl:w-72">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input 
-                    placeholder="Search team members..." 
-                    className="pl-9 h-9 w-full sm:w-64 border-none bg-slate-100/50 focus:bg-white focus:ring-0 rounded-xl transition-all"
+                    placeholder="Search by name, ID, username..." 
+                    className="pl-9 h-9 w-full bg-slate-50 border-slate-200 focus:bg-white transition-all rounded-lg"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    data-testid="search-members"
                 />
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-2 w-full xl:w-auto">
+                <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-slate-400" />
+                    <span className="text-sm font-medium text-slate-600">Filters:</span>
+                </div>
+                
+                <Select value={roleFilter} onValueChange={setRoleFilter}>
+                    <SelectTrigger className="w-[130px] h-9 text-xs"><SelectValue placeholder="Role" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Roles</SelectItem>
+                        <SelectItem value="employee">Employee</SelectItem>
+                        <SelectItem value="manager">Manager</SelectItem>
+                        <SelectItem value="payroll_officer">Payroll</SelectItem>
+                    </SelectContent>
+                </Select>
+
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-[130px] h-9 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                </Select>
+
+                <div className="w-px h-6 bg-slate-200 mx-2 hidden sm:block"></div>
+
+                <Select value={sortBy} onValueChange={setSortBy}>
+                    <SelectTrigger className="w-[160px] h-9 text-xs"><SelectValue placeholder="Sort By" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="name_asc">Name (A-Z)</SelectItem>
+                        <SelectItem value="name_desc">Name (Z-A)</SelectItem>
+                        <SelectItem value="newest">Newest Hired</SelectItem>
+                        <SelectItem value="oldest">Oldest Hired</SelectItem>
+                    </SelectContent>
+                </Select>
+
+                {(roleFilter !== 'all' || statusFilter !== 'all' || searchTerm) && (
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => { setRoleFilter('all'); setStatusFilter('all'); setSearchTerm(''); }}
+                        className="h-9 text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
+                    >
+                        Reset
+                    </Button>
+                )}
             </div>
         </div>
 
-        <TabsContent value="members" className="mt-0 focus-visible:outline-none">
-            {isLoading ? (
-                <div className="text-center py-12 text-slate-400">Loading team members...</div>
-            ) : filteredMembers.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredMembers.map((member: UserType) => (
-                    <Card key={member.id} className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm hover:shadow-md transition-all rounded-2xl overflow-hidden group" data-testid={`member-${member.id}`}>
-                        <CardContent className="p-6">
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="flex items-center gap-4">
-                                    <Avatar className="w-14 h-14 border-2 border-white shadow-sm">
-                                        <AvatarImage src={member.profilePicture || ""} />
-                                        <AvatarFallback className="bg-slate-100 text-slate-600 text-lg font-bold">
-                                            {getInitials(member.firstName, member.lastName)}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                        <h3 className="font-bold text-slate-900 text-lg leading-tight">{member.firstName} {member.lastName}</h3>
-                                        <p className="text-xs text-slate-500">{member.position || "No position"}</p>
+        {/* Detailed Table */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+            <Table>
+                <TableHeader className="bg-slate-50/50">
+                    <TableRow>
+                        <TableHead className="w-[220px]">Employee</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>ID</TableHead>
+                        <TableHead>Department / Position</TableHead>
+                        <TableHead>Manager</TableHead>
+                        <TableHead>Hire Date</TableHead>
+                        <TableHead>Contact</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {isLoading ? (
+                        <TableRow>
+                            <TableCell colSpan={9} className="h-24 text-center text-slate-500">
+                                Loading team members...
+                            </TableCell>
+                        </TableRow>
+                    ) : filteredAndSortedMembers.length === 0 ? (
+                        <TableRow>
+                            <TableCell colSpan={9} className="h-32 text-center text-slate-500">
+                                <div className="flex flex-col items-center gap-2">
+                                    <Users className="w-8 h-8 text-slate-300" />
+                                    <p>No team members found matching your criteria.</p>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    ) : (
+                        filteredAndSortedMembers.map((member) => (
+                            <TableRow key={member.id} className="hover:bg-slate-50/50 transition-colors">
+                                <TableCell>
+                                    <div className="flex items-center gap-3">
+                                        <Avatar className="w-9 h-9 border border-slate-200">
+                                            <AvatarImage src={member.profilePicture || ""} />
+                                            <AvatarFallback className="bg-slate-100 text-slate-600 text-xs font-bold">
+                                                {getInitials(member.firstName, member.lastName)}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <div className="flex flex-col">
+                                            <span className="font-semibold text-sm text-slate-900">
+                                                {member.lastName}, {member.firstName}
+                                            </span>
+                                            <span className="text-[10px] text-slate-500">
+                                                @{member.username}
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
-                            
-                            <div className="flex gap-2 mb-6">
-                                {getRoleBadge(member.role)}
-                                {getStatusBadge(member.isActive!)}
-                            </div>
-
-                            <div className="space-y-2.5 mb-6">
-                                <div className="flex items-center text-sm text-slate-600">
-                                    <Mail className="w-4 h-4 mr-3 text-slate-400" />
-                                    <span className="truncate">{member.email}</span>
-                                </div>
-                                <div className="flex items-center text-sm text-slate-600">
-                                    <Building className="w-4 h-4 mr-3 text-slate-400" />
-                                    <span className="truncate">{member.department || "No department"}</span>
-                                </div>
-                                {member.phoneNumber && (
-                                    <div className="flex items-center text-sm text-slate-600">
-                                        <Phone className="w-4 h-4 mr-3 text-slate-400" />
-                                        <span>{member.phoneNumber}</span>
+                                </TableCell>
+                                <TableCell>{getRoleBadge(member.role)}</TableCell>
+                                <TableCell>
+                                    <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                                        {member.employeeId || "—"}
+                                    </span>
+                                </TableCell>
+                                <TableCell>
+                                    <div className="flex flex-col">
+                                        <span className="text-sm text-slate-700 font-medium">{member.department || "—"}</span>
+                                        <span className="text-xs text-slate-500">{member.position || "—"}</span>
                                     </div>
-                                )}
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100/50">
-                                <Button variant="outline" className="w-full rounded-xl border-slate-200 hover:bg-slate-50" onClick={() => handleViewDetails(member)}>
-                                    View Details
-                                </Button>
-                                <Button variant="ghost" className="w-full rounded-xl hover:bg-slate-100 text-slate-600" onClick={() => handleEditMember(member)}>
-                                    Edit
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    ))}
-                </div>
-            ) : (
-                <div className="text-center py-20 bg-white/40 border border-dashed border-slate-200 rounded-3xl">
-                    <Users className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                    <p className="text-slate-500">No team members found.</p>
-                    {searchTerm && <Button variant="link" onClick={() => setSearchTerm("")} className="mt-2 text-slate-900">Clear Search</Button>}
-                </div>
-            )}
-        </TabsContent>
-      </Tabs>
+                                </TableCell>
+                                <TableCell>
+                                    <div className="flex items-center gap-1.5">
+                                        {member.managerId && <UserIcon className="w-3 h-3 text-slate-400" />}
+                                        <span className="text-sm text-slate-600">
+                                            {member.role === 'employee' ? getManagerName(member.managerId) : "—"}
+                                        </span>
+                                    </div>
+                                </TableCell>
+                                <TableCell>
+                                    <div className="flex items-center gap-1.5 text-sm text-slate-600">
+                                        <Calendar className="w-3 h-3 text-slate-400" />
+                                        {member.hireDate ? new Date(member.hireDate).toLocaleDateString() : "—"}
+                                    </div>
+                                </TableCell>
+                                <TableCell>
+                                    <div className="flex flex-col gap-1">
+                                        <div className="flex items-center text-xs text-slate-600 group/link cursor-pointer hover:text-blue-600 transition-colors" title={member.email}>
+                                            <Mail className="w-3 h-3 mr-1.5 text-slate-400 group-hover/link:text-blue-500" /> 
+                                            <span className="truncate max-w-[120px]">{member.email}</span>
+                                        </div>
+                                        {member.phoneNumber && (
+                                            <div className="flex items-center text-xs text-slate-600">
+                                                <Phone className="w-3 h-3 mr-1.5 text-slate-400" /> {member.phoneNumber}
+                                            </div>
+                                        )}
+                                    </div>
+                                </TableCell>
+                                <TableCell>
+                                    {member.isActive ? (
+                                        <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full w-fit border border-emerald-100">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                            Active
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full w-fit border border-slate-200">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                                            Inactive
+                                        </div>
+                                    )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-900">
+                                                <MoreHorizontal className="w-4 h-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-40">
+                                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                            <DropdownMenuItem onClick={() => handleViewDetails(member)}>View Full Profile</DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleEditMember(member)}>Edit Details</DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </TableCell>
+                            </TableRow>
+                        ))
+                    )}
+                </TableBody>
+            </Table>
+            </div>
+        </div>
+      </div>
       
       {/* View Details Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
           <DialogContent className="sm:max-w-[450px] rounded-2xl">
               <DialogHeader>
                   <DialogTitle>Employee Details</DialogTitle>
-                  <DialogDescription>Full profile information for {selectedMember?.firstName} {selectedMember?.lastName}</DialogDescription>
               </DialogHeader>
               {selectedMember && (
                   <div className="space-y-6 pt-4">
@@ -255,48 +404,41 @@ export default function TeamManagement() {
                               </AvatarFallback>
                           </Avatar>
                           <div className="text-center">
-                              <h3 className="text-2xl font-bold text-slate-900">{selectedMember.firstName} {selectedMember.lastName}</h3>
+                              <h3 className="text-2xl font-bold text-slate-900">{selectedMember.lastName}, {selectedMember.firstName}</h3>
                               <p className="text-slate-500">{selectedMember.position || "No position"}</p>
                           </div>
                           <div className="flex gap-2">
                               {getRoleBadge(selectedMember.role)}
-                              {getStatusBadge(selectedMember.isActive!)}
+                              {selectedMember.isActive ? <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Active</Badge> : <Badge variant="outline" className="bg-slate-100 text-slate-500">Inactive</Badge>}
                           </div>
                       </div>
                       
                       <div className="space-y-3 text-sm">
-                          <DetailRow icon={Mail} label="Email" value={selectedMember.email} />
-                          <DetailRow icon={User} label="Username" value={selectedMember.username} />
-                          <DetailRow icon={Briefcase} label="Position" value={selectedMember.position || 'N/A'} />
-                          <DetailRow icon={Building} label="Department" value={selectedMember.department || 'N/A'} />
-                          {selectedMember.role === 'employee' && selectedMember.managerId && (
+                          <div className="grid grid-cols-2 gap-4">
+                              <DetailRow icon={Mail} label="Email" value={selectedMember.email} />
+                              <DetailRow icon={Phone} label="Phone" value={selectedMember.phoneNumber || "N/A"} />
+                              <DetailRow icon={Building} label="Department" value={selectedMember.department || "N/A"} />
                               <DetailRow icon={Users} label="Manager" value={getManagerName(selectedMember.managerId)} />
-                          )}
-                          <DetailRow icon={Phone} label="Phone" value={selectedMember.phoneNumber || 'N/A'} />
-                          <DetailRow icon={Hash} label="Employee ID" value={selectedMember.employeeId || 'N/A'} />
-                          <DetailRow icon={Calendar} label="Hire Date" value={formatDate(selectedMember.hireDate)} />
+                              <DetailRow icon={Calendar} label="Date Hired" value={selectedMember.hireDate ? new Date(selectedMember.hireDate).toLocaleDateString() : "N/A"} />
+                              <DetailRow icon={Hash} label="Employee ID" value={selectedMember.employeeId || "N/A"} />
+                          </div>
                       </div>
                   </div>
               )}
           </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog (Placeholder) */}
+      {/* Edit Dialog Warning */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent className="sm:max-w-[425px] rounded-2xl">
               <DialogHeader>
                   <DialogTitle>Edit Member</DialogTitle>
                   <DialogDescription>
-                      For full editing capabilities, please use the dedicated User Management page.
+                      Full profile editing is handled in the dedicated User Management section.
                   </DialogDescription>
               </DialogHeader>
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-sm text-slate-600 leading-relaxed">
-                  <p>Editing a user's profile requires complex form handling and permission checks, which are centralized in the <strong>User Management</strong> section.</p>
-                  {selectedMember && (
-                      <div className="mt-4 font-medium text-slate-900 flex items-center gap-2">
-                          <User className="w-4 h-4" /> {selectedMember.firstName} {selectedMember.lastName}
-                      </div>
-                  )}
+                  <p>To ensure data integrity and proper permission handling, please use the <strong>User Management</strong> page to edit employee details, roles, or reset passwords.</p>
               </div>
               <div className="flex justify-end pt-2">
                   <Button onClick={() => setIsEditDialogOpen(false)} className="rounded-full bg-slate-900">Close</Button>
@@ -307,13 +449,13 @@ export default function TeamManagement() {
   );
 }
 
-// Helper component for detail rows
+// Helper component for detail rows in dialog
 const DetailRow = ({ icon: Icon, label, value }: { icon: any, label: string, value: string }) => (
-    <div className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-        <div className="flex items-center space-x-3 text-slate-500">
-            <div className="p-1.5 bg-slate-50 rounded-lg"><Icon className="w-4 h-4" /></div>
-            <span className="font-medium text-xs uppercase tracking-wide">{label}</span>
+    <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-slate-400">
+            <Icon className="w-3.5 h-3.5" />
+            <span className="text-[10px] uppercase font-semibold tracking-wider">{label}</span>
         </div>
-        <span className="text-slate-800 font-medium text-right">{value}</span>
+        <p className="text-sm font-medium text-slate-700 pl-5.5 truncate" title={value}>{value}</p>
     </div>
 );
