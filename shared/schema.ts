@@ -157,8 +157,10 @@ export const schedules = sqliteTable("schedules", {
   startTime: integer("start_time", { mode: 'timestamp_ms' }).notNull(),
   endTime: integer("end_time", { mode: 'timestamp_ms' }).notNull(),
   
-  shiftName: text("shift_name"), // e.g. "Morning Shift", "Graveyard"
+  shiftType: text("shift_type"), // e.g. "Morning", "Afternoon", "Night"
   type: text("type").notNull(), // regular, overtime, training
+
+  shiftRole: text("shift_role"), // server, cook, manager (for better scheduling)
   
   location: text("location"), // "Main Office", "Site B"
   isRemote: integer("is_remote", { mode: 'boolean' }).default(false),

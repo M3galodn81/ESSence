@@ -642,40 +642,88 @@ export default function LeaveManagement() {
 
                                   {/* Collapsible Details */}
                                   {expandedUser === stat.id && (
-                                    <div className="bg-slate-50/50 border-t border-slate-100 p-4 animate-in slide-in-from-top-1 fade-in duration-200">
-                                      <Table>
-                                        <TableHeader>
-                                          <TableRow>
-                                            <TableHead className="w-[100px]">Type</TableHead>
-                                            <TableHead>Dates</TableHead>
-                                            <TableHead>Status</TableHead>
-                                            <TableHead className="text-right">Days</TableHead>
-                                          </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                          {stat.requests.map((req) => (
-                                            <TableRow key={req.id}>
-                                              <TableCell className="font-medium text-xs">{req.type === 'annual' ? 'Service' : 'Addtl'}</TableCell>
-                                              <TableCell className="text-xs text-slate-600">
-                                                {formatDate(req.startDate)} - {formatDate(req.endDate)}
-                                                {req.reason && <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{req.reason}</div>}
-                                              </TableCell>
-                                              <TableCell>
-                                                <Badge variant="outline" className={cn(
-                                                  "text-[10px] px-1.5 py-0",
-                                                  req.status === 'approved' ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                                                  req.status === 'rejected' ? "bg-rose-50 text-rose-700 border-rose-200" :
-                                                  "bg-amber-50 text-amber-700 border-amber-200"
-                                                )}>
-                                                  {req.status}
-                                                </Badge>
-                                              </TableCell>
-                                              <TableCell className="text-right text-xs font-mono">{req.days}</TableCell>
+                                    <div className="bg-slate-50/80 border-t border-slate-100 p-4 md:p-6 animate-in slide-in-from-top-2 fade-in duration-300">
+                                      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                                        <Table>
+                                          <TableHeader className="bg-slate-50/50">
+                                            <TableRow className="border-slate-100 hover:bg-transparent">
+                                              <TableHead className="w-[140px] font-semibold text-slate-700">Leave Type</TableHead>
+                                              <TableHead className="font-semibold text-slate-700">Duration & Reason</TableHead>
+                                              <TableHead className="w-[120px] font-semibold text-slate-700">Status</TableHead>
+                                              <TableHead className="w-[80px] text-right font-semibold text-slate-700">Days</TableHead>
                                             </TableRow>
-                                          ))}
-                                          {stat.requests.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-xs text-slate-400">No requests found</TableCell></TableRow>}
-                                        </TableBody>
-                                      </Table>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {stat.requests.length > 0 ? (
+                                              stat.requests.map((req) => (
+                                                <TableRow key={req.id} className="border-slate-100 hover:bg-slate-50/50 transition-colors">
+                                                  <TableCell className="align-top py-4">
+                                                    <div className="flex items-center gap-2">
+                                                      <div className={cn(
+                                                        "w-8 h-8 rounded-lg flex items-center justify-center border",
+                                                        req.type === 'annual' 
+                                                          ? "bg-blue-50 text-blue-600 border-blue-100" 
+                                                          : "bg-purple-50 text-purple-600 border-purple-100"
+                                                      )}>
+                                                        {req.type === 'annual' ? <Calendar className="w-4 h-4" /> : <Activity className="w-4 h-4" />}
+                                                      </div>
+                                                      <span className="font-medium text-sm text-slate-700">
+                                                        {req.type === 'annual' ? 'Service Incentive' : 'Addtl. Benefit'}
+                                                      </span>
+                                                    </div>
+                                                  </TableCell>
+                                                  
+                                                  <TableCell className="align-top py-4">
+                                                    <div className="flex flex-col gap-1">
+                                                      <span className="text-sm font-medium text-slate-900">
+                                                        {formatDate(req.startDate)} <span className="text-slate-400 mx-1">→</span> {formatDate(req.endDate)}
+                                                      </span>
+                                                      {req.reason ? (
+                                                        <span className="text-xs text-slate-500 italic flex items-start gap-1">
+                                                          <span className="shrink-0 mt-0.5 opacity-50">↳</span> "{req.reason}"
+                                                        </span>
+                                                      ) : (
+                                                        <span className="text-xs text-slate-400 opacity-50">No reason provided</span>
+                                                      )}
+                                                    </div>
+                                                  </TableCell>
+
+                                                  <TableCell className="align-top py-4">
+                                                    <Badge variant="outline" className={cn(
+                                                      "rounded-md px-2.5 py-1 text-xs font-medium capitalize shadow-sm",
+                                                      req.status === 'approved' && "bg-emerald-50 text-emerald-700 border-emerald-200",
+                                                      req.status === 'rejected' && "bg-rose-50 text-rose-700 border-rose-200",
+                                                      req.status === 'pending' && "bg-amber-50 text-amber-700 border-amber-200"
+                                                    )}>
+                                                      {req.status}
+                                                    </Badge>
+                                                    {req.status === 'rejected' && req.comments && (
+                                                      <div className="mt-2 text-[11px] text-rose-600 bg-rose-50 p-1.5 rounded border border-rose-100 max-w-[140px]">
+                                                        <span className="font-semibold">Reason:</span> {req.comments}
+                                                      </div>
+                                                    )}
+                                                  </TableCell>
+
+                                                  <TableCell className="align-top text-right py-4">
+                                                    <span className="font-bold text-slate-900 bg-slate-100 px-2 py-1 rounded-md text-sm">
+                                                      {req.days}
+                                                    </span>
+                                                  </TableCell>
+                                                </TableRow>
+                                              ))
+                                            ) : (
+                                              <TableRow>
+                                                <TableCell colSpan={4} className="h-24 text-center">
+                                                  <div className="flex flex-col items-center justify-center text-slate-400">
+                                                    <FileDown className="w-8 h-8 mb-2 opacity-20" />
+                                                    <p className="text-sm">No leave history found for this employee.</p>
+                                                  </div>
+                                                </TableCell>
+                                              </TableRow>
+                                            )}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
                                     </div>
                                   )}
                                 </div>
