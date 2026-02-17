@@ -158,8 +158,6 @@ export const schedules = sqliteTable("schedules", {
   endTime: integer("end_time", { mode: 'timestamp_ms' }).notNull(),
   
   shiftType: text("shift_type"), // e.g. "Morning", "Afternoon", "Night"
-  type: text("type").notNull(), // regular, overtime, training
-
   shiftRole: text("shift_role"), // server, cook, manager (for better scheduling)
   
   location: text("location"), // "Main Office", "Site B"

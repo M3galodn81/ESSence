@@ -767,8 +767,7 @@ async function seed() {
         date: workDate,
         startTime: start,
         endTime: end,
-        shiftType: shiftTimeType.charAt(0).toUpperCase() + shiftTimeType.slice(1), // "Morning", "Afternoon", "Night"
-        type: "regular", // The "type" column now refers to employment category (regular/overtime)
+        shiftType: shiftTimeType, // "Morning", "Afternoon", "Night"
         shiftRole: mappedRole, // Now explicitly using the column
         location: emp.department === 'Kitchen' ? 'Kitchen' : 'Main Hall',
         isRemote: false,

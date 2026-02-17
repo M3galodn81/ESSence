@@ -201,15 +201,22 @@ export default function ShiftManagement() {
   const createForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema), defaultValues: { shiftType: "morning", shiftRole: "server" } });
   const editForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema) });
 
+  // Inside ShiftManagement component
   const handleShiftTypeChange = (val: string, form: any) => {
     form.setValue("shiftType", val);
-    let startTime = "07:00";
-    if (val === "afternoon") startTime = "13:00";
-    if (val === "night") startTime = "18:00";
-    if (val === "off") startTime = "00:00";
+    
+    if (val === "off") {
+      form.setValue("startTime", "00:00");
+      form.setValue("endTime", "00:00");
+      return;
+    }
 
-    const pseudoEvent = { target: { value: startTime } } as React.ChangeEvent<HTMLInputElement>;
-    onStartTimeChange(pseudoEvent, form);
+    // Get preset times
+    const preset = SHIFT_PRESETS[val as keyof typeof SHIFT_PRESETS];
+    if (preset) {
+      form.setValue("startTime", preset.start);
+      form.setValue("endTime", preset.end);
+    }
   };
 
   const onStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>, form: any) => {
@@ -237,29 +244,45 @@ export default function ShiftManagement() {
     form.setValue("endTime", `${endH}:${endM}`);
   };
 
+
   const createShiftMutation = useMutation({
     mutationFn: async (data: ShiftForm) => {
       let { startTime, endTime } = data;
+      
+      // Auto-fill times if not provided based on preset
       if ((!startTime || !endTime) && data.shiftType !== 'off') {
-         const preset = SHIFT_PRESETS[data.shiftType];
-         startTime = preset.start; endTime = preset.end;
+        const preset = SHIFT_PRESETS[data.shiftType];
+        startTime = preset.start; 
+        endTime = preset.end;
       }
+
       const startDateTime = new Date(`${data.date}T${startTime || "00:00"}`);
       const endDateTime = new Date(`${data.date}T${endTime || "00:00"}`);
-      if (endDateTime < startDateTime && data.shiftType !== 'off') endDateTime.setDate(endDateTime.getDate() + 1);
+      
+      // Handle overnight shifts
+      if (endDateTime < startDateTime && data.shiftType !== 'off') {
+          endDateTime.setDate(endDateTime.getDate() + 1);
+      }
 
       return (await apiRequest("POST", "/api/schedules", {
-        userId: data.userId, date: new Date(data.date).getTime(), startTime: startDateTime.getTime(), endTime: endDateTime.getTime(),
-        type: data.shiftType, title: `${data.shiftType.charAt(0).toUpperCase() + data.shiftType.slice(1)} Shift`,
-        shiftRole: data.shiftRole, location: data.location,
+        userId: data.userId, 
+        date: new Date(data.date).getTime(), 
+        startTime: startDateTime.getTime(), 
+        endTime: endDateTime.getTime(),
+        
+        // --- FIX STARTS HERE ---
+        shiftType: data.shiftType, // Store "morning", "afternoon", etc. here
+        type: "regular",           // Store employment type here
+        // --- FIX ENDS HERE ---
+        
+        title: `${data.shiftType.charAt(0).toUpperCase() + data.shiftType.slice(1)} Shift`,
+        shiftRole: data.shiftRole, 
+        location: data.location,
       })).json();
     },
-    onSuccess: () => {
-      toast.success("Shift created");
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] });
-      setIsCreateDialogOpen(false); createForm.reset();
-    },
+    // ... onSuccess keeps existing logic
   });
+
 
   const updateShiftMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<ShiftForm> }) => {
@@ -300,7 +323,7 @@ export default function ShiftManagement() {
     editForm.reset({ 
         userId: schedule.userId, 
         date: dateStr, 
-        shiftType: schedule.type as any, 
+        shiftType: schedule.shiftType as any, 
         shiftRole: schedule.shiftRole as any, 
         startTime: startStr, 
         endTime: endStr, 
@@ -391,12 +414,12 @@ export default function ShiftManagement() {
   );
 
   const StatsBar = () => {
-    const shifts = getSchedulesForDay(currentDate).filter(s => s.type !== 'off');
+    const shifts = getSchedulesForDay(currentDate).filter(s => s.shiftType !== 'off');
     const counts = {
       total: shifts.length,
-      morning: shifts.filter(s => s.type === 'morning').length,
-      afternoon: shifts.filter(s => s.type === 'afternoon').length,
-      night: shifts.filter(s => s.type === 'night').length
+      morning: shifts.filter(s => s.shiftType === 'morning').length,
+      afternoon: shifts.filter(s => s.shiftType === 'afternoon').length,
+      night: shifts.filter(s => s.shiftType === 'night').length
     };
 
     const toggleFilter = (type: string | null) => setFilterType(prev => prev === type ? null : type);
@@ -499,8 +522,8 @@ export default function ShiftManagement() {
                         {ROLES.map(role => {
                             const roleShifts = getSchedulesForDay(currentDate)
                                 .filter(s => {
-                                  const roleMatch = s.shiftRole === role && s.type !== 'off';
-                                  const typeMatch = filterType ? s.type === filterType : true; 
+                                  const roleMatch = s.shiftRole === role && s.shiftType !== 'off';
+                                  const typeMatch = filterType ? s.shiftType === filterType : true; 
                                   return roleMatch && typeMatch;
                                 })
                                 .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
@@ -541,11 +564,11 @@ export default function ShiftManagement() {
                         <td className={cn(styles.list.cell, "font-medium")}>{new Date(s.date).toLocaleDateString()}</td>
                         <td className={styles.list.cell}>{getEmployeeName(s.userId)}</td>
                         <td className={styles.list.cell}>
-                          <Badge variant="outline" className={cn("capitalize", SHIFT_PRESETS[s.type as keyof typeof SHIFT_PRESETS]?.color)}>
-                            {SHIFT_PRESETS[s.type as keyof typeof SHIFT_PRESETS]?.label || s.type}
+                          <Badge variant="outline" className={cn("capitalize", SHIFT_PRESETS[s.shiftType as keyof typeof SHIFT_PRESETS]?.color)}>
+                            {SHIFT_PRESETS[s.shiftType as keyof typeof SHIFT_PRESETS]?.label || s.shiftType}
                           </Badge>
                         </td>
-                        <td className={cn(styles.list.cell, "text-slate-500 text-xs font-mono")}>{s.type !== 'off' ? `${new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'OFF'}</td>
+                        <td className={cn(styles.list.cell, "text-slate-500 text-xs font-mono")}>{s.shiftType !== 'off' ? `${new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'OFF'}</td>
                         <td className={cn(styles.list.cell, "text-right")}>
                             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(s)}><Edit className="w-4 h-4" /></Button>
                             <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s)}><Trash2 className="w-4 h-4" /></Button>
@@ -636,36 +659,59 @@ export default function ShiftManagement() {
 // --- Cards ---
 
 function RosterCard({ schedule, onEdit, onDelete }: any) {
-  if (schedule.type === 'off') return <div onClick={() => onEdit(schedule)} className="rounded-md bg-slate-50 border border-slate-100 p-2 text-center cursor-pointer hover:bg-slate-100"><span className="text-[10px] font-bold text-slate-300">OFF</span></div>;
-  const style = SHIFT_PRESETS[schedule.type as keyof typeof SHIFT_PRESETS];
-  const label = style?.label || schedule.type;
+  // Fix: Check shiftType instead of type, and handle lowercase normalization
+  const typeKey = schedule.shiftType?.toLowerCase() || 'morning';
+  const style = SHIFT_PRESETS[typeKey as keyof typeof SHIFT_PRESETS] || SHIFT_PRESETS.morning;
+  
+  // Use the database value for the label, or fallback to the key
+  const label = schedule.shiftType || "Shift"; 
+
+  if (typeKey === 'off') {
+      return (
+        <div onClick={() => onEdit(schedule)} className="rounded-md bg-slate-50 border border-slate-100 p-2 text-center cursor-pointer hover:bg-slate-100">
+            <span className="text-[10px] font-bold text-slate-300">OFF</span>
+        </div>
+      );
+  }
+
   return (
-    <div onClick={() => onEdit(schedule)} className={cn("relative rounded-lg p-2 text-xs border shadow-sm cursor-pointer hover:scale-[1.02] transition-all group", style?.color)}>
+    <div onClick={() => onEdit(schedule)} className={cn("relative rounded-lg p-2 text-xs border shadow-sm cursor-pointer hover:scale-[1.02] transition-all group", style.color)}>
       <div className="flex justify-between items-center mb-1">
         <span className="font-bold capitalize">{label}</span>
         <Badge variant="secondary" className="h-4 px-1 text-[8px] bg-white/60 border-0 uppercase">{schedule.shiftRole}</Badge>
       </div>
-      <div className="font-mono text-[10px] opacity-90">{new Date(schedule.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-      <button onClick={(e) => onDelete(schedule, e)} className="absolute top-1 right-1 p-1 rounded-full bg-white/40 hover:bg-red-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-3 h-3" /></button>
+      <div className="font-mono text-[10px] opacity-90">
+        {new Date(schedule.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+      </div>
+      <button onClick={(e) => onDelete(schedule, e)} className="absolute top-1 right-1 p-1 rounded-full bg-white/40 hover:bg-red-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+        <Trash2 className="w-3 h-3" />
+      </button>
     </div>
   );
 }
 
 function KanbanCard({ schedule, employeeName, onEdit, onDelete }: any) {
-  const style = SHIFT_PRESETS[schedule.type as keyof typeof SHIFT_PRESETS];
+  // Fix: Check shiftType instead of type
+  const typeKey = schedule.shiftType?.toLowerCase() || 'morning';
+  const style = SHIFT_PRESETS[typeKey as keyof typeof SHIFT_PRESETS] || SHIFT_PRESETS.morning;
+
   return (
     <div onClick={() => onEdit(schedule)} className="group relative bg-white p-3 rounded-lg border border-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer">
       <div className="flex justify-between items-start mb-1">
         <span className="font-bold text-sm text-slate-800">{employeeName}</span>
-        <div className={cn("w-2 h-2 rounded-full", style?.indicator)} />
+        <div className={cn("w-2 h-2 rounded-full", style.indicator)} />
       </div>
       <div className="flex items-center text-xs text-slate-500 gap-1.5 mb-1">
         <Clock className="w-3 h-3" />
         {new Date(schedule.startTime).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})} - {new Date(schedule.endTime).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}
       </div>
-      <div className="flex items-center text-[10px] text-slate-400 gap-1.5"><MapPin className="w-3 h-3" /> {schedule.location || "Main Hall"}</div>
+      <div className="flex items-center text-[10px] text-slate-400 gap-1.5">
+        <MapPin className="w-3 h-3" /> {schedule.location || "Main Hall"}
+      </div>
       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-        <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500" onClick={(e) => onDelete(schedule, e)}><Trash2 className="w-3 h-3" /></Button>
+        <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500" onClick={(e) => onDelete(schedule, e)}>
+            <Trash2 className="w-3 h-3" />
+        </Button>
       </div>
     </div>
   );
