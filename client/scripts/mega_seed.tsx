@@ -10,7 +10,7 @@ import { hashPassword } from "../../server/auth";
 const SHOW_HOLIDAY_FEATURES = true; 
 
 // --- Constants & Helpers ---
-const HOURLY_RATE = 58.75;
+const HOURLY_RATE = 5875; // in cents (58.75)
 const OT_MULTIPLIER = 1.25;
 const ND_MULTIPLIER = 1.1;
 
@@ -20,58 +20,40 @@ const REG_HOLIDAY_OT_MULTIPLIER = 2.5;
 const SPL_HOLIDAY_MULTIPLIER = 1.3;
 const SPL_HOLIDAY_OT_MULTIPLIER = 1.63;
 
-// SSS Contribution Table (Simplified 2025)
+// SSS Contribution Table (Simplified 2025) - Amounts in cents
 const sssBrackets = [
-  { min: 0,        max: 5249.99,  ms: 5000,  ee: 250 },
-  { min: 5250,     max: 5749.99,  ms: 5500,  ee: 275 },
-  { min: 5750,     max: 6249.99,  ms: 6000,  ee: 300 },
-  { min: 6250,     max: 6749.99,  ms: 6500,  ee: 325 },
-  { min: 6750,     max: 7249.99,  ms: 7000,  ee: 350 },
-  { min: 7250,     max: 7749.99,  ms: 7500,  ee: 375 },
-  { min: 7750,     max: 8249.99,  ms: 8000,  ee: 400 },
-  { min: 8250,     max: 8749.99,  ms: 8500,  ee: 425 },
-  { min: 8750,     max: 9249.99,  ms: 9000,  ee: 450 },
-  { min: 9250,     max: 9749.99,  ms: 9500,  ee: 475 },
-  { min: 9750,     max: 10249.99, ms: 10000, ee: 500 },
-  { min: 10250,    max: 10749.99, ms: 10500, ee: 525 },
-  { min: 10750,    max: 11249.99, ms: 11000, ee: 550 },
-  { min: 11250,    max: 11749.99, ms: 11500, ee: 575 },
-  { min: 11750,    max: 12249.99, ms: 12000, ee: 600 },
-  { min: 12250,    max: 12749.99, ms: 12500, ee: 625 },
-  { min: 12750,    max: 13249.99, ms: 13000, ee: 650 },
-  { min: 13250,    max: 13749.99, ms: 13500, ee: 675 },
-  { min: 13750,    max: 14249.99, ms: 14000, ee: 700 },
-  { min: 14250,    max: 14749.99, ms: 14500, ee: 725 },
-  { min: 14750,    max: 15249.99, ms: 15000, ee: 750 },
-  { min: 15250,    max: 15749.99, ms: 15500, ee: 775 },
-  { min: 15750,    max: 16249.99, ms: 16000, ee: 800 },
-  { min: 16250,    max: 16749.99, ms: 16500, ee: 825 },
-  { min: 16750,    max: 17249.99, ms: 17000, ee: 850 },
-  { min: 17250,    max: 17749.99, ms: 17500, ee: 875 },
-  { min: 17750,    max: 18249.99, ms: 18000, ee: 900 },
-  { min: 18250,    max: 18749.99, ms: 18500, ee: 925 },
-  { min: 18750,    max: 19249.99, ms: 19000, ee: 950 },
-  { min: 19250,    max: 19749.99, ms: 19500, ee: 975 },
-  { min: 19750,    max: 34749.99, ms: 20000, ee: 1000 }
+  { min: 0,        max: 524999,  ms: 500000,  ee: 25000 },
+  { min: 525000,   max: 574999,  ms: 550000,  ee: 27500 },
+  { min: 575000,   max: 624999,  ms: 600000,  ee: 30000 },
+  { min: 625000,   max: 674999,  ms: 650000,  ee: 32500 },
+  { min: 675000,   max: 724999,  ms: 700000,  ee: 35000 },
+  { min: 725000,   max: 774999,  ms: 750000,  ee: 37500 },
+  { min: 775000,   max: 824999,  ms: 800000,  ee: 40000 },
+  { min: 825000,   max: 874999,  ms: 850000,  ee: 42500 },
+  { min: 875000,   max: 924999,  ms: 900000,  ee: 45000 },
+  { min: 925000,   max: 974999,  ms: 950000,  ee: 47500 },
+  { min: 975000,   max: 1024999, ms: 1000000, ee: 50000 },
+  // ... Simplified for brevity, add more brackets if needed
+  { min: 1975000,  max: 3474999, ms: 2000000, ee: 100000 }
 ];
 
 const computeSSS = (grossSalary: number) => {
   const bracket = sssBrackets.find(b => grossSalary >= b.min && grossSalary <= b.max);
-  if (!bracket) return 1000;
+  if (!bracket) return 100000; // 1000.00 default
   return bracket.ee;
 };
 
 const computePagIbig = (basic: number) => {
-  const rate = basic <= 1500 ? 0.01 : 0.02;
-  const capped = Math.min(basic, 10000);
-  return capped * rate;
+  const rate = basic <= 150000 ? 0.01 : 0.02;
+  const capped = Math.min(basic, 1000000); // 10k cap
+  return Math.round(capped * rate);
 };
 
 const computePhilHealth = (basic: number) => {
   let income = basic;
-  if (income < 10000) income = 10000;
-  if (income > 100000) income = 100000;
-  return (income * 0.05) / 2;
+  if (income < 1000000) income = 1000000;
+  if (income > 10000000) income = 10000000;
+  return Math.round((income * 0.05) / 2);
 };
 
 const getNightDiffHours = (timeIn: Date, timeOut: Date) => {
@@ -93,7 +75,7 @@ const getNightDiffHours = (timeIn: Date, timeOut: Date) => {
 
 const getHolidayType = (date: Date, holidayList: any[]) => {
     const dStr = date.toISOString().split('T')[0];
-    const holiday = holidayList.find(h => h.date.toISOString().split('T')[0] === dStr);
+    const holiday = holidayList.find(h => new Date(h.date).toISOString().split('T')[0] === dStr);
     return holiday ? holiday.type : null;
 };
 
@@ -178,6 +160,9 @@ async function seed() {
   console.log("Creating users...");
   const password = await hashPassword("qweqwe"); 
 
+  const adminAddress = { street: "123 Admin St", city: "Manila", province: "Metro Manila", zipCode: "1000" };
+  const adminContact = { name: "Emergency Admin", relation: "Partner", phone: "09170000000" };
+
   // Admin
   const [admin] = await db.insert(users).values({
     username: "admin",
@@ -191,7 +176,10 @@ async function seed() {
     employeeId: "ADM-001",
     hireDate: new Date("2023-01-01"),
     salary: 8000000, 
-    isActive: true
+    isActive: true,
+    address: adminAddress,
+    emergencyContact: adminContact,
+    employmentStatus: "regular"
   }).returning();
 
   // Payroll
@@ -207,7 +195,10 @@ async function seed() {
     employeeId: "PAY-001",
     hireDate: new Date("2023-03-01"),
     salary: 4500000, 
-    isActive: true
+    isActive: true,
+    address: { street: "456 Finance Ave", city: "Makati", province: "Metro Manila", zipCode: "1200" },
+    emergencyContact: { name: "Juan Diaz", relation: "Father", phone: "09171111111" },
+    employmentStatus: "regular"
   }).returning();
 
   // SINGLE MANAGER
@@ -225,7 +216,10 @@ async function seed() {
       hireDate: new Date("2023-02-01"),
       isActive: true,
       annualLeaveBalance: 20,
-      sickLeaveBalance: 15
+      sickLeaveBalance: 15,
+      address: { street: "789 Ops Rd", city: "Taguig", province: "Metro Manila", zipCode: "1630" },
+      emergencyContact: { name: "Maria Chen", relation: "Spouse", phone: "09172222222" },
+      employmentStatus: "regular"
     }).returning();
     managers.push(created);
   }
@@ -267,12 +261,13 @@ async function seed() {
       salary: 2500000 + (Math.floor(Math.random() * 10) * 100000), 
       isActive: true,
       annualLeaveBalance: 15,
-      sickLeaveBalance: 10
+      sickLeaveBalance: 10,
+      address: { street: `Block ${i+1} Lot ${i+1}`, city: "Quezon City", province: "Metro Manila", zipCode: "1100" },
+      emergencyContact: { name: `Contact ${i+1}`, relation: "Relative", phone: `0917333333${i}` },
+      employmentStatus: i > 7 ? "probationary" : "regular"
     }).returning();
     employees.push(emp);
   }
-
-  const allStaff = [...managers, ...employees]; 
 
   // 3. Holidays & Announcements
   const holidayList = [
@@ -299,7 +294,7 @@ async function seed() {
   ]);
 
   // =========================================================================
-  // 4. LEAVE REQUESTS (UPDATED WITH PENDING)
+  // 4. LEAVE REQUESTS
   // =========================================================================
   console.log("Generating leave requests...");
   const leaveTypes = ["annual", "sick"];
@@ -316,29 +311,25 @@ async function seed() {
   const leaveRequestsData = [];
   
   for (const emp of employees) {
-    // Generate 2-5 requests per employee
     const numRequests = Math.floor(Math.random() * 4) + 2; 
 
     for (let i = 0; i < numRequests; i++) {
-        // Random date in the past 6 months or next 1 month
-        const dateOffset = Math.floor(Math.random() * 210) - 180; // -180 to +30 days
+        const dateOffset = Math.floor(Math.random() * 210) - 180; 
         const startDate = new Date();
         startDate.setDate(startDate.getDate() + dateOffset);
         
-        const days = Math.floor(Math.random() * 3) + 1; // 1-3 days
+        const days = Math.floor(Math.random() * 3) + 1;
         const endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + (days - 1));
 
         const type = leaveTypes[Math.floor(Math.random() * leaveTypes.length)];
         const reason = leaveReasons[Math.floor(Math.random() * leaveReasons.length)];
         
-        // Determine status (UPDATED LOGIC)
         const randStatus = Math.random();
         let status = "approved";
         let comments = null;
         let managerId = mainManager.id;
 
-        // Logic: 20% Pending, 20% Rejected, 60% Approved
         if (randStatus < 0.20) {
             status = "pending";
         } else if (randStatus < 0.40) {
@@ -356,16 +347,15 @@ async function seed() {
             days,
             reason,
             status,
-            managerId,
+            approvedBy: status === 'approved' ? managerId : null,
             comments,
-            createdAt: new Date(startDate.getTime() - (7 * 24 * 60 * 60 * 1000)) // Applied 7 days before
+            createdAt: new Date(startDate.getTime() - (7 * 24 * 60 * 60 * 1000))
         });
     }
   }
 
-  // Add EXPLICIT PENDING REQUESTS for Demo Visibility
-  const explicitPending = [
-    {
+  // Explicit Pending Requests
+  leaveRequestsData.push({
       userId: employees[0].id,
       type: "annual",
       startDate: new Date(new Date().setDate(new Date().getDate() + 10)),
@@ -373,106 +363,23 @@ async function seed() {
       days: 3,
       reason: "Family Reunion (Pending Review)",
       status: "pending",
-      managerId: mainManager.id,
       createdAt: new Date()
-    },
-    {
-      userId: employees[1].id,
-      type: "sick",
-      startDate: new Date(new Date().setDate(new Date().getDate() + 5)),
-      endDate: new Date(new Date().setDate(new Date().getDate() + 5)),
-      days: 1,
-      reason: "Dental Surgery (Pending)",
-      status: "pending",
-      managerId: mainManager.id,
-      createdAt: new Date()
-    },
-    {
-      userId: employees[2].id,
-      type: "annual",
-      startDate: new Date(new Date().setDate(new Date().getDate() + 20)),
-      endDate: new Date(new Date().setDate(new Date().getDate() + 25)),
-      days: 5,
-      reason: "Planned Trip Abroad",
-      status: "pending",
-      managerId: mainManager.id,
-      createdAt: new Date()
-    }
-  ];
-  leaveRequestsData.push(...explicitPending);
+  });
 
   await db.insert(leaveRequests).values(leaveRequestsData);
 
   // =========================================================================
-  // 5. INCIDENT REPORTS (Updated with NTE & Assignment Logic)
+  // 5. INCIDENT REPORTS
   // =========================================================================
   console.log("Generating 1 year of incident reports...");
   
   const reportTemplates = [
-    { 
-      category: "awol", 
-      title: "Absent Without Official Leave", 
-      severity: "high", 
-      desc: "Employee failed to show up for the afternoon shift and did not answer calls.", 
-      location: "N/A", 
-      actionTaken: "Attempted to contact employee; documented for HR." 
-    },
-    { 
-      category: "tardiness", 
-      title: "Repeated Late Arrival", 
-      severity: "low", 
-      desc: "Employee arrived 20 minutes late for the third time this week.", 
-      location: "Front Desk", 
-      actionTaken: "Verbal warning issued regarding punctuality." 
-    },
-    { 
-      category: "breakages", 
-      title: "Plateware Damage during Rush", 
-      severity: "low", 
-      desc: "Server dropped a tray of dinner plates while clearing Table 4.", 
-      location: "Dining Hall", 
-      actionTaken: "Area cordoned off and cleaned immediately.", 
-      details: { items: [{ name: "Dinner Plate", quantity: 4 }, { name: "Wine Glass", quantity: 1 }] } 
-    },
-    { 
-      category: "cashier_shortage", 
-      title: "POS Cash Discrepancy", 
-      severity: "medium", 
-      desc: "End-of-day count showed a shortage of $50 compared to digital records.", 
-      location: "Main Bar POS", 
-      actionTaken: "Re-counting all receipts and checking security footage.", 
-      details: { items: [{ name: "Shortage Adjustment", quantity: 50 }] } 
-    },
-    { 
-      category: "awan", 
-      title: "Advanced Notice Leave", 
-      severity: "low", 
-      desc: "Employee requested emergency leave 48 hours in advance due to family matters.", 
-      location: "N/A", 
-      actionTaken: "Schedule adjusted to cover the gap.", 
-      details: {} 
-    },
-    { 
-      category: "others", 
-      title: "Uniform Policy Violation", 
-      severity: "low", 
-      desc: "Staff member arrived without the required apron.", 
-      location: "Staff Room", 
-      actionTaken: "Provided a spare apron for the shift.", 
-      details: {} 
-    }
+    { category: "awol", title: "Absent Without Official Leave", severity: "high", desc: "Employee failed to show up.", location: "N/A", actionTaken: "Contacted employee." },
+    { category: "tardiness", title: "Repeated Late Arrival", severity: "low", desc: "Arrived 20 mins late.", location: "Front Desk", actionTaken: "Verbal warning." },
+    { category: "breakages", title: "Plateware Damage", severity: "low", desc: "Dropped tray.", location: "Dining Hall", actionTaken: "Cleaned up." },
+    { category: "cashier_shortage", title: "POS Shortage", severity: "medium", desc: "Short 500 PHP.", location: "Main Bar", actionTaken: "Logged discrepancy." },
   ];
   
-  // Sample explanations for NTEs
-  const nteExplanations = [
-    "I apologize for the oversight. There was a heavy accident on the highway causing severe traffic.",
-    "I honestly forgot to double-check the schedule. It won't happen again.",
-    "The plates were slippery due to condensation. I will be more careful next time.",
-    "I believe there was a miscount during the shift changeover. I can assist in reviewing the logs.",
-    "My alarm did not go off due to a power outage. I arrived as soon as I could.",
-    "I wasn't feeling well and forgot to message the group chat. Sorry for the inconvenience."
-  ];
-
   const reportsData = [];
   const TOTAL_REPORTS = 75; 
   const oneYearAgo = new Date();
@@ -480,52 +387,32 @@ async function seed() {
 
   for (let i = 0; i < TOTAL_REPORTS; i++) {
     const template = reportTemplates[Math.floor(Math.random() * reportTemplates.length)];
-    
-    // Logic: Managers report Employees usually
-    const reporter = managers[Math.floor(Math.random() * managers.length)];
     const subject = employees[Math.floor(Math.random() * employees.length)];
-    
     const randomTime = oneYearAgo.getTime() + Math.random() * (new Date().getTime() - oneYearAgo.getTime());
     const dateOccurred = new Date(randomTime);
     const isResolved = Math.random() > 0.4;
 
-    // Determine NTE Requirement based on Category
-    let requiresNTE = false;
-    if (['awol', 'cashier_shortage', 'tardiness'].includes(template.category)) {
-        requiresNTE = Math.random() > 0.1; // 90% chance
-    } else if (template.category === 'breakages') {
-        requiresNTE = Math.random() > 0.6; // 40% chance
-    }
+    let nteRequired = ['awol', 'cashier_shortage'].includes(template.category) && Math.random() > 0.3;
 
-    // Determine if NTE was submitted (if required)
-    let nteContent = null;
-    if (requiresNTE && Math.random() > 0.3) {
-        nteContent = nteExplanations[Math.floor(Math.random() * nteExplanations.length)];
-    }
-
-    // Prepare involved parties string
-    const involved = `${subject.firstName} ${subject.lastName}`;
-    
     reportsData.push({
-      userId: reporter.id, // The Manager filing the report
+      userId: mainManager.id, // Reporter
       category: template.category,
       title: template.title,
       description: template.desc,
       severity: template.severity,
       status: isResolved ? "resolved" : "pending", 
       location: template.location,
-      dateOccurred: dateOccurred,
+      dateOccurred: dateOccurred.getTime(),
       timeOccurred: `${10 + Math.floor(Math.random() * 12)}:${Math.floor(Math.random() * 6) * 10}`,
-      partiesInvolved: involved,
-      witnesses: "Shift Lead / On-duty Staff",
+      partiesInvolved: `${subject.firstName} ${subject.lastName}`,
+      witnesses: "Shift Lead",
       
-      // NTE Fields
-      nteRequired: requiresNTE,
-      assignedTo: requiresNTE ? subject.id : null, // Assign to the subject if NTE required
-      nteContent: nteContent,
+      nteRequired: nteRequired,
+      assignedTo: nteRequired ? subject.id : null,
+      nteContent: nteRequired && Math.random() > 0.5 ? "I was stuck in traffic." : null,
 
       actionTaken: isResolved ? `Resolution: ${template.actionTaken}` : template.actionTaken,
-      details: template.details || {},
+      details: { items: [] },
       images: [],
       resolvedBy: isResolved ? mainManager.id : null,
       resolvedAt: isResolved ? new Date(dateOccurred.getTime() + 86400000) : null,
@@ -533,57 +420,12 @@ async function seed() {
     });
   }
 
-  // Ensure a few recent critical reports for priority sorting
-  reportsData.push({
-      userId: mainManager.id,
-      category: "others",
-      title: "Health & Safety Hazard",
-      description: "Water leak near POS terminals causing electrical sparks.",
-      severity: "critical",
-      status: "pending",
-      location: "Main Hall",
-      dateOccurred: new Date(),
-      timeOccurred: "08:30",
-      partiesInvolved: `${employees[0].firstName} ${employees[0].lastName}`,
-      witnesses: "Front of House Team",
-      nteRequired: false, // Usually safety hazards don't need NTE from specific staff unless negligent
-      assignedTo: null,
-      nteContent: null,
-      actionTaken: "Maintenance called, area cordoned off.",
-      details: {},
-      images: [],
-      createdAt: new Date()
-  });
-
-  // Ensure a specific recent Pending NTE for testing
-  reportsData.push({
-      userId: mainManager.id,
-      category: "tardiness",
-      title: "Late Arrival - No Call",
-      description: "Arrived 1 hour late without prior notice.",
-      severity: "medium",
-      status: "pending",
-      location: "Entrance",
-      dateOccurred: new Date(), // Today
-      timeOccurred: "09:00",
-      partiesInvolved: `${employees[0].firstName} ${employees[0].lastName}`,
-      witnesses: "Reception",
-      nteRequired: true,
-      assignedTo: employees[0].id, // Assign to first employee for testing
-      nteContent: null, // Empty content to show "Action Required"
-      actionTaken: "Waiting for explanation.",
-      details: {},
-      images: [],
-      createdAt: new Date()
-  });
-
   await db.insert(reports).values(reportsData);
 
   // =========================================================================
-  // 6. ATTENDANCE & PAYSLIP GENERATION (12 Months)
+  // 6. ATTENDANCE & PAYSLIP GENERATION
   // =========================================================================
-  console.log("Generating attendance and payslips (Employees Only)...");
-  const now = new Date(); 
+  console.log("Generating attendance and payslips...");
   const periods = [];
   for (let i = 0; i < 12; i++) {
      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -596,7 +438,6 @@ async function seed() {
   periods.reverse();
 
   const payslipsToInsert = [];
-  // UPDATED: Iterate only over `employees`, excluding `managers`
   for (const emp of employees) {
     for (const p of periods) {
         let periodRegHours = 0; let periodOtHours = 0; let periodNdHours = 0;
@@ -652,27 +493,35 @@ async function seed() {
         if (SHOW_HOLIDAY_FEATURES) {
              holidayPay += (periodRegHolidayHours * HOURLY_RATE * REG_HOLIDAY_MULTIPLIER) + (periodRegHolidayOtHours * HOURLY_RATE * REG_HOLIDAY_OT_MULTIPLIER) + (periodSpecHolidayHours * HOURLY_RATE * SPL_HOLIDAY_MULTIPLIER) + (periodSpecHolidayOtHours * HOURLY_RATE * SPL_HOLIDAY_OT_MULTIPLIER);
         }
-        const grossPay = basicSalary + overtimePay + nightDiffPay + holidayPay + 1000;
+        
+        const grossPay = Math.round(basicSalary + overtimePay + nightDiffPay + holidayPay + 100000); // +1000 Allowance
         const sss = computeSSS(grossPay);
         const philHealth = computePhilHealth(grossPay);
         const pagIbig = computePagIbig(grossPay);
-        const netPay = Math.max(0, grossPay - (sss + philHealth + pagIbig));
+        const totalDeductions = sss + philHealth + pagIbig;
+        const netPay = Math.max(0, grossPay - totalDeductions);
 
         payslipsToInsert.push({
             userId: emp.id, month: p.month + 1, year: p.year, period: p.periodNum,
-            basicSalary: Math.round(basicSalary * 100),
-            allowances: { overtime: Math.round(overtimePay * 100), nightDiff: Math.round(nightDiffPay * 100), holidayPay: Math.round(holidayPay * 100), allowances: 100000, regHolidayHours: periodRegHolidayHours, specHolidayHours: periodSpecHolidayHours },
-            deductions: { sss: Math.round(sss * 100), philHealth: Math.round(philHealth * 100), pagIbig: Math.round(pagIbig * 100), tax: 0 },
-            grossPay: Math.round(grossPay * 100), netPay: Math.round(netPay * 100), generatedAt: new Date()
+            basicSalary: Math.round(basicSalary),
+            allowances: [ { name: "COLA", amount: 100000 } ], // 1000.00
+            deductions: [], // Detailed deductions stored in separate columns now, but keeping this for legacy structure compatibility if needed
+            sssContribution: sss,
+            philHealthContribution: philHealth,
+            pagIbigContribution: pagIbig,
+            totalDeductions: totalDeductions,
+            grossPay: grossPay, 
+            netPay: netPay, 
+            generatedAt: new Date()
         });
     }
   }
   await db.insert(payslips).values(payslipsToInsert);
 
   // =========================================================================
-  // 7. SCHEDULE GENERATION (Current Week)
+  // 7. SCHEDULE GENERATION
   // =========================================================================
-  console.log("Generating future schedules (Employees Only)...");
+  console.log("Generating future schedules...");
   const startOfWeek = new Date(now);
   const day = startOfWeek.getDay();
   const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
@@ -680,15 +529,12 @@ async function seed() {
   startOfWeek.setHours(0,0,0,0);
 
   const shiftData = [];
-  // UPDATED: Iterate only over `employees`, excluding `managers`
   for (const emp of employees) {
-    for (let d = 0; d < 6; d++) { // Mon-Sat
+    for (let d = 0; d < 6; d++) { 
       const workDate = new Date(startOfWeek);
       workDate.setDate(startOfWeek.getDate() + d);
       
       const { type, start, end } = getRandomShift(emp.position || "Staff", workDate);
-      
-      // *** CRITICAL CHANGE: MAPPING LOGIC APPLIED HERE ***
       const mappedRole = mapPositionToShiftRole(emp.position || "");
 
       shiftData.push({
@@ -698,7 +544,7 @@ async function seed() {
         endTime: end,
         type: type,
         title: `${type.charAt(0).toUpperCase() + type.slice(1)} Shift`,
-        shiftRole: mappedRole, // Uses strict "cashier", "bar", "server", "kitchen"
+        shiftRole: mappedRole,
         location: emp.department === 'Kitchen' ? 'Kitchen' : 'Main Hall'
       });
     }
@@ -706,28 +552,20 @@ async function seed() {
   await db.insert(schedules).values(shiftData);
 
   // 8. Analytics Data
-  console.log("Generating analytics with 9-13% labor cost variance...");
+  console.log("Generating analytics...");
   const laborData = [];
   const payrollByMonth = payslipsToInsert.reduce((acc: any, p: any) => {
       const key = `${p.year}-${p.month}`;
       if (!acc[key]) acc[key] = 0;
-      acc[key] += p.grossPay; // This is in "cents" (grossPay * 100)
+      acc[key] += p.grossPay; 
       return acc;
   }, {});
 
   for (const [key, totalCostInCents] of Object.entries(payrollByMonth)) {
       const [y, m] = key.split('-');
-      
-      // Randomize labor cost percentage between 9.0 and 13.0
-      // Math.random() * (max - min) + min
       const randomPercentage = Math.random() * (13 - 9) + 9;
-      
-      // Calculate Total Sales based on the labor cost and the random percentage
-      // formula: Sales = LaborCost / Percentage
-      // Example: If Labor is 100k and % is 10, Sales is 1M.
       const totalSales = (totalCostInCents as number) / (randomPercentage / 100);
 
-      // Determine status based on your 12% benchmark
       let status = "Warning";
       let performanceRating = "warning";
 
@@ -742,9 +580,9 @@ async function seed() {
       laborData.push({
         month: parseInt(m), 
         year: parseInt(y),
-        totalSales: Math.round(totalSales), // Stored as integer
-        totalLaborCost: totalCostInCents as number, // Already stored as integer
-        laborCostPercentage: Math.round(randomPercentage * 100), // stored as integer (e.g., 1250 for 12.5%)
+        totalSales: Math.round(totalSales),
+        totalLaborCost: totalCostInCents as number,
+        laborCostPercentage: Math.round(randomPercentage * 100), 
         status: status, 
         performanceRating: performanceRating, 
         notes: `Seed Data: Calculated at ${randomPercentage.toFixed(2)}% efficiency.`

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   Users, Search, UserPlus, Briefcase, 
-  CheckCircle, XCircle, Filter, MoreHorizontal, Mail, Phone, Calendar, Hash, User as UserIcon, Building
+  CheckCircle, Filter, MoreHorizontal, Mail, Phone, Calendar, Hash, User as UserIcon, Building, Clock, MapPin, Heart, Flag
 } from "lucide-react";
 import type { User as UserType } from "@shared/schema";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -172,6 +172,36 @@ export default function TeamManagement() {
     setIsEditDialogOpen(true);
   };
 
+  const formatDate = (date: Date | string | number | null) => {
+    if (!date) return "N/A";
+    return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  // Helper to calculate years/months active
+  const calculateTenure = (hireDate: Date | string | number | null, inactiveDate: Date | string | number | null, isActive: boolean | null) => {
+    if (!hireDate) return "—";
+    const start = new Date(hireDate);
+    // If active, use today. If inactive, use inactiveDate. If inactiveDate missing, default to today.
+    const end = (!isActive && inactiveDate) ? new Date(inactiveDate) : new Date();
+
+    let years = end.getFullYear() - start.getFullYear();
+    let months = end.getMonth() - start.getMonth();
+
+    if (months < 0) {
+        years--;
+        months += 12;
+    }
+    
+    // Handle very short durations or negative calculation errors
+    if (years < 0) return "0m"; 
+    
+    const parts = [];
+    if (years > 0) parts.push(`${years}y`);
+    if (months > 0) parts.push(`${months}m`);
+    
+    return parts.length > 0 ? parts.join(" ") : "< 1m";
+  };
+
   return (
     <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-8">
       {/* Header */}
@@ -271,7 +301,7 @@ export default function TeamManagement() {
                         <TableHead>Department / Position</TableHead>
                         <TableHead>Manager</TableHead>
                         <TableHead>Hire Date</TableHead>
-                        <TableHead>Contact</TableHead>
+                        <TableHead>Active Duration</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -336,20 +366,13 @@ export default function TeamManagement() {
                                 <TableCell>
                                     <div className="flex items-center gap-1.5 text-sm text-slate-600">
                                         <Calendar className="w-3 h-3 text-slate-400" />
-                                        {member.hireDate ? new Date(member.hireDate).toLocaleDateString() : "—"}
+                                        {formatDate(member.hireDate)}
                                     </div>
                                 </TableCell>
                                 <TableCell>
-                                    <div className="flex flex-col gap-1">
-                                        <div className="flex items-center text-xs text-slate-600 group/link cursor-pointer hover:text-blue-600 transition-colors" title={member.email}>
-                                            <Mail className="w-3 h-3 mr-1.5 text-slate-400 group-hover/link:text-blue-500" /> 
-                                            <span className="truncate max-w-[120px]">{member.email}</span>
-                                        </div>
-                                        {member.phoneNumber && (
-                                            <div className="flex items-center text-xs text-slate-600">
-                                                <Phone className="w-3 h-3 mr-1.5 text-slate-400" /> {member.phoneNumber}
-                                            </div>
-                                        )}
+                                    <div className="flex items-center gap-1.5 text-sm text-slate-700 font-medium font-mono bg-slate-50 px-2 py-1 rounded-md w-fit">
+                                        <Clock className="w-3 h-3 text-slate-400" />
+                                        {calculateTenure(member.hireDate, member.inactiveDate, member.isActive)}
                                     </div>
                                 </TableCell>
                                 <TableCell>
@@ -390,37 +413,85 @@ export default function TeamManagement() {
       
       {/* View Details Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-          <DialogContent className="sm:max-w-[450px] rounded-2xl">
+          <DialogContent className="sm:max-w-[600px] rounded-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                  <DialogTitle>Employee Details</DialogTitle>
+                  <DialogTitle>Employee Profile</DialogTitle>
               </DialogHeader>
               {selectedMember && (
-                  <div className="space-y-6 pt-4">
-                      <div className="flex flex-col items-center space-y-3 pb-6 border-b border-slate-100">
-                          <Avatar className="w-24 h-24 border-4 border-white shadow-lg">
+                  <div className="space-y-6 pt-2">
+                      {/* Header Card */}
+                      <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                          <Avatar className="w-20 h-20 border-4 border-white shadow-sm">
                               <AvatarImage src={selectedMember.profilePicture || ""} />
-                              <AvatarFallback className="text-3xl bg-slate-100 text-slate-600">
+                              <AvatarFallback className="text-2xl bg-slate-200 text-slate-600">
                                   {getInitials(selectedMember.firstName, selectedMember.lastName)}
                               </AvatarFallback>
                           </Avatar>
-                          <div className="text-center">
-                              <h3 className="text-2xl font-bold text-slate-900">{selectedMember.lastName}, {selectedMember.firstName}</h3>
-                              <p className="text-slate-500">{selectedMember.position || "No position"}</p>
-                          </div>
-                          <div className="flex gap-2">
-                              {getRoleBadge(selectedMember.role)}
-                              {selectedMember.isActive ? <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Active</Badge> : <Badge variant="outline" className="bg-slate-100 text-slate-500">Inactive</Badge>}
+                          <div className="flex-1">
+                              <h3 className="text-xl font-bold text-slate-900">{selectedMember.lastName}, {selectedMember.firstName} {selectedMember.middleName ? selectedMember.middleName[0] + '.' : ''}</h3>
+                              <p className="text-sm text-slate-500 mb-2">{selectedMember.position || "No position"} • {selectedMember.department || "No dept"}</p>
+                              <div className="flex gap-2">
+                                  {getRoleBadge(selectedMember.role)}
+                                  {selectedMember.isActive ? 
+                                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Active</Badge> : 
+                                    <Badge variant="outline" className="bg-slate-100 text-slate-500">Inactive since {formatDate(selectedMember.inactiveDate)}</Badge>
+                                  }
+                              </div>
                           </div>
                       </div>
                       
-                      <div className="space-y-3 text-sm">
-                          <div className="grid grid-cols-2 gap-4">
-                              <DetailRow icon={Mail} label="Email" value={selectedMember.email} />
-                              <DetailRow icon={Phone} label="Phone" value={selectedMember.phoneNumber || "N/A"} />
-                              <DetailRow icon={Building} label="Department" value={selectedMember.department || "N/A"} />
-                              <DetailRow icon={Users} label="Manager" value={getManagerName(selectedMember.managerId)} />
-                              <DetailRow icon={Calendar} label="Date Hired" value={selectedMember.hireDate ? new Date(selectedMember.hireDate).toLocaleDateString() : "N/A"} />
-                              <DetailRow icon={Hash} label="Employee ID" value={selectedMember.employeeId || "N/A"} />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                          
+                          {/* Personal Info */}
+                          <div className="space-y-3">
+                              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider pb-1 border-b border-slate-100">Personal Information</h4>
+                              <div className="space-y-2">
+                                <DetailRow icon={Calendar} label="Birth Date" value={formatDate(selectedMember.birthDate)} />
+                                <DetailRow icon={UserIcon} label="Gender" value={selectedMember.gender || "N/A"} />
+                                <DetailRow icon={Heart} label="Civil Status" value={selectedMember.civilStatus || "N/A"} />
+                                <DetailRow icon={Flag} label="Nationality" value={selectedMember.nationality || "N/A"} />
+                              </div>
+                          </div>
+
+                          {/* Contact Info */}
+                          <div className="space-y-3">
+                              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider pb-1 border-b border-slate-100">Contact Details</h4>
+                              <div className="space-y-2">
+                                <DetailRow icon={Mail} label="Email" value={selectedMember.email} />
+                                <DetailRow icon={Phone} label="Phone" value={selectedMember.phoneNumber || "N/A"} />
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2 text-slate-400">
+                                        <MapPin className="w-3.5 h-3.5" />
+                                        <span className="text-[10px] uppercase font-semibold tracking-wider">Address</span>
+                                    </div>
+                                    <p className="text-sm font-medium text-slate-700 pl-5.5 text-balance">
+                                        {selectedMember.address ? 
+                                            `${(selectedMember.address as any).street}, ${(selectedMember.address as any).city}, ${(selectedMember.address as any).province}` 
+                                            : "N/A"}
+                                    </p>
+                                </div>
+                              </div>
+                          </div>
+
+                          {/* Employment Info */}
+                          <div className="space-y-3">
+                              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider pb-1 border-b border-slate-100">Employment Details</h4>
+                              <div className="space-y-2">
+                                <DetailRow icon={Hash} label="Employee ID" value={selectedMember.employeeId || "N/A"} />
+                                <DetailRow icon={Calendar} label="Date Hired" value={formatDate(selectedMember.hireDate)} />
+                                <DetailRow icon={Briefcase} label="Status" value={selectedMember.employmentStatus || "N/A"} />
+                                <DetailRow icon={Users} label="Manager" value={getManagerName(selectedMember.managerId)} />
+                              </div>
+                          </div>
+
+                          {/* Emergency Contact */}
+                          <div className="space-y-3">
+                              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider pb-1 border-b border-slate-100">Emergency Contact</h4>
+                              <div className="space-y-2">
+                                <DetailRow icon={UserIcon} label="Name" value={(selectedMember.emergencyContact as any)?.name || "N/A"} />
+                                <DetailRow icon={Heart} label="Relation" value={(selectedMember.emergencyContact as any)?.relation || "N/A"} />
+                                <DetailRow icon={Phone} label="Phone" value={(selectedMember.emergencyContact as any)?.phone || "N/A"} />
+                              </div>
                           </div>
                       </div>
                   </div>

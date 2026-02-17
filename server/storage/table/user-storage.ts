@@ -28,7 +28,7 @@ export class UserStorage extends BaseStorage{
       await this.createActivity({
         userId: userId || result[0].id,
         type: "user_created",
-        description: `User ${insertUser.firstName} ${insertUser.lastName} created`,
+        details: `User ${insertUser.firstName} ${insertUser.lastName} created`,
       });
   
       return result[0];
