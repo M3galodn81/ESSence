@@ -19,42 +19,54 @@ const router = Router();
 
   // --- Make users ---
   router.post("/", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const user = req.user!;
-    const requestedRole = req.body.role;
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+  const user = req.user!;
+  const requestedRole = req.body.role;
 
-    if (user.role === 'manager' && requestedRole !== 'employee') return res.status(403).send("Managers can only create employee accounts");
-    if (user.role !== 'admin' && user.role !== 'manager') return res.status(403).send("Access denied");
+  if (user.role === 'manager' && requestedRole !== 'employee') return res.status(403).send("Managers can only create employee accounts");
+  if (user.role !== 'admin' && user.role !== 'manager') return res.status(403).send("Access denied");
 
-    try {
-      const userData = { ...req.body, password: await hashPassword(req.body.password) };
-      if (user.role === 'manager' && requestedRole === 'employee' && !userData.managerId) userData.managerId = user.id;
-      if (requestedRole === 'manager') {
-        if (!userData.managerId || userData.managerId === '') delete userData.managerId;
-        else {
-          const managerExists = await storage.getUser(userData.managerId);
-          if (!managerExists) return res.status(400).send("Invalid manager ID provided");
-        }
+  try {
+    const userData = { ...req.body, password: await hashPassword(req.body.password) };
+    
+    // FIX: Convert timestamps to Date objects for Drizzle
+    if (userData.birthDate) userData.birthDate = new Date(userData.birthDate);
+    if (userData.hireDate) userData.hireDate = new Date(userData.hireDate);
+
+    if (user.role === 'manager' && requestedRole === 'employee' && !userData.managerId) userData.managerId = user.id;
+    if (requestedRole === 'manager') {
+      if (!userData.managerId || userData.managerId === '') delete userData.managerId;
+      else {
+        const managerExists = await storage.getUser(userData.managerId);
+        if (!managerExists) return res.status(400).send("Invalid manager ID provided");
       }
-      const newUser = await storage.createUser(userData, user.id);
-      res.json(newUser);
-    } catch (error: any) {
-      res.status(400).send(error.message || "Failed to create user");
     }
-  });
+    const newUser = await storage.createUser(userData, user.id);
+    res.json(newUser);
+  } catch (error: any) {
+    res.status(400).send(error.message || "Failed to create user");
+  }
+});
+
 
   // --- Edit users ---
-  router.patch("/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    if (req.user!.role !== 'admin') return res.status(403).send("Only admins can edit users");
-    try {
-      const updatedUser = await storage.updateUser(req.params.id, req.body);
-      if (!updatedUser) return res.status(404).send("User not found");
-      res.json(updatedUser);
-    } catch (error: any) {
-      res.status(400).send(error.message || "Failed to update user");
-    }
-  });
+router.patch("/:id", async (req, res) => {
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+  if (req.user!.role !== 'admin') return res.status(403).send("Only admins can edit users");
+  try {
+    const updates = { ...req.body };
+    
+    // FIX: Convert timestamps to Date objects for Drizzle
+    if (updates.birthDate) updates.birthDate = new Date(updates.birthDate);
+    if (updates.hireDate) updates.hireDate = new Date(updates.hireDate);
+
+    const updatedUser = await storage.updateUser(req.params.id, updates);
+    if (!updatedUser) return res.status(404).send("User not found");
+    res.json(updatedUser);
+  } catch (error: any) {
+    res.status(400).send(error.message || "Failed to update user");
+  }
+});
 
   // --- Change password ---
   router.patch("/:id/password", async (req, res) => {
