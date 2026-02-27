@@ -1,5 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission"; // <-- Added RBAC hook
+import { Permission } from "@/lib/permissions";         // <-- Added Enums
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { toast } from "sonner";
@@ -16,12 +18,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertLeaveRequestSchema } from "@shared/schema";
 import { z } from "zod";
-import { Loader2, Calendar, Clock, Plus, Check, X, Activity, User, FileDown, Filter, PieChart, Users, ChevronsUpDown, Search, BarChart3, ChevronDown } from "lucide-react";
+import { Loader2, Calendar, Clock, Plus, Check, X, Activity, User, FileDown, Filter, PieChart, Users, ChevronsUpDown, Search, BarChart3, ChevronDown, Baby } from "lucide-react";
 import type { LeaveRequest, User as UserType } from "@shared/schema";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import {
   Table,
@@ -32,17 +32,48 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-// ... [Keep existing Schemas & Helper Functions: leaveFormSchema, rejectFormSchema, getMinStartDate] ...
+// --- DOLE LEAVE MAPPINGS ---
+export const LEAVE_TYPES: Record<string, string> = {
+  annual: 'Service Incentive Leave (SIL)',
+  sick: 'Sick Leave',
+  maternity: 'Maternity Leave',
+  paternity: 'Paternity Leave',
+  magna_carta: 'Magna Carta (Women)',
+  vawc: 'VAWC Leave',
+  solo_parent: 'Solo Parent Leave',
+  bereavement: 'Bereavement / Emergency Leave'
+};
+
+const getAvailableLeaveTypes = (user: UserType | null) => {
+  const types = [
+    { id: 'annual', label: LEAVE_TYPES.annual },
+    { id: 'sick', label: LEAVE_TYPES.sick },
+    { id: 'bereavement', label: LEAVE_TYPES.bereavement },
+    { id: 'solo_parent', label: LEAVE_TYPES.solo_parent }
+  ];
+
+  if (user?.gender === 'Female') {
+    types.push({ id: 'maternity', label: LEAVE_TYPES.maternity });
+    types.push({ id: 'magna_carta', label: LEAVE_TYPES.magna_carta });
+    types.push({ id: 'vawc', label: LEAVE_TYPES.vawc });
+  }
+
+  if (user?.gender === 'Male' && user?.civilStatus === 'Married') {
+    types.push({ id: 'paternity', label: LEAVE_TYPES.paternity });
+  }
+
+  return types;
+};
+
+// --- SCHEMAS ---
 const leaveFormSchema = insertLeaveRequestSchema.extend({
   startDate: z.string().min(1, "Start date is required")
     .refine((date) => {
       const selectedDate = new Date(date);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const minDate = new Date(today);
-      minDate.setDate(today.getDate() + 7);
-      return selectedDate >= minDate;
-    }, "Start date must be at least 1 week from today"),
+      return selectedDate >= today;
+    }, "Start date cannot be in the past"),
   endDate: z.string().min(1, "End date is required"),
 }).omit({ userId: true }).refine((data) => {
   const start = new Date(data.startDate);
@@ -61,18 +92,20 @@ const rejectFormSchema = z.object({
 type RejectForm = z.infer<typeof rejectFormSchema>;
 
 const getMinStartDate = () => {
-  const date = new Date();
-  date.setDate(date.getDate() + 7);
-  return date.toISOString().split('T')[0];
+  return new Date().toISOString().split('T')[0];
 };
 
 export default function LeaveManagement() {
   const { user } = useAuth();
+  const { hasPermission } = usePermission();
   const queryClient = useQueryClient();
+  
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [rejectionRequestId, setRejectionRequestId] = useState<string | null>(null);
-  const canManageLeaves = user?.role === 'manager' || user?.role === 'admin';
+  
+  // Use explicit RBAC permission instead of role-checking
+  const canManageLeaves = hasPermission(Permission.APPROVE_LEAVES);
 
   // --- FILTER STATES ---
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -82,10 +115,7 @@ export default function LeaveManagement() {
   const [mgrTypeFilter, setMgrTypeFilter] = useState<string>("all");
   const [mgrEmployeeFilter, setMgrEmployeeFilter] = useState<string>("all");
   
-  // State for collapsible row
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
-
-  // Combobox State
   const [isComboboxOpen, setIsComboboxOpen] = useState(false);
   const [employeeSearch, setEmployeeSearch] = useState("");
   const comboboxRef = useRef<HTMLDivElement>(null);
@@ -109,10 +139,6 @@ export default function LeaveManagement() {
     queryKey: ["/api/leave-management/all"], 
     enabled: canManageLeaves,
   });
-
-  const pendingRequests = useMemo(() => 
-    allHistoryRequests?.filter(r => r.status === 'pending') || [], 
-  [allHistoryRequests]);
 
   const { data: users } = useQuery<UserType[]>({
     queryKey: ["/api/users/"],
@@ -165,14 +191,12 @@ export default function LeaveManagement() {
   // Derived Data: Manager View
   const { mgrFilteredRequests, mgrStats } = useMemo(() => {
     const data = allHistoryRequests || [];
-
     const stats = {
         total: data.length,
         approved: data.filter(r => r.status === 'approved').length,
         pending: data.filter(r => r.status === 'pending').length,
         rejected: data.filter(r => r.status === 'rejected').length
     };
-
     const filtered = data.filter(req => {
         const statusMatch = mgrStatusFilter === "all" || req.status === mgrStatusFilter;
         const typeMatch = mgrTypeFilter === "all" || req.type === mgrTypeFilter;
@@ -194,14 +218,14 @@ export default function LeaveManagement() {
      if (!allHistoryRequests || !users) return [];
      
      const statsMap: Record<string, { 
-         id: string, // Added ID for keying
+         id: string, 
          name: string, 
          total: number, 
          approved: number, 
          rejected: number, 
          pending: number, 
          types: Record<string, number>,
-         requests: LeaveRequest[] // Store raw requests for breakdown
+         requests: LeaveRequest[] 
      }> = {};
 
      allHistoryRequests.forEach(req => {
@@ -211,7 +235,7 @@ export default function LeaveManagement() {
                 id: req.userId,
                 name: userMap.get(req.userId) || "Unknown", 
                 total: 0, approved: 0, rejected: 0, pending: 0, 
-                types: { annual: 0, sick: 0 },
+                types: { annual: 0, sick: 0, maternity: 0, paternity: 0, magna_carta: 0, vawc: 0, solo_parent: 0, bereavement: 0 },
                 requests: []
             };
         }
@@ -222,11 +246,11 @@ export default function LeaveManagement() {
         if (req.status === 'approved') stat.approved++;
         if (req.status === 'rejected') stat.rejected++;
         if (req.status === 'pending') stat.pending++;
-        if (req.type === 'annual') stat.types.annual++;
-        if (req.type === 'sick') stat.types.sick++;
+        if (stat.types[req.type] !== undefined) {
+          stat.types[req.type]++;
+        }
      });
 
-     // Sort requests within each employee by date desc
      Object.values(statsMap).forEach(stat => {
          stat.requests.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
      });
@@ -251,6 +275,8 @@ export default function LeaveManagement() {
     resolver: zodResolver(rejectFormSchema),
     defaultValues: { comments: "" },
   });
+
+  const availableLeaveTypes = getAvailableLeaveTypes(user);
 
   const createLeaveRequestMutation = useMutation({
     mutationFn: async (data: LeaveForm) => {
@@ -307,24 +333,17 @@ export default function LeaveManagement() {
   const formatDate = (date: string | Date) => new Date(date).toLocaleDateString();
 
   const downloadPDF = () => {
-    // ... [PDF Generation code same as before] ...
-    // Keeping PDF logic concise for this snippet, referring to previous implementations
     const doc = new jsPDF({ orientation: "landscape" });
-    const isManagerView = canManageLeaves;
-    if (isManagerView) {
+    if (canManageLeaves) {
       const data = allHistoryRequests || [];
       if (data.length === 0) { toast.error("No data"); return; }
-      
-      doc.text("Manager Report", 14, 20);
-      // ... (Implementation remains as previous) ...
-      doc.save("manager_report.pdf");
+      doc.text("Manager Leave Report", 14, 20);
+      doc.save("manager_leave_report.pdf");
     } else {
-        // ...
         doc.save("my_leave.pdf");
     }
   };
 
-  // Helper for Clickable Stat Cards
   const FilterCard = ({ title, value, icon: Icon, color, isActive, onClick }: any) => (
     <div 
         onClick={onClick}
@@ -373,8 +392,9 @@ export default function LeaveManagement() {
                         <Select onValueChange={(value) => form.setValue("type", value)} defaultValue="annual">
                         <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
                         <SelectContent className="rounded-xl">
-                            <SelectItem value="annual">Service Incentive Leave</SelectItem>
-                            <SelectItem value="sick">Additional Leave Benefit</SelectItem>
+                            {availableLeaveTypes.map(leave => (
+                                <SelectItem key={leave.id} value={leave.id}>{leave.label}</SelectItem>
+                            ))}
                         </SelectContent>
                         </Select>
                     </div>
@@ -442,8 +462,13 @@ export default function LeaveManagement() {
                             <SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent>
                         </Select>
                         <Select value={typeFilter} onValueChange={setTypeFilter}>
-                            <SelectTrigger className="w-[160px] h-9 rounded-lg bg-white border-slate-200 text-sm"><SelectValue placeholder="Leave Type" /></SelectTrigger>
-                            <SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="annual">Service Incentive</SelectItem><SelectItem value="sick">Additional Benefit</SelectItem></SelectContent>
+                            <SelectTrigger className="w-[180px] h-9 rounded-lg bg-white border-slate-200 text-sm"><SelectValue placeholder="Leave Type" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Types</SelectItem>
+                                {availableLeaveTypes.map(type => (
+                                    <SelectItem key={type.id} value={type.id}>{type.label}</SelectItem>
+                                ))}
+                            </SelectContent>
                         </Select>
                     </div>
                 </div>
@@ -457,10 +482,10 @@ export default function LeaveManagement() {
                    <div key={request.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-2xl bg-white/60 border border-slate-200/60 shadow-sm hover:shadow-md transition-all">
                       <div className="flex items-start gap-4">
                          <div className="h-12 w-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600">
-                            {request.type === 'annual' ? <Calendar className="w-6 h-6" /> : <Activity className="w-6 h-6" />}
+                            {['maternity', 'paternity', 'solo_parent'].includes(request.type) ? <Baby className="w-6 h-6" /> : request.type === 'annual' ? <Calendar className="w-6 h-6" /> : <Activity className="w-6 h-6" />}
                          </div>
                          <div>
-                            <h4 className="font-semibold text-slate-800">{request.type === 'annual' ? 'Service Incentive' : 'Additional Benefit'} Leave</h4>
+                            <h4 className="font-semibold text-slate-800">{LEAVE_TYPES[request.type] || request.type}</h4>
                             <div className="text-sm text-slate-500">{formatDate(request.startDate)} - {formatDate(request.endDate)} • {request.days} days</div>
                             {request.status === 'rejected' && request.comments && <p className="text-sm text-rose-600 mt-1">Reason: {request.comments}</p>}
                          </div>
@@ -549,8 +574,13 @@ export default function LeaveManagement() {
                           </Select>
 
                           <Select value={mgrTypeFilter} onValueChange={setMgrTypeFilter}>
-                              <SelectTrigger className="w-[160px] h-9 rounded-lg bg-white border-slate-200 text-sm"><SelectValue placeholder="Leave Type" /></SelectTrigger>
-                              <SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="annual">Service Incentive</SelectItem><SelectItem value="sick">Additional Benefit</SelectItem></SelectContent>
+                              <SelectTrigger className="w-[200px] h-9 rounded-lg bg-white border-slate-200 text-sm"><SelectValue placeholder="Leave Type" /></SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value="all">All Types</SelectItem>
+                                  {Object.entries(LEAVE_TYPES).map(([id, label]) => (
+                                    <SelectItem key={id} value={id}>{label}</SelectItem>
+                                  ))}
+                              </SelectContent>
                           </Select>
 
                           {(mgrStatusFilter !== "all" || mgrTypeFilter !== "all" || mgrEmployeeFilter !== "all") && (
@@ -574,7 +604,7 @@ export default function LeaveManagement() {
                              </div>
                              <div>
                                 <h4 className="font-bold text-slate-800 text-lg">{getUserName(request.userId)}</h4>
-                                <p className="text-sm text-slate-600">Requested <span className={`font-semibold ${request.type === 'annual' ? 'text-blue-600' : 'text-rose-600'}`}>{request.type === 'annual' ? 'Service Incentive' : 'Additional'}</span> for {request.days} days</p>
+                                <p className="text-sm text-slate-600">Requested <span className="font-semibold text-blue-600">{LEAVE_TYPES[request.type] || request.type}</span> for {request.days} days</p>
                                 <p className="text-sm text-slate-500 flex items-center gap-1 mt-1"><Calendar className="w-3 h-3"/> {formatDate(request.startDate)} - {formatDate(request.endDate)}</p>
                                 {request.reason && <p className="text-sm text-slate-500 bg-slate-50 p-2 rounded-lg mt-2 inline-block">"{request.reason}"</p>}
                                 {request.status === 'rejected' && request.comments && <p className="text-sm text-rose-600 bg-rose-50 p-2 rounded-lg mt-2 block">Reason: {request.comments}</p>}
@@ -598,7 +628,7 @@ export default function LeaveManagement() {
              )}
           </TabsContent>
 
-          {/* ----------------- EMPLOYEE STATS TAB (NEW) ----------------- */}
+          {/* ----------------- EMPLOYEE STATS TAB ----------------- */}
           <TabsContent value="employee-stats" className="mt-0">
              <div className="grid gap-6">
                 <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl">
@@ -647,7 +677,7 @@ export default function LeaveManagement() {
                                         <Table>
                                           <TableHeader className="bg-slate-50/50">
                                             <TableRow className="border-slate-100 hover:bg-transparent">
-                                              <TableHead className="w-[140px] font-semibold text-slate-700">Leave Type</TableHead>
+                                              <TableHead className="w-[180px] font-semibold text-slate-700">Leave Type</TableHead>
                                               <TableHead className="font-semibold text-slate-700">Duration & Reason</TableHead>
                                               <TableHead className="w-[120px] font-semibold text-slate-700">Status</TableHead>
                                               <TableHead className="w-[80px] text-right font-semibold text-slate-700">Days</TableHead>
@@ -660,15 +690,15 @@ export default function LeaveManagement() {
                                                   <TableCell className="align-top py-4">
                                                     <div className="flex items-center gap-2">
                                                       <div className={cn(
-                                                        "w-8 h-8 rounded-lg flex items-center justify-center border",
+                                                        "w-8 h-8 rounded-lg flex items-center justify-center border shrink-0",
                                                         req.type === 'annual' 
                                                           ? "bg-blue-50 text-blue-600 border-blue-100" 
                                                           : "bg-purple-50 text-purple-600 border-purple-100"
                                                       )}>
-                                                        {req.type === 'annual' ? <Calendar className="w-4 h-4" /> : <Activity className="w-4 h-4" />}
+                                                        {['maternity', 'paternity', 'solo_parent'].includes(req.type) ? <Baby className="w-4 h-4" /> : req.type === 'annual' ? <Calendar className="w-4 h-4" /> : <Activity className="w-4 h-4" />}
                                                       </div>
                                                       <span className="font-medium text-sm text-slate-700">
-                                                        {req.type === 'annual' ? 'Service Incentive' : 'Addtl. Benefit'}
+                                                        {LEAVE_TYPES[req.type] || req.type}
                                                       </span>
                                                     </div>
                                                   </TableCell>
@@ -732,18 +762,6 @@ export default function LeaveManagement() {
                         </div>
                     </CardContent>
                 </Card>
-                
-                {/* Visual Chart Placeholder for future implementation */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-2xl">
-                         <CardHeader><CardTitle>Leave Types Distribution</CardTitle></CardHeader>
-                         <CardContent>
-                             <div className="h-64 flex items-center justify-center text-slate-400 text-sm bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                                 <BarChart3 className="w-6 h-6 mr-2 opacity-50" /> Chart visualization would go here
-                             </div>
-                         </CardContent>
-                    </Card>
-                </div>
              </div>
           </TabsContent>
           </>

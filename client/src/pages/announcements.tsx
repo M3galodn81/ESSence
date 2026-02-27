@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission"; // <-- Import the new hook
+import { Permission } from "@/lib/permissions";         // <-- Import the permission enum
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +20,6 @@ import { insertAnnouncementSchema } from "@shared/schema";
 import { z } from "zod";
 import { Megaphone, Plus, Filter, Bell, AlertCircle, Clock, Eye, CheckCircle2, UserCheck, Loader2 } from "lucide-react";
 import type { Announcement, User } from "@shared/schema";
-import { canManageAnnouncements } from "@/utils/permissions";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -129,15 +130,9 @@ function ViewAnnouncementDialog({
         </div>
 
         <DialogFooter className="mt-4 pt-4 border-t flex sm:align-right items-center gap-4">
-          {/* <p className="text-xs text-slate-400 hidden sm:block">
-            {announcement.targetDepartments && announcement.targetDepartments.length > 0 
-              ? `Target: ${announcement.targetDepartments.join(", ")}` 
-              : "Target: All Company"}
-          </p> */}
           <div className="flex gap-3 w-full sm:w-auto justify-end">
             <Button variant="outline" onClick={onClose} className="rounded-full">Close</Button>
             
-            {/* TODO: Fix Mark as Week*/}
             {isReadByMe ? (
               <Button 
                 disabled 
@@ -179,6 +174,7 @@ type AnnouncementForm = z.infer<typeof announcementFormSchema>;
 
 export default function Announcements() {
   const { user } = useAuth();
+  const { hasPermission } = usePermission(); // <-- Initialize your permission hook
   const queryClient = useQueryClient();
   
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -187,7 +183,8 @@ export default function Announcements() {
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("active");
 
-  const canManage = canManageAnnouncements(user);
+  // 1. Replaced the old utility function with the new RBAC check
+  const canManage = hasPermission(Permission.MANAGE_ANNOUNCEMENTS);
 
   const { data: announcements, isLoading } = useQuery({
     queryKey: ["/api/announcements"],
@@ -264,10 +261,8 @@ export default function Announcements() {
     setIsCreateDialogOpen(true);
   };
 
-  // Logic to prevent the View dialog from opening when clicking buttons
   const handleView = (announcement: Announcement, e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    // If we clicked a button, SVG inside a button, or switch, don't open view
     if (target.closest('button') || target.closest('[role="switch"]')) {
       return;
     }
@@ -437,17 +432,14 @@ export default function Announcements() {
           ) : filteredAnnouncements.length > 0 ? (
             <div className="grid grid-cols-1 gap-4">
               {filteredAnnouncements.map((announcement: Announcement) => {
-                // Inside filteredAnnouncements.map
-                const isRead = myReadIds?.some(id => String(id) === String(announcement.id));
+                const isRead = myReadIds?.some((id: string | number) => String(id) === String(announcement.id));
                 
                 return (
                   <div 
                     key={announcement.id} 
                     onClick={(e) => handleView(announcement, e)} 
-                    // REMOVED zoom hover effect (scale) here
                     className="relative group cursor-pointer"
                   >
-                    {/* RED DOT INDICATOR - Positioned inside to prevent clipping */}
                     {!isRead && (
                       <span className="absolute top-3 right-3 z-50 flex h-3 w-3">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -458,7 +450,6 @@ export default function Announcements() {
                     <AnnouncementFeedItem 
                       announcement={announcement} 
                       canManage={canManage} 
-                      // REMOVED e.stopPropagation() calls to fix TypeError
                       onEdit={() => handleEdit(announcement)} 
                       onToggleActive={() => handleToggleActive(announcement)} 
                     />

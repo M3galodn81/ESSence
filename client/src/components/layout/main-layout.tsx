@@ -43,7 +43,7 @@ export default function MainLayout({ children, title = "Dashboard", subtitle }: 
           {/* Sticky Header */}
           <Header title={title} subtitle={subtitle} />
           
-          <div className="p-4 md:p-6 max-w-7xl mx-auto w-full space-y-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
+          <div className="p-4 md:p-1 max-w-7xl mx-auto w-full space-y-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
             {children}
           </div>
         </div>

@@ -3,9 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, ChevronLeft, ChevronRight, CalendarDays, Loader2 } from "lucide-react";
+import { Clock, ChevronLeft, ChevronRight, CalendarDays, Loader2, Shield } from "lucide-react";
 import type { Schedule } from "@shared/schema";
 import { cn } from "@/lib/utils";
+
+// --- New Auth & Permission Hooks ---
+import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission";
+import { Permission } from "@/lib/permissions";
 
 // --- Constants & Style Configuration ---
 
@@ -34,12 +39,18 @@ const RoleBadge = ({ role }: { role: string }) => (
 );
 
 export default function Schedules() {
+  const { user } = useAuth();
+  const { hasPermission } = usePermission();
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  // Verify access
+  const canViewSchedule = hasPermission(Permission.VIEW_OWN_SCHEDULE);
 
   // Queries
   const { data: schedules, isLoading } = useQuery<Schedule[]>({
     queryKey: ["/api/schedules"],
     staleTime: 1000 * 60 * 5,
+    enabled: canViewSchedule, // Only fetch if user has permission
   });
 
   // Date Logic
@@ -66,6 +77,22 @@ export default function Schedules() {
       hour: 'numeric', minute: '2-digit', hour12: true,
     });
   };
+
+  // Render unauthorized state if permission is missing
+  if (!canViewSchedule) {
+    return (
+      <div className="p-8 flex justify-center items-center h-screen">
+        <Card className="w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-lg rounded-3xl">
+          <CardContent className="py-12 text-center space-y-4">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                <Shield className="w-8 h-8" />
+            </div>
+            <p className="text-slate-500">You don't have permission to view this schedule.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
@@ -130,10 +157,14 @@ export default function Schedules() {
                     <div className="flex-1 flex flex-col justify-center">
                       {schedule ? (
                         <div className="p-3 bg-white rounded-xl border border-slate-100 shadow-sm space-y-3">
-                          <div className="flex justify-center"><ShiftBadge type={schedule.type} /></div>
-                          <div className="flex justify-center">{schedule.shiftRole && <RoleBadge role={schedule.shiftRole} />}</div>
+                          <div className="flex justify-center">
+                            <ShiftBadge type={schedule.shiftType || 'morning'} />
+                          </div>
+                          <div className="flex justify-center">
+                            {schedule.shiftRole && <RoleBadge role={schedule.shiftRole} />}
+                          </div>
 
-                          {schedule.type !== 'off' && (
+                          {schedule.shiftType !== 'off' && (
                             <div className="flex items-center gap-2 text-xs font-medium text-slate-700 bg-slate-50 p-1.5 rounded-lg">
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
                               <div className="flex flex-col leading-none">

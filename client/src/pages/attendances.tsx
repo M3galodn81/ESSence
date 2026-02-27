@@ -3,28 +3,25 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { 
   Loader2, 
   Calendar, 
-  Search, 
   ChevronLeft, 
   ChevronRight, 
   Clock,
   Briefcase,
   CalendarCheck,
-  History
+  History,
+  Shield // Added for the unauthorized state
 } from "lucide-react";
 import { BentoCard } from "@/components/custom/bento-card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { startOfMonth, endOfMonth, eachWeekOfInterval, endOfWeek, isWithinInterval } from "date-fns";
 import { cn } from "@/lib/utils";
+
+// --- New Auth & Permission Hooks ---
+import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission";
+import { Permission } from "@/lib/permissions";
 
 // Types matching the API response
 interface AttendanceRecord {
@@ -40,8 +37,14 @@ interface AttendanceRecord {
 }
 
 export default function AttendanceHistory() {
+  const { user } = useAuth();
+  const { hasPermission } = usePermission();
+  
+  // Verify access
+  const canViewAttendance = hasPermission(Permission.VIEW_OWN_ATTENDANCE);
+
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedWeek, setSelectedWeek] = useState<string>("all"); // New State
+  const [selectedWeek, setSelectedWeek] = useState<string>("all");
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -57,6 +60,7 @@ export default function AttendanceHistory() {
       if (!res.ok) throw new Error("Failed to fetch records");
       return res.json();
     },
+    enabled: canViewAttendance, // Only fetch if user has permission
   });
 
   // Reset week filter when month changes
@@ -114,6 +118,22 @@ export default function AttendanceHistory() {
 
   const totalWorkHours = filteredRecords.reduce((acc, curr) => acc + (curr.totalWorkMinutes || 0), 0) / 60;
   const daysPresent = filteredRecords.length;
+
+  // Render unauthorized state if permission is missing
+  if (!canViewAttendance) {
+    return (
+      <div className="p-8 flex justify-center items-center h-screen">
+        <Card className="w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-lg rounded-3xl">
+          <CardContent className="py-12 text-center space-y-4">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                <Shield className="w-8 h-8" />
+            </div>
+            <p className="text-slate-500">You don't have permission to view attendance logs.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 md:p-8 space-y-8">

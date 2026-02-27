@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { BentoCard } from "@/components/custom/bento-card";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission";
+import { Permission } from "@/lib/permissions";
 
 // Types matching the API response
 interface AttendanceRecord {
@@ -173,8 +175,10 @@ export default function AdminAttendance() {
   const presentCount = new Set(filteredRecords.map(r => r.userId + r.date)).size;
 
   // Access Control: Only admins and managers allowed
-  if (user?.role === 'employee') {
-    return <div className="p-6 text-center">Access Denied</div>;
+  const { hasPermission } = usePermission();
+
+  if (!hasPermission(Permission.VIEW_ATTENDANCE_RECORDS)) {
+    return <div>Access denied</div>;
   }
 
   return (

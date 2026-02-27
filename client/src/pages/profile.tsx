@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission"; // <-- Added RBAC hook
+import { Permission } from "@/lib/permissions";         // <-- Added Permissions enum
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { toast } from "sonner";
@@ -50,8 +52,12 @@ type AddressForm = z.infer<typeof addressSchema>;
 
 export default function Profile() {
   const { user } = useAuth();
+  const { hasPermission } = usePermission();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
+  
+  // Verify access
+  const canViewProfile = hasPermission(Permission.VIEW_OWN_PROFILE);
 
   const profileForm = useForm<ProfileUpdateForm>({
     resolver: zodResolver(profileUpdateSchema),
@@ -131,6 +137,22 @@ export default function Profile() {
   const onAddressUpdate = (data: AddressForm) => updateAddressMutation.mutate(data);
 
   if (!user) return null;
+
+  // Render unauthorized state if permission is missing
+  if (!canViewProfile) {
+    return (
+      <div className="p-8 flex justify-center items-center h-screen">
+        <Card className="w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-lg rounded-3xl">
+          <CardContent className="py-12 text-center space-y-4">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                <Shield className="w-8 h-8" />
+            </div>
+            <p className="text-slate-500">You don't have permission to view your profile.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">

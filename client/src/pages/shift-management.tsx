@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { toast } from "sonner";
@@ -11,16 +11,18 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { 
   Clock, ChevronLeft, ChevronRight, Plus, Edit, Trash2, 
   Copy, Users, CalendarDays, MapPin, Grid, List, 
-  Sun, Moon, Sunset, LayoutPanelLeft, Check, ChevronsUpDown
+  Sun, Moon, Sunset, LayoutPanelLeft, Check, ChevronsUpDown, AlertTriangle, AlertCircle
 } from "lucide-react";
-import type { Schedule, User } from "@shared/schema";
+import type { Schedule, User, LeaveRequest } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission";
+import { Permission } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -30,7 +32,7 @@ const ROLES = ["cashier", "bar", "server", "kitchen"];
 
 const SHIFT_PRESETS = {
   morning: { start: "08:00", end: "17:00", label: "AM", color: "bg-emerald-100 border-emerald-200 text-emerald-800", indicator: "bg-emerald-500", ring: "ring-emerald-500", text: "text-emerald-900", icon: "text-emerald-200", title: "text-emerald-600" },
-  afternoon: { start: "13:00", end: "00:00", label: "PM", color: "bg-amber-100 border-amber-200 text-amber-800", indicator: "bg-amber-500", ring: "ring-amber-500", text: "text-amber-900", icon: "text-amber-200", title: "text-amber-600" },
+  afternoon: { start: "13:00", end: "22:00", label: "PM", color: "bg-amber-100 border-amber-200 text-amber-800", indicator: "bg-amber-500", ring: "ring-amber-500", text: "text-amber-900", icon: "text-amber-200", title: "text-amber-600" },
   night: { start: "21:00", end: "06:00", label: "GY", color: "bg-indigo-100 border-indigo-200 text-indigo-800", indicator: "bg-indigo-500", ring: "ring-indigo-500", text: "text-indigo-900", icon: "text-indigo-200", title: "text-indigo-600" },
   off: { start: "00:00", end: "23:59", label: "Day Off", color: "bg-slate-100 border-slate-200 text-slate-500", indicator: "bg-slate-400", ring: "ring-slate-900", text: "text-slate-900", icon: "text-slate-100", title: "text-slate-400" }
 };
@@ -38,7 +40,7 @@ const SHIFT_PRESETS = {
 const shiftFormSchema = z.object({
   userId: z.string().min(1, "Employee is required"),
   date: z.string().min(1, "Date is required"),
-  shiftType: z.enum(["morning", "afternoon", "night", "off"]),
+  shiftType: z.enum(["morning", "afternoon", "night", "off"], { required_error: "Shift type is required" }),
   shiftRole: z.enum(["cashier", "bar", "server", "kitchen"]).optional(),
   startTime: z.string().optional(),
   endTime: z.string().optional(),
@@ -49,9 +51,7 @@ type ShiftForm = z.infer<typeof shiftFormSchema>;
 
 // --- Styles Definition ---
 const styles = {
-  page: {
-    wrapper: "max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6 pb-20 md:pb-8",
-  },
+  page: { wrapper: "max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6 pb-20 md:pb-8" },
   header: {
     container: "flex flex-col md:flex-row md:items-center justify-between gap-4",
     title: "text-2xl md:text-3xl font-bold tracking-tight text-slate-900",
@@ -108,7 +108,7 @@ const styles = {
 };
 
 export default function ShiftManagement() {
-  const { user } = useAuth();
+  const { hasPermission } = usePermission();
   const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"roster" | "kanban" | "list">("kanban");
@@ -124,14 +124,16 @@ export default function ShiftManagement() {
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
   const [filterType, setFilterType] = useState<string | null>(null);
 
-  // --- Permission Check ---
-  if (user?.role !== 'manager' && user?.role !== 'admin') return <div className="p-8 text-center text-slate-500">Access denied.</div>;
+  if (!hasPermission(Permission.MANAGE_SCHEDULES)) {
+    return <div className="p-8 text-center text-slate-500">Access denied. You do not have permission to manage schedules.</div>;
+  }
 
-  // --- Queries ---
   const { data: teamMembers } = useQuery<User[]>({ queryKey: ["/api/team"] });
   const { data: allSchedules, isLoading } = useQuery<Schedule[]>({ queryKey: ["/api/schedules/all"] });
+  
+  const { data: leaves } = useQuery<LeaveRequest[]>({ queryKey: ["/api/leave-management/all"] });
+  const approvedLeaves = useMemo(() => leaves?.filter(l => l.status === 'approved') || [], [leaves]);
 
-  // --- Helpers ---
   const getWeekBounds = (date: Date) => {
     const start = new Date(date);
     start.setDate(date.getDate() - date.getDay());
@@ -160,8 +162,15 @@ export default function ShiftManagement() {
   const formatTimeForInput = (dateInput: string | number | Date) => {
     const date = new Date(dateInput);
     const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const minutesRaw = date.getMinutes();
+    const minutes = minutesRaw < 15 ? '00' : minutesRaw < 45 ? '30' : '00';
     return `${hours}:${minutes}`;
+  };
+
+  const getLocalYMD = (date: Date) => {
+    const offset = date.getTimezoneOffset() * 60000;
+    const localDate = new Date(date.getTime() - offset);
+    return localDate.toISOString().split('T')[0];
   };
 
   const navigate = (direction: 'prev' | 'next') => {
@@ -169,6 +178,94 @@ export default function ShiftManagement() {
     const delta = view === 'kanban' ? 1 : 7;
     newDate.setDate(currentDate.getDate() + (direction === 'next' ? delta : -delta));
     setCurrentDate(newDate);
+  };
+
+  // --- Strict Conflict Detection Logic ---
+  const getShiftConflict = (userId: string, date: string, startTime: string, endTime: string, shiftType: string, excludeId?: string) => {
+    if (!userId || !date) return null;
+    
+    const targetDateStr = date; 
+
+    const leave = approvedLeaves.find(l => {
+        if (l.userId !== userId) return false;
+        const startStr = new Date(l.startDate).toISOString().split('T')[0];
+        const endStr = new Date(l.endDate).toISOString().split('T')[0];
+        return targetDateStr >= startStr && targetDateStr <= endStr;
+    });
+    if (leave) return { type: 'leave', message: `Employee has an approved leave (${new Date(leave.startDate).toLocaleDateString()} - ${new Date(leave.endDate).toLocaleDateString()}).` };
+
+    if (shiftType === 'off') return null;
+
+    const sameDayShift = allSchedules?.find(s => {
+        if (s.userId !== userId || s.id === excludeId || s.shiftType === 'off') return false;
+        const existingDateStr = new Date(s.date).toISOString().split('T')[0]; 
+        return existingDateStr === targetDateStr;
+    });
+
+    if (sameDayShift) {
+        return { type: 'daily_limit', message: `Employee already has a shift assigned on this date. Maximum 1 shift per day.` };
+    }
+
+    let st = startTime; let et = endTime;
+    if (!st || !et) {
+        const preset = SHIFT_PRESETS[shiftType as keyof typeof SHIFT_PRESETS];
+        if(preset) { st = preset.start; et = preset.end; }
+    }
+
+    if (st && et) {
+        const [y, m, d] = targetDateStr.split('-').map(Number);
+        const [sh, smin] = st.split(':').map(Number);
+        const [eh, emin] = et.split(':').map(Number);
+        
+        const sTs = new Date(y, m - 1, d, sh, smin).getTime();
+        let eTs = new Date(y, m - 1, d, eh, emin).getTime();
+        if (eTs <= sTs) eTs += 86400000;
+
+        const overlap = allSchedules?.find(s => {
+            if (s.userId !== userId || s.id === excludeId || s.shiftType === 'off') return false;
+            return sTs < s.endTime && eTs > s.startTime;
+        });
+        
+        if (overlap) {
+            const overlapDateStr = new Date(overlap.date).toISOString().split('T')[0];
+            return { type: 'overlap', message: `Times overlap with an existing shift starting on ${overlapDateStr} (${new Date(overlap.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(overlap.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}).` };
+        }
+    }
+
+    return null;
+  };
+
+  const evaluateScheduleConflict = (s: Schedule) => {
+     return getShiftConflict(
+         s.userId, 
+         new Date(s.date).toISOString().split('T')[0], 
+         formatTimeForInput(s.startTime), 
+         formatTimeForInput(s.endTime), 
+         s.shiftType || 'morning', 
+         s.id
+     );
+  };
+
+  // --- Duration Warning Logic (< 9 hours) ---
+  const getShiftDurationWarning = (startTime: string, endTime: string, shiftType: string) => {
+    if (shiftType === 'off' || !startTime || !endTime) return null;
+    
+    const [sh, sm] = startTime.split(':').map(Number);
+    const [eh, em] = endTime.split(':').map(Number);
+    if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return null;
+
+    let sMins = sh * 60 + sm;
+    let eMins = eh * 60 + em;
+    
+    // Handle overnight calculations
+    if (eMins <= sMins) eMins += 24 * 60;
+    
+    const hours = (eMins - sMins) / 60;
+    
+    if (hours > 0 && hours < 9) {
+        return `Shift is only ${hours.toFixed(1)} hours long (standard is 9 hours including break).`;
+    }
+    return null;
   };
 
   // --- Filtering ---
@@ -185,12 +282,12 @@ export default function ShiftManagement() {
   }, [allSchedules, weekStart, weekEnd, selectedEmployee, view]);
 
   const getSchedulesForDay = (date: Date) => {
-    const dateStr = date.toLocaleDateString('en-CA');
+    const dateStr = getLocalYMD(date);
     return filteredSchedules.filter(s => new Date(s.date).toISOString().split('T')[0] === dateStr);
   };
 
   const getShiftsForEmployeeAndDate = (employeeId: string, date: Date) => {
-    const dateStr = date.toLocaleDateString('en-CA');
+    const dateStr = getLocalYMD(date);
     return filteredSchedules.filter(s => 
         s.userId === employeeId && 
         new Date(s.date).toISOString().split('T')[0] === dateStr
@@ -198,69 +295,60 @@ export default function ShiftManagement() {
   };
 
   // --- Forms & Mutations ---
-  const createForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema), defaultValues: { shiftType: "morning", shiftRole: "server" } });
+  const createForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema) });
   const editForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema) });
 
-  // Inside ShiftManagement component
+  const createValues = createForm.watch();
+  const createConflict = useMemo(() => getShiftConflict(createValues.userId, createValues.date, createValues.startTime || "", createValues.endTime || "", createValues.shiftType), [createValues, allSchedules, approvedLeaves]);
+  const createDurationWarning = useMemo(() => getShiftDurationWarning(createValues.startTime || "", createValues.endTime || "", createValues.shiftType), [createValues]);
+  
+  const editValues = editForm.watch();
+  const editConflict = useMemo(() => getShiftConflict(editValues.userId, editValues.date, editValues.startTime || "", editValues.endTime || "", editValues.shiftType, selectedSchedule?.id), [editValues, selectedSchedule, allSchedules, approvedLeaves]);
+  const editDurationWarning = useMemo(() => getShiftDurationWarning(editValues.startTime || "", editValues.endTime || "", editValues.shiftType), [editValues]);
+
   const handleShiftTypeChange = (val: string, form: any) => {
-    form.setValue("shiftType", val);
-    
+    form.setValue("shiftType", val, { shouldValidate: true });
     if (val === "off") {
       form.setValue("startTime", "00:00");
       form.setValue("endTime", "00:00");
-      return;
-    }
-
-    // Get preset times
-    const preset = SHIFT_PRESETS[val as keyof typeof SHIFT_PRESETS];
-    if (preset) {
-      form.setValue("startTime", preset.start);
-      form.setValue("endTime", preset.end);
+    } else {
+      const preset = SHIFT_PRESETS[val as keyof typeof SHIFT_PRESETS];
+      if (preset) {
+        form.setValue("startTime", preset.start, { shouldValidate: true });
+        form.setValue("endTime", preset.end, { shouldValidate: true });
+      }
     }
   };
 
-  const onStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>, form: any) => {
-    const newStartTime = e.target.value;
-    if (!newStartTime) return;
-
-    form.setValue("startTime", newStartTime);
-
-    const hour = parseInt(newStartTime.split(':')[0], 10);
-    let detectedType: "morning" | "afternoon" | "night" = "night";
+  const onStartTimeChange = (val: string, form: any) => {
+    if (!val) return;
+    form.setValue("startTime", val, { shouldValidate: true });
     
-    if (hour >= 7 && hour < 12) detectedType = "morning";
-    else if (hour >= 13 && hour < 18) detectedType = "afternoon";
-    else detectedType = "night";
+    const hour = parseInt(val.split(':')[0], 10);
+    if (!isNaN(hour)) {
+        let detectedType: "morning" | "afternoon" | "night" = "night";
+        if (hour >= 5 && hour < 12) detectedType = "morning";
+        else if (hour >= 12 && hour < 18) detectedType = "afternoon";
+        form.setValue("shiftType", detectedType);
+    }
 
-    form.setValue("shiftType", detectedType);
-
-    const [h, m] = newStartTime.split(':').map(Number);
-    const date = new Date();
-    date.setHours(h, m, 0);
-    date.setHours(date.getHours() + 9);
-    
-    const endH = date.getHours().toString().padStart(2, '0');
-    const endM = date.getMinutes().toString().padStart(2, '0');
-    form.setValue("endTime", `${endH}:${endM}`);
+    const [h, m] = val.split(':').map(Number);
+    if (!isNaN(h) && !isNaN(m)) {
+        const date = new Date();
+        date.setHours(h, m, 0);
+        date.setHours(date.getHours() + 9);
+        
+        const endH = date.getHours().toString().padStart(2, '0');
+        const endM = date.getMinutes().toString().padStart(2, '0');
+        form.setValue("endTime", `${endH}:${endM}`, { shouldValidate: true });
+    }
   };
-
 
   const createShiftMutation = useMutation({
     mutationFn: async (data: ShiftForm) => {
-      let { startTime, endTime } = data;
-      
-      // Auto-fill times if not provided based on preset
-      if ((!startTime || !endTime) && data.shiftType !== 'off') {
-        const preset = SHIFT_PRESETS[data.shiftType];
-        startTime = preset.start; 
-        endTime = preset.end;
-      }
-
-      const startDateTime = new Date(`${data.date}T${startTime || "00:00"}`);
-      const endDateTime = new Date(`${data.date}T${endTime || "00:00"}`);
-      
-      // Handle overnight shifts
-      if (endDateTime < startDateTime && data.shiftType !== 'off') {
+      const startDateTime = new Date(`${data.date}T${data.startTime || "00:00"}`);
+      const endDateTime = new Date(`${data.date}T${data.endTime || "00:00"}`);
+      if (endDateTime <= startDateTime && data.shiftType !== 'off') {
           endDateTime.setDate(endDateTime.getDate() + 1);
       }
 
@@ -269,32 +357,31 @@ export default function ShiftManagement() {
         date: new Date(data.date).getTime(), 
         startTime: startDateTime.getTime(), 
         endTime: endDateTime.getTime(),
-        
-        // --- FIX STARTS HERE ---
-        shiftType: data.shiftType, // Store "morning", "afternoon", etc. here
-        type: "regular",           // Store employment type here
-        // --- FIX ENDS HERE ---
-        
+        shiftType: data.shiftType,
+        type: "regular",
         title: `${data.shiftType.charAt(0).toUpperCase() + data.shiftType.slice(1)} Shift`,
         shiftRole: data.shiftRole, 
         location: data.location,
       })).json();
     },
-    // ... onSuccess keeps existing logic
+    onSuccess: () => { 
+      toast.success("Shift created"); 
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] }); 
+      setIsCreateDialogOpen(false); 
+      createForm.reset(); 
+    },
   });
-
 
   const updateShiftMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<ShiftForm> }) => {
       const updates: any = { ...data };
-      if (data.date) {
-        updates.date = new Date(data.date).getTime();
-        if (data.startTime && data.endTime) {
-            const start = new Date(`${data.date}T${data.startTime}`);
-            const end = new Date(`${data.date}T${data.endTime}`);
-            if (end < start && data.shiftType !== 'off') end.setDate(end.getDate() + 1);
-            updates.startTime = start.getTime(); updates.endTime = end.getTime();
-        }
+      if (data.date && data.startTime && data.endTime) {
+         updates.date = new Date(data.date).getTime();
+         const start = new Date(`${data.date}T${data.startTime}`);
+         const end = new Date(`${data.date}T${data.endTime}`);
+         if (end <= start && data.shiftType !== 'off') end.setDate(end.getDate() + 1);
+         updates.startTime = start.getTime(); 
+         updates.endTime = end.getTime();
       }
       return (await apiRequest("PATCH", `/api/schedules/${id}`, updates)).json();
     },
@@ -303,7 +390,12 @@ export default function ShiftManagement() {
 
   const deleteShiftMutation = useMutation({
     mutationFn: async (id: string) => (await apiRequest("DELETE", `/api/schedules/${id}`, {})).json(),
-    onSuccess: () => { toast.success("Shift deleted"); queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] }); setIsDeleteDialogOpen(false); },
+    onSuccess: () => { 
+        toast.success("Shift deleted"); 
+        queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] }); 
+        setIsDeleteDialogOpen(false); 
+        setIsEditDialogOpen(false); 
+    },
   });
 
   const copyWeekMutation = useMutation({
@@ -313,6 +405,16 @@ export default function ShiftManagement() {
     })).json(),
     onSuccess: () => { toast.success("Schedule copied"); queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] }); },
   });
+
+  const handleCreateSubmit = (data: ShiftForm) => {
+      if (createConflict) { toast.error("Scheduling Conflict", { description: createConflict.message }); return; }
+      createShiftMutation.mutate(data);
+  };
+
+  const handleEditSubmit = (data: ShiftForm) => {
+      if (editConflict) { toast.error("Scheduling Conflict", { description: editConflict.message }); return; }
+      if (selectedSchedule) updateShiftMutation.mutate({ id: selectedSchedule.id, data });
+  };
 
   const handleEdit = (schedule: Schedule) => {
     setSelectedSchedule(schedule);
@@ -336,7 +438,31 @@ export default function ShiftManagement() {
     e?.stopPropagation(); setSelectedSchedule(schedule); setIsDeleteDialogOpen(true);
   };
 
-  // --- Sub-Components ---
+  // Reusable Error Component
+  const ErrorMsg = ({ error }: { error?: { message?: string } }) => {
+    if (!error?.message) return null;
+    return <p className="text-xs text-rose-500 mt-1">{error.message}</p>;
+  };
+
+  const TimeInput = ({ form, name, label, onChangeOverride }: any) => (
+      <div className="space-y-1">
+        <Label className="text-xs font-semibold">{label}</Label>
+        <div className="relative">
+            <Clock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+            <Input 
+                type="time" 
+                className="bg-white h-9 border-slate-200 pl-9 font-mono text-sm" 
+                {...form.register(name, {
+                    onChange: (e) => {
+                        if (onChangeOverride) onChangeOverride(e.target.value, form);
+                    }
+                })} 
+            />
+        </div>
+        <ErrorMsg error={form.formState.errors[name]} />
+      </div>
+  );
+
   const Header = () => (
     <div className={styles.header.container}>
       <div>
@@ -347,7 +473,19 @@ export default function ShiftManagement() {
         <Button variant="outline" className={styles.header.btnCopy} onClick={() => copyWeekMutation.mutate()} disabled={copyWeekMutation.isPending}>
           <Copy className="w-4 h-4 mr-2" /> <span className="hidden sm:inline">Copy Previous Week</span><span className="sm:hidden">Copy Week</span>
         </Button>
-        <Button onClick={() => setIsCreateDialogOpen(true)} className={styles.header.btnCreate}>
+        <Button 
+            onClick={() => {
+                createForm.reset({
+                    shiftType: "morning",
+                    shiftRole: "server",
+                    startTime: SHIFT_PRESETS.morning.start,
+                    endTime: SHIFT_PRESETS.morning.end,
+                    date: getLocalYMD(new Date()) 
+                });
+                setIsCreateDialogOpen(true);
+            }} 
+            className={styles.header.btnCreate}
+        >
           <Plus className="w-4 h-4 mr-2" /> Assign Shift
         </Button>
       </div>
@@ -356,7 +494,6 @@ export default function ShiftManagement() {
 
   const Toolbar = () => (
     <div className={styles.toolbar.container}>
-      {/* 1. Autocomplete Employee Filter */}
       <div className={styles.toolbar.leftGroup}>
         <Users className="w-4 h-4 text-slate-400 hidden lg:block" />
         <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
@@ -387,7 +524,6 @@ export default function ShiftManagement() {
         </Popover>
       </div>
 
-      {/* 2. Date Navigator */}
       <div className={styles.toolbar.dateNav.container}>
         <Button variant="ghost" size="icon" onClick={() => navigate('prev')} className={styles.toolbar.dateNav.btn}><ChevronLeft className="w-4 h-4" /></Button>
         <div className={styles.toolbar.dateNav.text}>
@@ -398,7 +534,6 @@ export default function ShiftManagement() {
         <Button variant="ghost" size="icon" onClick={() => navigate('next')} className={styles.toolbar.dateNav.btn}><ChevronRight className="w-4 h-4" /></Button>
       </div>
 
-      {/* 3. Controls */}
       <div className={styles.toolbar.rightGroup}>
         <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())} className="w-full sm:w-auto">Today</Button>
         <div className="h-4 w-px bg-slate-200 mx-2 hidden sm:block" />
@@ -424,7 +559,6 @@ export default function ShiftManagement() {
 
     const toggleFilter = (type: string | null) => setFilterType(prev => prev === type ? null : type);
 
-    // Helper to render stats cards cleanly
     const StatCard = ({ type, count, icon: Icon, presetKey }: any) => {
         const preset = presetKey ? SHIFT_PRESETS[presetKey as keyof typeof SHIFT_PRESETS] : null;
         const isActive = presetKey ? filterType === presetKey : filterType === null;
@@ -496,10 +630,30 @@ export default function ShiftManagement() {
                                                 const shifts = getShiftsForEmployeeAndDate(employee.id, day);
                                                 return (
                                                     <td key={i} className={cn(styles.roster.tdCell, isToday(day) && "bg-blue-50/10")}>
-                                                        <div className="flex flex-col gap-2 h-full">
-                                                            {shifts.map(shift => <RosterCard key={shift.id} schedule={shift} onEdit={handleEdit} onDelete={handleDelete} />)}
+                                                        <div className="flex flex-col gap-2 h-full min-h-[60px]">
+                                                            {shifts.map(shift => (
+                                                              <RosterCard key={shift.id} schedule={shift} conflict={evaluateScheduleConflict(shift)} onEdit={handleEdit} onDelete={handleDelete} />
+                                                            ))}
                                                             {shifts.length === 0 && (
-                                                                <button onClick={() => { createForm.setValue("userId", employee.id); createForm.setValue("date", day.toISOString().split('T')[0]); setIsCreateDialogOpen(true); }} className="flex-1 w-full flex items-center justify-center rounded-lg border-2 border-dashed border-slate-100 hover:border-slate-300 text-slate-300 hover:text-slate-500 transition-all opacity-0 group-hover:opacity-100"><Plus className="w-5 h-5" /></button>
+                                                                <button 
+                                                                    onClick={() => { 
+                                                                        const pos = employee.position?.toLowerCase();
+                                                                        const validRole = ROLES.includes(pos as any) ? pos : "server";
+                                                                        
+                                                                        createForm.reset({
+                                                                            userId: employee.id, 
+                                                                            date: getLocalYMD(day),
+                                                                            shiftType: "morning",
+                                                                            shiftRole: validRole as any,
+                                                                            startTime: SHIFT_PRESETS.morning.start,
+                                                                            endTime: SHIFT_PRESETS.morning.end
+                                                                        });
+                                                                        setIsCreateDialogOpen(true); 
+                                                                    }} 
+                                                                    className="flex-1 w-full h-full flex items-center justify-center rounded-lg border-2 border-dashed border-transparent hover:border-slate-300 text-slate-300 hover:text-slate-500 transition-all opacity-0 group-hover:opacity-100"
+                                                                >
+                                                                    <Plus className="w-5 h-5" />
+                                                                </button>
                                                             )}
                                                         </div>
                                                     </td>
@@ -535,7 +689,7 @@ export default function ShiftManagement() {
                                     </div>
                                     <div className={styles.kanban.cardList}>
                                         {roleShifts.length === 0 ? <div className="text-center py-8 text-slate-400 text-xs italic">No Staff</div> : 
-                                            roleShifts.map(s => <KanbanCard key={s.id} schedule={s} employeeName={getEmployeeName(s.userId)} onEdit={handleEdit} onDelete={handleDelete} />)
+                                            roleShifts.map(s => <KanbanCard key={s.id} schedule={s} conflict={evaluateScheduleConflict(s)} employeeName={getEmployeeName(s.userId)} onEdit={handleEdit} onDelete={handleDelete} />)
                                         }
                                     </div>
                                 </div>
@@ -556,23 +710,39 @@ export default function ShiftManagement() {
                           <th className={styles.list.cell}>Employee</th>
                           <th className={styles.list.cell}>Shift</th>
                           <th className={styles.list.cell}>Time</th>
+                          <th className={styles.list.cell}>Status</th>
                           <th className={cn(styles.list.cell, "text-right")}>Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredSchedules.map(s => (<tr key={s.id} className={styles.list.row}>
-                        <td className={cn(styles.list.cell, "font-medium")}>{new Date(s.date).toLocaleDateString()}</td>
-                        <td className={styles.list.cell}>{getEmployeeName(s.userId)}</td>
-                        <td className={styles.list.cell}>
-                          <Badge variant="outline" className={cn("capitalize", SHIFT_PRESETS[s.shiftType as keyof typeof SHIFT_PRESETS]?.color)}>
-                            {SHIFT_PRESETS[s.shiftType as keyof typeof SHIFT_PRESETS]?.label || s.shiftType}
-                          </Badge>
-                        </td>
-                        <td className={cn(styles.list.cell, "text-slate-500 text-xs font-mono")}>{s.shiftType !== 'off' ? `${new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'OFF'}</td>
-                        <td className={cn(styles.list.cell, "text-right")}>
-                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(s)}><Edit className="w-4 h-4" /></Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s)}><Trash2 className="w-4 h-4" /></Button>
-                        </td></tr>))}
+                        {filteredSchedules.map(s => {
+                          const conflict = evaluateScheduleConflict(s);
+                          return (
+                            <tr key={s.id} className={styles.list.row}>
+                              <td className={cn(styles.list.cell, "font-medium")}>{new Date(s.date).toLocaleDateString()}</td>
+                              <td className={styles.list.cell}>{getEmployeeName(s.userId)}</td>
+                              <td className={styles.list.cell}>
+                                <Badge variant="outline" className={cn("capitalize", SHIFT_PRESETS[s.shiftType as keyof typeof SHIFT_PRESETS]?.color)}>
+                                  {SHIFT_PRESETS[s.shiftType as keyof typeof SHIFT_PRESETS]?.label || s.shiftType}
+                                </Badge>
+                              </td>
+                              <td className={cn(styles.list.cell, "text-slate-500 text-xs font-mono")}>
+                                {s.shiftType !== 'off' ? `${new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'OFF'}
+                              </td>
+                              <td className={styles.list.cell}>
+                                {conflict ? (
+                                    <div className="flex items-center text-xs text-rose-500"><AlertTriangle className="w-3 h-3 mr-1"/> Conflict</div>
+                                ) : (
+                                    <div className="flex items-center text-xs text-emerald-500"><Check className="w-3 h-3 mr-1"/> Ok</div>
+                                )}
+                              </td>
+                              <td className={cn(styles.list.cell, "text-right")}>
+                                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(s)}><Edit className="w-4 h-4" /></Button>
+                                  <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s)}><Trash2 className="w-4 h-4" /></Button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </CardContent>
@@ -585,21 +755,104 @@ export default function ShiftManagement() {
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Assign New Shift</DialogTitle></DialogHeader>
-          <form onSubmit={createForm.handleSubmit((d) => createShiftMutation.mutate(d))} className="space-y-4">
+          <form onSubmit={createForm.handleSubmit(handleCreateSubmit)} className="space-y-4">
+            
+            {createConflict && (
+               <div className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-100 text-rose-700 text-sm">
+                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                   <div>
+                       <p className="font-semibold">Scheduling Conflict Detected</p>
+                       <p className="text-xs opacity-90">{createConflict.message}</p>
+                   </div>
+               </div>
+            )}
+            
+            {createDurationWarning && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-100 text-amber-700 text-sm">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                        <p className="font-semibold">Short Shift</p>
+                        <p className="text-xs opacity-90">{createDurationWarning}</p>
+                    </div>
+                </div>
+            )}
+
             <div className={styles.form.grid2}>
-              <div className="space-y-2"><Label>Employee</Label><Select onValueChange={(v) => createForm.setValue("userId", v)}><SelectTrigger className={styles.form.input}><SelectValue placeholder="Select..." /></SelectTrigger><SelectContent>{teamMembers?.map(m => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>Date</Label><Input type="date" className={styles.form.input} {...createForm.register("date")} /></div>
+              <div className="space-y-2">
+                <Label>Employee</Label>
+                <Controller
+                  control={createForm.control}
+                  name="userId"
+                  render={({ field }) => (
+                    <Select 
+                        value={field.value} 
+                        onValueChange={(v) => {
+                            field.onChange(v);
+                            // Auto-detect role when employee changes
+                            const emp = teamMembers?.find(m => m.id === v);
+                            const pos = emp?.position?.toLowerCase();
+                            if (pos && ROLES.includes(pos as any)) {
+                                createForm.setValue("shiftRole", pos as any);
+                            } else {
+                                createForm.setValue("shiftRole", "server");
+                            }
+                        }}
+                    >
+                      <SelectTrigger className={styles.form.input}><SelectValue placeholder="Select..." /></SelectTrigger>
+                      <SelectContent>
+                        {teamMembers?.map(m => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <ErrorMsg error={createForm.formState.errors.userId} />
+              </div>
+              <div className="space-y-2">
+                <Label>Date</Label>
+                <Input type="date" className={styles.form.input} {...createForm.register("date")} />
+                <ErrorMsg error={createForm.formState.errors.date} />
+              </div>
             </div>
             <div className={styles.form.grid2}>
-              <div className="space-y-2"><Label>Shift Type</Label><Select onValueChange={(v) => handleShiftTypeChange(v, createForm)} defaultValue="morning"><SelectTrigger className={styles.form.input}><SelectValue /></SelectTrigger><SelectContent>{Object.entries(SHIFT_PRESETS).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent></Select></div>
-              <div className="space-y-2"><Label>Role</Label><Select onValueChange={(v) => createForm.setValue("shiftRole", v as any)} defaultValue="server"><SelectTrigger className="rounded-xl capitalize"><SelectValue /></SelectTrigger><SelectContent>{ROLES.map(r => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2">
+                <Label>Shift Type</Label>
+                <Controller
+                  control={createForm.control}
+                  name="shiftType"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={(val) => handleShiftTypeChange(val, createForm)}>
+                      <SelectTrigger className={styles.form.input}><SelectValue placeholder="Select Type..." /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(SHIFT_PRESETS).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <ErrorMsg error={createForm.formState.errors.shiftType} />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Controller
+                  control={createForm.control}
+                  name="shiftRole"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger className="rounded-xl capitalize"><SelectValue placeholder="Select Role..." /></SelectTrigger>
+                      <SelectContent>
+                        {ROLES.map(r => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <ErrorMsg error={createForm.formState.errors.shiftRole} />
+              </div>
             </div>
             <div className={cn(styles.form.grid2, styles.form.timeWrapper)}>
-              <div className="space-y-1"><Label className="text-xs">Start Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("startTime")} onChange={(e) => onStartTimeChange(e, createForm)}/></div>
-              <div className="space-y-1"><Label className="text-xs">End Time</Label><Input type="time" className="bg-white h-8" {...createForm.register("endTime")} readOnly /></div>
+              <TimeInput form={createForm} name="startTime" label="Start Time" onChangeOverride={onStartTimeChange} />
+              <TimeInput form={createForm} name="endTime" label="End Time" />
             </div>
             <div className="space-y-2"><Label>Location</Label><Input className={styles.form.input} placeholder="e.g. Main Hall" {...createForm.register("location")} /></div>
-            <DialogFooter><Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button><Button type="submit" disabled={createShiftMutation.isPending}>Create Shift</Button></DialogFooter>
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button><Button type="submit" disabled={createShiftMutation.isPending || !!createConflict}>Create Shift</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -607,7 +860,28 @@ export default function ShiftManagement() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader><DialogTitle>Edit Shift</DialogTitle></DialogHeader>
-            <form onSubmit={editForm.handleSubmit((d) => selectedSchedule && updateShiftMutation.mutate({ id: selectedSchedule.id, data: d }))} className="space-y-4 mt-2">
+            <form onSubmit={editForm.handleSubmit(handleEditSubmit)} className="space-y-4 mt-2">
+                
+                {editConflict && (
+                   <div className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-100 text-rose-700 text-sm">
+                       <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                       <div>
+                           <p className="font-semibold">Scheduling Conflict Detected</p>
+                           <p className="text-xs opacity-90">{editConflict.message}</p>
+                       </div>
+                   </div>
+                )}
+                
+                {editDurationWarning && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-100 text-amber-700 text-sm">
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <div>
+                            <p className="font-semibold">Short Shift</p>
+                            <p className="text-xs opacity-90">{editDurationWarning}</p>
+                        </div>
+                    </div>
+                )}
+
                 <div className="space-y-2">
                     <Label>Employee</Label>
                     <div className="flex items-center px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-medium">
@@ -617,30 +891,64 @@ export default function ShiftManagement() {
                 </div>
 
                 <div className={styles.form.grid2}>
-                    <div className="space-y-2"><Label>Date</Label><Input type="date" className={styles.form.input} {...editForm.register("date")} /></div>
+                    <div className="space-y-2">
+                      <Label>Date</Label>
+                      <Input type="date" className={styles.form.input} {...editForm.register("date")} />
+                      <ErrorMsg error={editForm.formState.errors.date} />
+                    </div>
                     <div className="space-y-2">
                         <Label>Role</Label>
-                        <Select onValueChange={(value) => editForm.setValue("shiftRole", value as any)} value={editForm.watch("shiftRole")}>
-                            <SelectTrigger className="rounded-xl capitalize"><SelectValue /></SelectTrigger>
-                            <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}</SelectContent>
-                        </Select>
+                        <Controller
+                          control={editForm.control}
+                          name="shiftRole"
+                          render={({ field }) => (
+                            <Select value={field.value} onValueChange={field.onChange}>
+                                <SelectTrigger className="rounded-xl capitalize"><SelectValue placeholder="Select Role..."/></SelectTrigger>
+                                <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}</SelectContent>
+                            </Select>
+                          )}
+                        />
+                        <ErrorMsg error={editForm.formState.errors.shiftRole} />
                     </div>
                 </div>
                 <div className="space-y-2">
                     <Label>Shift Type</Label>
-                    <Select onValueChange={(val) => handleShiftTypeChange(val, editForm)} value={editForm.watch("shiftType")}>
-                        <SelectTrigger className={styles.form.input}><SelectValue /></SelectTrigger>
-                        <SelectContent>{Object.entries(SHIFT_PRESETS).map(([k,v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <Controller
+                      control={editForm.control}
+                      name="shiftType"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={(val) => handleShiftTypeChange(val, editForm)}>
+                            <SelectTrigger className={styles.form.input}><SelectValue placeholder="Select Type..."/></SelectTrigger>
+                            <SelectContent>{Object.entries(SHIFT_PRESETS).map(([k,v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
+                        </Select>
+                      )}
+                    />
+                    <ErrorMsg error={editForm.formState.errors.shiftType} />
                 </div>
                 <div className={cn(styles.form.grid2, styles.form.timeWrapper)}>
-                    <div className="space-y-1"><Label className="text-xs">Start Time</Label><Input type="time" className="bg-white h-8" {...editForm.register("startTime")} onChange={(e) => onStartTimeChange(e, editForm)}/></div>
-                    <div className="space-y-1"><Label className="text-xs">End Time</Label><Input type="time" className="bg-white h-8" {...editForm.register("endTime")} /></div>
+                    <TimeInput form={editForm} name="startTime" label="Start Time" onChangeOverride={onStartTimeChange} />
+                    <TimeInput form={editForm} name="endTime" label="End Time" />
                 </div>
                 <div className="space-y-2"><Label>Location</Label><Input {...editForm.register("location")} className={styles.form.input} /></div>
-                <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
-                    <Button type="submit" disabled={updateShiftMutation.isPending} className="bg-slate-900 text-white">Update Shift</Button>
+                
+                <DialogFooter className="sm:justify-between items-center mt-6 border-t pt-4">
+                    <Button 
+                        type="button" 
+                        variant="destructive" 
+                        className="rounded-full w-full sm:w-auto mb-2 sm:mb-0" 
+                        onClick={() => {
+                            if (selectedSchedule) {
+                                setIsDeleteDialogOpen(true);
+                                setIsEditDialogOpen(false);
+                            }
+                        }}
+                    >
+                        <Trash2 className="w-4 h-4 mr-2" /> Delete
+                    </Button>
+                    <div className="flex gap-2 w-full sm:w-auto">
+                        <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} className="rounded-full flex-1">Cancel</Button>
+                        <Button type="submit" disabled={updateShiftMutation.isPending || !!editConflict} className="bg-slate-900 text-white rounded-full flex-1">Update</Button>
+                    </div>
                 </DialogFooter>
             </form>
         </DialogContent>
@@ -648,7 +956,7 @@ export default function ShiftManagement() {
 
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent className="rounded-2xl">
-            <AlertDialogHeader><AlertDialogTitle>Delete Shift</AlertDialogTitle><AlertDialogDescription>Are you sure?</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogHeader><AlertDialogTitle>Delete Shift</AlertDialogTitle><AlertDialogDescription>Are you sure you want to delete this shift? This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
             <AlertDialogFooter><AlertDialogCancel className="rounded-full">Cancel</AlertDialogCancel><AlertDialogAction onClick={() => selectedSchedule && deleteShiftMutation.mutate(selectedSchedule.id)} className="bg-rose-600 hover:bg-rose-700 rounded-full">Delete</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -658,48 +966,49 @@ export default function ShiftManagement() {
 
 // --- Cards ---
 
-function RosterCard({ schedule, onEdit, onDelete }: any) {
-  // Fix: Check shiftType instead of type, and handle lowercase normalization
+function RosterCard({ schedule, conflict, onEdit, onDelete }: any) {
   const typeKey = schedule.shiftType?.toLowerCase() || 'morning';
   const style = SHIFT_PRESETS[typeKey as keyof typeof SHIFT_PRESETS] || SHIFT_PRESETS.morning;
-  
-  // Use the database value for the label, or fallback to the key
   const label = schedule.shiftType || "Shift"; 
 
   if (typeKey === 'off') {
       return (
-        <div onClick={() => onEdit(schedule)} className="rounded-md bg-slate-50 border border-slate-100 p-2 text-center cursor-pointer hover:bg-slate-100">
+        <div onClick={() => onEdit(schedule)} className="rounded-md bg-slate-50 border border-slate-100 p-2 text-center cursor-pointer hover:bg-slate-100 relative">
             <span className="text-[10px] font-bold text-slate-300">OFF</span>
+            {conflict && <AlertTriangle className="w-3 h-3 text-rose-500 absolute top-1 right-1" title={conflict.message} />}
         </div>
       );
   }
 
   return (
-    <div onClick={() => onEdit(schedule)} className={cn("relative rounded-lg p-2 text-xs border shadow-sm cursor-pointer hover:scale-[1.02] transition-all group", style.color)}>
-      <div className="flex justify-between items-center mb-1">
-        <span className="font-bold capitalize">{label}</span>
-        <Badge variant="secondary" className="h-4 px-1 text-[8px] bg-white/60 border-0 uppercase">{schedule.shiftRole}</Badge>
+    <div onClick={() => onEdit(schedule)} className={cn("relative rounded-lg p-2 text-xs border shadow-sm cursor-pointer hover:scale-[1.02] transition-all group", style.color, conflict && "border-rose-400 ring-1 ring-rose-400 bg-rose-50")}>
+      <div className="flex justify-between items-center mb-1 pr-3">
+        <span className={cn("font-bold capitalize", conflict && "text-rose-700")}>{label}</span>
+        <Badge variant="secondary" className={cn("h-4 px-1 text-[8px] bg-white/60 border-0 uppercase", conflict && "bg-rose-100 text-rose-700")}>{schedule.shiftRole}</Badge>
       </div>
-      <div className="font-mono text-[10px] opacity-90">
+      <div className={cn("font-mono text-[10px] opacity-90", conflict && "text-rose-600")}>
         {new Date(schedule.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
       </div>
-      <button onClick={(e) => onDelete(schedule, e)} className="absolute top-1 right-1 p-1 rounded-full bg-white/40 hover:bg-red-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
-        <Trash2 className="w-3 h-3" />
-      </button>
+      {conflict && <AlertTriangle className="w-3 h-3 text-rose-500 absolute top-1 right-1" title={conflict.message} />}
+      {!conflict && (
+        <button onClick={(e) => onDelete(schedule, e)} className="absolute top-1 right-1 p-1 rounded-full bg-white/40 hover:bg-red-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+          <Trash2 className="w-3 h-3" />
+        </button>
+      )}
     </div>
   );
 }
 
-function KanbanCard({ schedule, employeeName, onEdit, onDelete }: any) {
-  // Fix: Check shiftType instead of type
+function KanbanCard({ schedule, conflict, employeeName, onEdit, onDelete }: any) {
   const typeKey = schedule.shiftType?.toLowerCase() || 'morning';
   const style = SHIFT_PRESETS[typeKey as keyof typeof SHIFT_PRESETS] || SHIFT_PRESETS.morning;
 
   return (
-    <div onClick={() => onEdit(schedule)} className="group relative bg-white p-3 rounded-lg border border-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer">
+    <div onClick={() => onEdit(schedule)} className={cn("group relative bg-white p-3 rounded-lg border shadow-sm hover:shadow-md transition-all cursor-pointer", conflict ? "border-rose-300" : "border-slate-100")}>
       <div className="flex justify-between items-start mb-1">
-        <span className="font-bold text-sm text-slate-800">{employeeName}</span>
-        <div className={cn("w-2 h-2 rounded-full", style.indicator)} />
+        <span className={cn("font-bold text-sm", conflict ? "text-rose-800" : "text-slate-800")}>{employeeName}</span>
+        {!conflict && <div className={cn("w-2 h-2 rounded-full", style.indicator)} />}
+        {conflict && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" title={conflict.message} />}
       </div>
       <div className="flex items-center text-xs text-slate-500 gap-1.5 mb-1">
         <Clock className="w-3 h-3" />
@@ -708,10 +1017,17 @@ function KanbanCard({ schedule, employeeName, onEdit, onDelete }: any) {
       <div className="flex items-center text-[10px] text-slate-400 gap-1.5">
         <MapPin className="w-3 h-3" /> {schedule.location || "Main Hall"}
       </div>
+      {conflict && (
+        <div className="mt-2 text-[10px] font-semibold text-rose-600 bg-rose-50 p-1.5 rounded">
+            {conflict.message}
+        </div>
+      )}
       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-        <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500" onClick={(e) => onDelete(schedule, e)}>
-            <Trash2 className="w-3 h-3" />
-        </Button>
+        {!conflict && (
+            <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500" onClick={(e) => onDelete(schedule, e)}>
+                <Trash2 className="w-3 h-3" />
+            </Button>
+        )}
       </div>
     </div>
   );

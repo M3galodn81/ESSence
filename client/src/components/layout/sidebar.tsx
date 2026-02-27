@@ -1,72 +1,58 @@
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission"; // <-- Import your new hook
+import { Permission } from "@/lib/permissions";         // <-- Import your permissions enum
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
-  Home,
-  User,
-  Calendar,
-  FileText,
-  Clock,
-  Users,
-  Megaphone,
-  LogOut,
-  Settings,
-  Menu,
-  X,
-  AlertTriangle,
-  PhilippinePeso,
-  UserPlus,
-  Timer,
-  Briefcase
+  Home, User, Calendar, FileText, Clock, Users,
+  Megaphone, LogOut, Settings, Menu, X, AlertTriangle,
+  PhilippinePeso, UserPlus, Timer, Briefcase
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { canAccessManagementTab, canAccessPayslipManagement } from "@/utils/permissions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface SidebarProps {
   className?: string;
 }
 
+// 1. Map each route to a specific Permission instead of a generic Role.
+// Items without a permission requirement (like Dashboard) will always render.
 const navigationItems = [
-  { path: "/", label: "Dashboard", icon: Home, roles: ["employee", "manager", "admin", "payroll_officer"] },
-  { path: "/announcements", label: "Announcements", icon: Megaphone, roles: ["employee", "manager", "admin", "payroll_officer"] },
-  { path: "/time-clock", label: "Time Clock", icon: Timer, roles: ["employee"] },
-  { path: "/attendance", label: "Attendance Logs", icon: FileText, roles: ["employee"] },
-  { path: "/leave-management", label: "Leave Requests", icon: Calendar, roles: ["employee", "manager", "admin"] },
-  { path: "/payslips", label: "My Payslips", icon: PhilippinePeso, roles: ["employee"] },
-  // { path: "/salary-computation", label: "Salary Calculator", icon: layersIconWrapper(PhilippinePeso), roles: ["employee"] },
-  { path: "/schedules", label: "My Schedule", icon: Clock, roles: ["employee"] },
-  { path: "/reports", label: "Reports", icon: AlertTriangle, roles: ["employee", "manager", "admin"] },
-  { path: "/profile", label: "My Profile", icon: User, roles: ["employee", "manager", "admin", "payroll_officer"] },
-  { path: "/qr-attendance", label: "QR Attendance", icon: FileText, roles: ["manager", "admin"] },
+  { path: "/", label: "Dashboard", icon: Home },
+  { path: "/announcements", label: "Announcements", icon: Megaphone, permission: Permission.VIEW_ANNOUNCEMENTS },
+  { path: "/time-clock", label: "Time Clock", icon: Timer, permission: Permission.SUBMIT_ATTENDANCE },
+  { path: "/attendance", label: "Attendance Logs", icon: FileText, permission: Permission.VIEW_OWN_ATTENDANCE },
+  { path: "/leave-management", label: "Leave Requests", icon: Calendar, permission: Permission.VIEW_OWN_LEAVES },
+  { path: "/payslips", label: "My Payslips", icon: PhilippinePeso, permission: Permission.VIEW_OWN_PAYSLIP },
+  { path: "/schedules", label: "My Schedule", icon: Clock, permission: Permission.VIEW_OWN_SCHEDULE },
+  { path: "/reports", label: "Reports", icon: AlertTriangle, permission: Permission.VIEW_OWN_REPORTS },
+  { path: "/profile", label: "My Profile", icon: User, permission: Permission.VIEW_OWN_PROFILE },
+  { path: "/qr-attendance", label: "QR Attendance", icon: FileText, permission: Permission.MANAGE_ATTENDANCE },
 ];
 
 const managementItems = [
-  { path: "/user-management", label: "User Management", icon: UserPlus, roles: ["manager", "admin"] },
-  { path: "/team-management", label: "Team Management", icon: Users, roles: ["manager", "admin"] },
-  { path: "/shift-management", label: "Shift Management", icon: Calendar, roles: ["manager", "admin"] },
-  { path: "/labor-cost-analytics", label: "Labor Analytics", icon: Briefcase, roles: ["manager"] },
+  { path: "/user-management", label: "User Management", icon: UserPlus, permission: Permission.MANAGE_USERS },
+  { path: "/team-management", label: "Team Management", icon: Users, permission: Permission.VIEW_TEAM_ATTENDANCE },
+  { path: "/shift-management", label: "Shift Management", icon: Calendar, permission: Permission.MANAGE_SCHEDULES },
+  { path: "/labor-cost-analytics", label: "Labor Analytics", icon: Briefcase, permission: Permission.VIEW_LABOR_COST },
 ];
 
 const payrollItems = [
-  { path: "/payslip-history", label: "Payslip Management", icon: FileText, roles: ["payroll_officer"] },
-  { path: "/payroll-management", label: "Payroll Generator", icon: PhilippinePeso, roles: ["payroll_officer"] },
-  { path: "/admin-attendance", label: "Employee Attendance", icon: FileText, roles: ["payroll_officer"] },
-  { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, roles: ["payroll_officer"] },
+  { path: "/payslip-history", label: "Payslip Management", icon: FileText, permission: Permission.VIEW_ALL_PAYSLIPS },
+  { path: "/payroll-management", label: "Payroll Generator", icon: PhilippinePeso, permission: Permission.MANAGE_PAYROLL },
+  { path: "/admin-attendance", label: "Employee Attendance", icon: FileText, permission: Permission.VIEW_ALL_ATTENDANCE },
+  { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, permission: Permission.MANAGE_HOLIDAYS },
 ];
-
-// Helper to ensure icon types match if strict
-function layersIconWrapper(Icon: any) { return Icon; }
 
 export default function Sidebar({ className }: SidebarProps) {
   const { user, logoutMutation } = useAuth();
+  const { hasPermission } = usePermission(); // <-- Initialize your permission hook
+  
   const [location, navigate] = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Restore scroll position on mount
   useEffect(() => {
     const savedPosition = sessionStorage.getItem("sidebar-scroll-pos");
     if (scrollRef.current && savedPosition) {
@@ -89,15 +75,25 @@ export default function Sidebar({ className }: SidebarProps) {
     setIsMobileOpen(false);
   };
 
-  const canAccessManagement = canAccessManagementTab(user) ;
-
   const isActive = (path: string) => {
     if (path === "/") return location === "/";
     return location.startsWith(path) && path !== "/";
   };
 
+  // 2. Filter the items based on the user's granular permissions
+  const visibleNavItems = navigationItems.filter(item => 
+    !item.permission || hasPermission(item.permission)
+  );
+
+  const visibleManagementItems = managementItems.filter(item => 
+    hasPermission(item.permission)
+  );
+
+  const visiblePayrollItems = payrollItems.filter(item => 
+    hasPermission(item.permission)
+  );
+
   const sidebarContent = (
-    // Updated to use semi-transparent background with blur
     <div className="flex flex-col h-full bg-slate-900/95 backdrop-blur-xl text-slate-300">
       {/* Logo Section */}
       <div className="p-6 flex flex-col items-center border-b border-slate-800/50 shrink-0">
@@ -111,11 +107,10 @@ export default function Sidebar({ className }: SidebarProps) {
         </div>
         <div className="mt-4 text-center">
           <h1 className="font-bold text-lg text-white tracking-tight">ESSENCE</h1>
-          {/* <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Self Service</p> */}
         </div>
       </div>
 
-      {/* Navigation - Scrollbar Hidden & Persisted */}
+      {/* Navigation */}
       <div 
         ref={scrollRef}
         onScroll={handleScroll}
@@ -123,9 +118,32 @@ export default function Sidebar({ className }: SidebarProps) {
       >
         <div className="space-y-1">
           <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Menu</p>
-          {navigationItems
-            .filter(item => item.roles.includes(user?.role || "employee"))
-            .map((item) => (
+          {visibleNavItems.map((item) => (
+            <Button
+              key={item.path}
+              variant="ghost"
+              className={cn(
+                "w-full justify-start h-11 mb-1 transition-all duration-200 ease-in-out rounded-lg group",
+                isActive(item.path)
+                  ? "bg-gradient-to-r from-primary to-red-700 text-white shadow-md shadow-primary/20 font-medium"
+                  : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/50"
+              )}
+              onClick={() => handleNavigation(item.path)}
+              data-testid={`nav-${item.path.slice(1) || "dashboard"}`}
+            >
+              <item.icon className={cn("w-5 h-5 mr-3", isActive(item.path) ? "text-white" : "text-slate-500 group-hover:text-slate-300")} />
+              {item.label}
+            </Button>
+          ))}
+        </div>
+
+        {/* 3. Dynamically hide headers if the user has 0 permitted items in that category */}
+        {visibleManagementItems.length > 0 && (
+          <div className="mt-8 space-y-1">
+            <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Admin & Management
+            </p>
+            {visibleManagementItems.map((item) => (
               <Button
                 key={item.path}
                 variant="ghost"
@@ -136,65 +154,37 @@ export default function Sidebar({ className }: SidebarProps) {
                     : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/50"
                 )}
                 onClick={() => handleNavigation(item.path)}
-                data-testid={`nav-${item.path.slice(1) || "dashboard"}`}
+                data-testid={`nav-${item.path.slice(1)}`}
               >
                 <item.icon className={cn("w-5 h-5 mr-3", isActive(item.path) ? "text-white" : "text-slate-500 group-hover:text-slate-300")} />
                 {item.label}
               </Button>
             ))}
-        </div>
-
-        {canAccessManagement && (
-          <div className="mt-8 space-y-1">
-            <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-              Admin & Management
-            </p>
-            {managementItems
-              .filter(item => item.roles.includes(user?.role || "employee"))
-              .map((item) => (
-                <Button
-                  key={item.path}
-                  variant="ghost"
-                  className={cn(
-                    "w-full justify-start h-11 mb-1 transition-all duration-200 ease-in-out rounded-lg group",
-                    isActive(item.path)
-                      ? "bg-gradient-to-r from-primary to-red-700 text-white shadow-md shadow-primary/20 font-medium"
-                      : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/50"
-                  )}
-                  onClick={() => handleNavigation(item.path)}
-                  data-testid={`nav-${item.path.slice(1)}`}
-                >
-                  <item.icon className={cn("w-5 h-5 mr-3", isActive(item.path) ? "text-white" : "text-slate-500 group-hover:text-slate-300")} />
-                  {item.label}
-                </Button>
-              ))}
           </div>
         )}
 
-        {canAccessPayslipManagement(user) && (
+        {visiblePayrollItems.length > 0 && (
           <div className="mt-8 space-y-1">
             <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
               Payslips
             </p>
-            {payrollItems
-              .filter(item => item.roles.includes(user?.role || "employee"))
-              .map((item) => (
-                <Button
-                  key={item.path}
-                  variant="ghost"
-                  className={cn(
-                    "w-full justify-start h-11 mb-1 transition-all duration-200 ease-in-out rounded-lg group",
-                    isActive(item.path)
-                      ? "bg-gradient-to-r from-primary to-red-700 text-white shadow-md shadow-primary/20 font-medium"
-                      : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/50"
-                  )}
-                  onClick={() => handleNavigation(item.path)}
-                  data-testid={`nav-${item.path.slice(1)}`}
-                >
-                  <item.icon className={cn("w-5 h-5 mr-3", isActive(item.path) ? "text-white" : "text-slate-500 group-hover:text-slate-300")} />
-                  {item.label}
-                </Button>
-              ))}
+            {visiblePayrollItems.map((item) => (
+              <Button
+                key={item.path}
+                variant="ghost"
+                className={cn(
+                  "w-full justify-start h-11 mb-1 transition-all duration-200 ease-in-out rounded-lg group",
+                  isActive(item.path)
+                    ? "bg-gradient-to-r from-primary to-red-700 text-white shadow-md shadow-primary/20 font-medium"
+                    : "text-slate-400 hover:text-slate-100 hover:bg-slate-800/50"
+                )}
+                onClick={() => handleNavigation(item.path)}
+                data-testid={`nav-${item.path.slice(1)}`}
+              >
+                <item.icon className={cn("w-5 h-5 mr-3", isActive(item.path) ? "text-white" : "text-slate-500 group-hover:text-slate-300")} />
+                {item.label}
+              </Button>
+            ))}
           </div>
         )}
       </div>
@@ -240,7 +230,6 @@ export default function Sidebar({ className }: SidebarProps) {
 
   return (
     <>
-      {/* Mobile Overlay */}
       {isMobileOpen && (
         <div 
           className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-40 lg:hidden animate-in fade-in duration-200"
@@ -249,7 +238,6 @@ export default function Sidebar({ className }: SidebarProps) {
         />
       )}
 
-      {/* Mobile Toggle Button */}
       <Button
         variant="ghost"
         size="sm"
@@ -259,8 +247,6 @@ export default function Sidebar({ className }: SidebarProps) {
       >
         {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </Button>
-
-      {/* Sidebar Component Container */}
       
       <aside
         className={cn(
@@ -274,4 +260,4 @@ export default function Sidebar({ className }: SidebarProps) {
       </aside>
     </>
   );
-} 
+}

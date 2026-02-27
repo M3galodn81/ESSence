@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission"; // <-- Added RBAC hook
+import { Permission, Role } from "@/lib/permissions";   // <-- Added Enums
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -47,56 +49,68 @@ const formatDateForInput = (date?: number | string | Date | null) => {
   return d.toISOString().split('T')[0];
 };
 
+// Parses ugly database constraints into friendly UI messages
+const parseUniqueConstraintError = (errorMessage: string): string => {
+  const msg = errorMessage.toLowerCase();
+  if (msg.includes("unique constraint failed") || msg.includes("already exists") || msg.includes("duplicate")) {
+    if (msg.includes("email")) return "This email address is already registered.";
+    if (msg.includes("username")) return "This username is already taken. Try adding a number.";
+    if (msg.includes("employee_id") || msg.includes("employeeid")) return "An employee with this ID already exists.";
+    return "A user with this information already exists in the system.";
+  }
+  return errorMessage || "An unexpected error occurred.";
+};
+
 // --- Schemas ---
 
 const addressSchema = z.object({
-  street: z.string().min(1, "Street is required"),
-  city: z.string().min(1, "City is required"),
-  province: z.string().min(1, "Province is required"),
-  zipCode: z.string().min(1, "Zip Code is required"),
+  street: z.string().min(1, "Street is required").trim(),
+  city: z.string().min(1, "City is required").trim(),
+  province: z.string().min(1, "Province is required").trim(),
+  zipCode: z.string().min(1, "Zip Code is required").trim(),
   country: z.string().optional().default("Philippines"),
 });
 
 const emergencyContactSchema = z.object({
-  name: z.string().min(1, "Contact name is required"),
-  relation: z.string().min(1, "Relation is required"),
-  phone: z.string().min(1, "Contact phone is required"),
+  name: z.string().min(2, "Contact name must be at least 2 characters").trim(),
+  relation: z.string().min(2, "Relation is required").trim(),
+  phone: z.string().min(7, "Please enter a valid phone number").trim(),
 });
 
 const createUserSchema = z.object({
   // Identity
-  firstName: z.string().min(1, "First name is required"),
+  firstName: z.string().min(2, "First name is required").trim(),
   middleName: z.string().optional(),
-  lastName: z.string().min(1, "Last name is required"),
+  lastName: z.string().min(2, "Last name is required").trim(),
   birthDate: z.string().min(1, "Birth date is required"),
   gender: z.enum(["Male", "Female", "Prefer not to say"], { required_error: "Gender is required" }),
   civilStatus: z.enum(["Single", "Married", "Widowed", "Separated", "Divorced"], { required_error: "Civil Status is required" }),
-  nationality: z.string().min(1, "Nationality is required").default("Filipino"),
+  nationality: z.string().min(2, "Nationality is required").default("Filipino"),
   
   // Account
-  username: z.string(),
+  username: z.string().min(3, "Username must be at least 3 characters").trim(),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  email: z.string().email("Invalid email address"),
-  role: z.enum(["employee", "manager", "payroll_officer", "admin"]),
+  email: z.string().email("Invalid email address format").trim().toLowerCase(),
+  role: z.enum(["employee", "manager", "payroll_officer", "admin", "hr"]),
   
   // Employment
-  employeeId: z.string(),
-  department: z.string().optional(),
-  position: z.string().optional(),
-  employmentStatus: z.enum(["regular", "probationary", "contractual"]).default("regular"),
+  employeeId: z.string().min(1, "Employee ID is required"),
+  department: z.string().min(2, "Department is required").optional(),
+  position: z.string().min(2, "Position is required").optional(),
+  employmentStatus: z.enum(["regular", "probationary", "contractual"]).default("contractual"), // <-- Updated Default
   hireDate: z.string().min(1, "Hire date is required"),
   managerId: z.string().optional(),
   
   // Contact
-  phoneNumber: z.string().min(1, "Phone number is required"),
+  phoneNumber: z.string().min(10, "Valid mobile number is required").trim(),
   address: addressSchema,
   emergencyContact: emergencyContactSchema,
 });
 
 const editUserSchema = createUserSchema.partial().extend({
-  annualLeaveBalanceLimit: z.coerce.number().optional(),
-  sickLeaveBalanceLimit: z.coerce.number().optional(),
-  serviceIncentiveLeaveBalanceLimit: z.coerce.number().optional(),
+  annualLeaveBalanceLimit: z.coerce.number().min(0, "Cannot be negative").optional(),
+  sickLeaveBalanceLimit: z.coerce.number().min(0, "Cannot be negative").optional(),
+  serviceIncentiveLeaveBalanceLimit: z.coerce.number().min(0, "Cannot be negative").optional(),
 });
 
 const changePasswordSchema = z.object({
@@ -111,7 +125,7 @@ type CreateUserForm = z.infer<typeof createUserSchema>;
 type EditUserForm = z.infer<typeof editUserSchema>;
 type ChangePasswordForm = z.infer<typeof changePasswordSchema>;
 
-// --- Helper Components (Defined OUTSIDE to fix focus issues) ---
+// --- Helper Components ---
 
 const ErrorMsg = ({ error }: { error?: { message?: string } }) => {
   if (!error?.message) return null;
@@ -197,10 +211,12 @@ const EmploymentSection = ({ form, isEdit = false, managers }: { form: UseFormRe
              <div>
                 <Label className="text-slate-500">{isEdit ? "Employee ID" : "Auto-Generated ID"}</Label>
                 <Input {...form.register("employeeId")} readOnly={!isEdit} className={`rounded-xl mt-1.5 ${!isEdit ? "bg-slate-100 font-mono text-slate-500" : "bg-white"}`} />
+                <ErrorMsg error={form.formState.errors.employeeId} />
             </div>
             <div>
                 <Label className="text-slate-500">{isEdit ? "Username" : "Auto-Generated Username"}</Label>
                 <Input {...form.register("username")} readOnly={!isEdit} className={`rounded-xl mt-1.5 ${!isEdit ? "bg-slate-100 font-mono text-slate-500" : "bg-white"}`} />
+                <ErrorMsg error={form.formState.errors.username} />
             </div>
         </div>
 
@@ -208,10 +224,12 @@ const EmploymentSection = ({ form, isEdit = false, managers }: { form: UseFormRe
             <div>
                 <Label>Department</Label>
                 <Input {...form.register("department")} className="rounded-xl mt-1.5" />
+                <ErrorMsg error={form.formState.errors.department} />
             </div>
             <div>
                 <Label>Position</Label>
                 <Input {...form.register("position")} className="rounded-xl mt-1.5" />
+                <ErrorMsg error={form.formState.errors.position} />
             </div>
         </div>
 
@@ -233,6 +251,7 @@ const EmploymentSection = ({ form, isEdit = false, managers }: { form: UseFormRe
                     <SelectTrigger className="rounded-xl mt-1.5"><SelectValue /></SelectTrigger>
                     <SelectContent>
                          <SelectItem value="admin">Admin</SelectItem>
+                         <SelectItem value="hr">HR</SelectItem>
                          <SelectItem value="manager">Manager</SelectItem>
                          <SelectItem value="payroll_officer">Payroll Officer</SelectItem>
                          <SelectItem value="employee">Employee</SelectItem>
@@ -247,7 +266,6 @@ const EmploymentSection = ({ form, isEdit = false, managers }: { form: UseFormRe
                 <Input type="email" {...form.register("email")} className="rounded-xl mt-1.5" />
                 <ErrorMsg error={form.formState.errors.email} />
              </div>
-             {/* Only show Password on Create, not Edit (handled via dialog) */}
              {!isEdit && (
                  <div>
                     <Label>Password *</Label>
@@ -275,9 +293,21 @@ const EmploymentSection = ({ form, isEdit = false, managers }: { form: UseFormRe
             <div className="space-y-3 pt-4 border-t border-slate-100">
                 <h4 className="text-sm font-semibold text-slate-900">Leave Limits (Annual)</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div><Label className="text-xs text-slate-500">Vacation Leave</Label><Input type="number" {...form.register("annualLeaveBalanceLimit")} className="rounded-xl mt-1" /></div>
-                    <div><Label className="text-xs text-slate-500">Sick Leave</Label><Input type="number" {...form.register("sickLeaveBalanceLimit")} className="rounded-xl mt-1" /></div>
-                    <div><Label className="text-xs text-slate-500">Service Incentive</Label><Input type="number" {...form.register("serviceIncentiveLeaveBalanceLimit")} className="rounded-xl mt-1" /></div>
+                    <div>
+                      <Label className="text-xs text-slate-500">Vacation Leave</Label>
+                      <Input type="number" {...form.register("annualLeaveBalanceLimit")} className="rounded-xl mt-1" />
+                      <ErrorMsg error={form.formState.errors.annualLeaveBalanceLimit} />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-500">Sick Leave</Label>
+                      <Input type="number" {...form.register("sickLeaveBalanceLimit")} className="rounded-xl mt-1" />
+                      <ErrorMsg error={form.formState.errors.sickLeaveBalanceLimit} />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-500">Service Incentive</Label>
+                      <Input type="number" {...form.register("serviceIncentiveLeaveBalanceLimit")} className="rounded-xl mt-1" />
+                      <ErrorMsg error={form.formState.errors.serviceIncentiveLeaveBalanceLimit} />
+                    </div>
                 </div>
             </div>
         )}
@@ -350,6 +380,11 @@ const ContactSection = ({ form }: { form: UseFormReturn<any> }) => (
 
 export default function UserManagement() {
   const { user } = useAuth();
+  const { hasPermission } = usePermission(); // Integrate RBAC
+
+  // Verify access using the new permission enums
+  const canManageUsers = hasPermission(Permission.MANAGE_USERS);
+
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
@@ -366,7 +401,7 @@ export default function UserManagement() {
     defaultValues: {
       role: "employee",
       nationality: "Filipino",
-      employmentStatus: "regular",
+      employmentStatus: "contractual", // Applied Default update
       address: { country: "Philippines" }
     },
   });
@@ -385,7 +420,7 @@ export default function UserManagement() {
 
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ["/api/users"],
-    enabled: user?.role === "admin" || user?.role === "manager",
+    enabled: canManageUsers, // Only fetch if allowed
   });
 
   const filteredUsers = users.filter((u: any) => {
@@ -453,7 +488,6 @@ export default function UserManagement() {
     }
   }, [watchHireDate, isCreateDialogOpen, users]);
 
-
   // --- Mutations ---
 
   const createUserMutation = useMutation({
@@ -485,7 +519,7 @@ export default function UserManagement() {
       toast.success("Success", { description: "User created successfully" });
     },
     onError: (error: Error) => {
-      toast.error("Error", { description: error.message });
+      toast.error("Validation Error", { description: parseUniqueConstraintError(error.message) });
     },
   });
 
@@ -522,7 +556,7 @@ export default function UserManagement() {
       toast.success("Success", { description: "User updated successfully" });
     },
     onError: (error: Error) => {
-      toast.error("Error", { description: error.message });
+      toast.error("Validation Error", { description: parseUniqueConstraintError(error.message) });
     },
   });
 
@@ -648,6 +682,7 @@ export default function UserManagement() {
   const getRoleBadge = (role: string) => {
     const colors: Record<string, string> = {
       admin: "bg-rose-100 text-rose-700 border-rose-200",
+      hr: "bg-indigo-100 text-indigo-700 border-indigo-200",
       manager: "bg-purple-100 text-purple-700 border-purple-200",
       payroll_officer: "bg-blue-100 text-blue-700 border-blue-200",
       employee: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -655,23 +690,24 @@ export default function UserManagement() {
     return <Badge variant="outline" className={`capitalize ${colors[role] || "bg-gray-100"} border px-2.5 py-0.5`}>{role.replace(/_/g, " ")}</Badge>;
   };
   
+  // Adjusted scoped modification check
   const canModifyUser = (targetUser: any) => {
-    if (user?.role === "admin") return true;
-    if (user?.role === "manager") {
-      if (user.id === targetUser.id) return true;
-      if (targetUser.role === 'employee' && targetUser.managerId === user.id) return true;
-    }
+    if (!canManageUsers) return false; 
+    if (user?.role === "admin" || user?.role === "hr") return true; 
+    if (user?.id === targetUser.id) return true; // Modifying self
+    if (targetUser.managerId === user?.id) return true; // Line managers modifying direct reports
     return false;
   };
 
   const stats = {
     total: users.length,
-    admins: users.filter((u: any) => u.role === 'admin').length,
+    admins: users.filter((u: any) => u.role === 'admin' || u.role === 'hr').length,
     managers: users.filter((u: any) => u.role === 'manager').length,
     employees: users.filter((u: any) => u.role === 'employee').length,
   };
 
-  if (user?.role !== "admin" && user?.role !== "manager") {
+  // Block users without proper access
+  if (!canManageUsers) {
     return (
       <div className="p-8 flex justify-center items-center h-screen">
         <Card className="w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-lg rounded-3xl">
@@ -749,7 +785,7 @@ export default function UserManagement() {
         <BentoCard title="Total Users" value={stats.total} icon={Users} variant="default" testIdPrefix="stat-total" />
         <BentoCard title="Employees" value={stats.employees} icon={UserCheck} variant="emerald" testIdPrefix="stat-employees" />
         <BentoCard title="Managers" value={stats.managers} icon={Briefcase} variant="rose" testIdPrefix="stat-managers" />
-        <BentoCard title="Admins" value={stats.admins} icon={Shield} variant="amber" testIdPrefix="stat-admins" />
+        <BentoCard title="Admins & HR" value={stats.admins} icon={Shield} variant="amber" testIdPrefix="stat-admins" />
       </div>
 
       {/* Glass User Grid */}
@@ -804,7 +840,7 @@ export default function UserManagement() {
                    </div>
                 </div>
 
-                {(user?.role === "admin" || canModifyUser(u)) && (
+                {canModifyUser(u) && (
                   <div className="flex items-center gap-2 pt-4 border-t border-slate-100/50 opacity-100 sm:opacity-60 sm:group-hover:opacity-100 transition-opacity">
                       <Button size="sm" variant="ghost" className="flex-1 h-8 bg-white border border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-100 rounded-lg text-xs" onClick={() => handleEdit(u)}>
                         <Edit className="w-3.5 h-3.5 mr-1.5" /> Edit
@@ -812,7 +848,7 @@ export default function UserManagement() {
                       <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-white border border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100 rounded-lg" onClick={() => handleChangePassword(u)} title="Change Password">
                         <Key className="w-3.5 h-3.5" />
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-white border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100 rounded-lg" onClick={() => handleDelete(u)} disabled={u.id === user.id} title="Delete">
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-white border border-slate-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100 rounded-lg" onClick={() => handleDelete(u)} disabled={u.id === user?.id} title="Delete">
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                   </div>
@@ -853,15 +889,15 @@ export default function UserManagement() {
           <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
              <div>
                 <Label>New Password</Label>
-                <Input type="password" {...passwordForm.register("newPassword")} className="rounded-xl" />
+                <Input type="password" {...passwordForm.register("newPassword")} className="rounded-xl mt-1.5" />
                 <ErrorMsg error={passwordForm.formState.errors.newPassword} />
              </div>
              <div>
                 <Label>Confirm Password</Label>
-                <Input type="password" {...passwordForm.register("confirmPassword")} className="rounded-xl" />
+                <Input type="password" {...passwordForm.register("confirmPassword")} className="rounded-xl mt-1.5" />
                 <ErrorMsg error={passwordForm.formState.errors.confirmPassword} />
              </div>
-             <DialogFooter>
+             <DialogFooter className="pt-4">
                <Button type="button" variant="outline" onClick={() => setIsPasswordDialogOpen(false)} className="rounded-full">Cancel</Button>
                <Button type="submit" disabled={changePasswordMutation.isPending} className="rounded-full bg-slate-900">Update Password</Button>
              </DialogFooter>
