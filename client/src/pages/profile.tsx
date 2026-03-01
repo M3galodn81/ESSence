@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { usePermission } from "@/hooks/use-permission"; // <-- Added RBAC hook
-import { Permission } from "@/lib/permissions";         // <-- Added Permissions enum
+import { usePermission } from "@/hooks/use-permission";
+import { Permission } from "@/lib/permissions";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { toast } from "sonner";
@@ -89,9 +89,10 @@ export default function Profile() {
     },
   });
 
+  // --- FIXED: Changed from /api/profile to /api/users/:id ---
   const updateProfileMutation = useMutation({
     mutationFn: async (data: ProfileUpdateForm) => {
-      const res = await apiRequest("PATCH", "/api/profile", data);
+      const res = await apiRequest("PATCH", `/api/users/${user?.id}`, data);
       return await res.json();
     },
     onSuccess: () => {
@@ -106,7 +107,7 @@ export default function Profile() {
 
   const updateEmergencyContactMutation = useMutation({
     mutationFn: async (data: EmergencyContactForm) => {
-      const res = await apiRequest("PATCH", "/api/profile", { emergencyContact: data });
+      const res = await apiRequest("PATCH", `/api/users/${user?.id}`, { emergencyContact: data });
       return await res.json();
     },
     onSuccess: () => {
@@ -120,7 +121,7 @@ export default function Profile() {
 
   const updateAddressMutation = useMutation({
     mutationFn: async (data: AddressForm) => {
-      const res = await apiRequest("PATCH", "/api/profile", { address: data });
+      const res = await apiRequest("PATCH", `/api/users/${user?.id}`, { address: data });
       return await res.json();
     },
     onSuccess: () => {
