@@ -1,1034 +1,1182 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useForm, Controller } from "react-hook-form";
+import { Checkbox } from "@/components/ui/checkbox"; 
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { insertReportSchema, type User as UserType } from "@shared/schema";
 import { z } from "zod";
 import { 
-  Clock, ChevronLeft, ChevronRight, Plus, Edit, Trash2, 
-  Copy, Users, CalendarDays, MapPin, Grid, List, 
-  Sun, Moon, Sunset, LayoutPanelLeft, Check, ChevronsUpDown, AlertTriangle, AlertCircle
+  AlertTriangle, UserX, Hammer, Plus, Calendar as CalendarIcon, Clock, 
+  FileText, MapPin, CheckCircle2, AlertCircle, X, Users,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, 
+  List as ListIcon, Banknote, Search, History, Filter, Check,
+  Loader2, ChevronsUpDown, Send, FileDown, Download
 } from "lucide-react";
-import type { Schedule, User, LeaveRequest } from "@shared/schema";
-import { useAuth } from "@/hooks/use-auth";
-import { usePermission } from "@/hooks/use-permission";
-import { Permission } from "@/lib/permissions";
+import { format, subMonths, startOfMonth } from "date-fns"; 
 import { cn } from "@/lib/utils";
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, 
+  PieChart, Pie, Cell, Legend
+} from 'recharts';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Avatar, AvatarFallback } from "@radix-ui/react-avatar";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
-// --- Configuration ---
-const ROLES = ["cashier", "bar", "server", "kitchen"];
-
-const SHIFT_PRESETS = {
-  morning: { start: "08:00", end: "17:00", label: "AM", color: "bg-emerald-100 border-emerald-200 text-emerald-800", indicator: "bg-emerald-500", ring: "ring-emerald-500", text: "text-emerald-900", icon: "text-emerald-200", title: "text-emerald-600" },
-  afternoon: { start: "13:00", end: "22:00", label: "PM", color: "bg-amber-100 border-amber-200 text-amber-800", indicator: "bg-amber-500", ring: "ring-amber-500", text: "text-amber-900", icon: "text-amber-200", title: "text-amber-600" },
-  night: { start: "21:00", end: "06:00", label: "GY", color: "bg-indigo-100 border-indigo-200 text-indigo-800", indicator: "bg-indigo-500", ring: "ring-indigo-500", text: "text-indigo-900", icon: "text-indigo-200", title: "text-indigo-600" },
-  off: { start: "00:00", end: "23:59", label: "Day Off", color: "bg-slate-100 border-slate-200 text-slate-500", indicator: "bg-slate-400", ring: "ring-slate-900", text: "text-slate-900", icon: "text-slate-100", title: "text-slate-400" }
-};
-
-const shiftFormSchema = z.object({
-  userId: z.string().min(1, "Employee is required"),
-  date: z.string().min(1, "Date is required"),
-  shiftType: z.enum(["morning", "afternoon", "night", "off"], { required_error: "Shift type is required" }),
-  shiftRole: z.enum(["cashier", "bar", "server", "kitchen"]).optional(),
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
-  location: z.string().optional(),
+/**
+ * REPORT FORM SCHEMA CONFIGURATION
+ */
+const reportFormSchema = insertReportSchema.omit({ userId: true, partiesInvolved: true }).extend({
+  title: z.string().min(5, "Title must be at least 5 characters"),
+  description: z.string().min(10, "Description must be at least 10 characters"),
+  location: z.string().min(2, "Location is required"),
+  involvedPeople: z.array(z.string()).min(1, "At least one person must be involved"), 
+  dateOccurred: z.coerce.date({ required_error: "Date is required" }),
+  timeOccurred: z.string().min(1, "Time is required"),
+  category: z.string().min(1, "Category is required"),
+  severity: z.string().min(1, "Severity is required"),
+  nteRequired: z.boolean().default(false),
+  assignedTo: z.string().optional(), 
 });
 
-type ShiftForm = z.infer<typeof shiftFormSchema>;
-
-// --- Styles Definition ---
-const styles = {
-  page: { wrapper: "max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6 pb-20 md:pb-8" },
-  header: {
-    container: "flex flex-col md:flex-row md:items-center justify-between gap-4",
-    title: "text-2xl md:text-3xl font-bold tracking-tight text-slate-900",
-    subtitle: "text-slate-500 mt-1 text-sm",
-    actions: "flex flex-col sm:flex-row items-stretch sm:items-center gap-3",
-    btnCopy: "bg-white/60 w-full sm:w-auto",
-    btnCreate: "bg-slate-900 text-white rounded-full px-6 shadow-lg w-full sm:w-auto hover:bg-slate-800",
-  },
-  toolbar: {
-    container: "flex flex-col lg:flex-row items-center justify-between gap-4 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm",
-    leftGroup: "flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto",
-    employeePickerBtn: "w-full sm:w-[200px] justify-between font-medium p-2 h-auto hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-md transition-all",
-    dateNav: {
-      container: "flex items-center bg-slate-50 rounded-lg p-1 w-full sm:w-auto justify-between sm:justify-center",
-      text: "px-2 sm:px-4 text-sm font-semibold text-slate-700 min-w-[140px] text-center flex items-center justify-center gap-2",
-      btn: "h-8 w-8 text-slate-500 hover:bg-white hover:shadow-sm"
-    },
-    rightGroup: "flex flex-wrap items-center gap-2 w-full lg:w-auto justify-between sm:justify-end",
-    tabsList: "bg-slate-100 h-9 p-1 w-full sm:w-auto",
-    tabTrigger: "flex-1 sm:flex-none h-7 text-xs px-3 gap-2"
-  },
-  stats: {
-    grid: "grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4",
-    card: "bg-white border-slate-200 shadow-sm p-3 md:p-4 flex items-center justify-between cursor-pointer transition-all hover:border-slate-400 select-none",
-    cardActive: "ring-2 ring-offset-2",
-    label: "text-[10px] font-bold uppercase",
-    count: "text-xl md:text-2xl font-bold"
-  },
-  kanban: {
-    grid: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start",
-    column: "flex flex-col bg-slate-100/50 rounded-xl border border-slate-200 p-1",
-    columnHeader: "p-3 border-b border-slate-100 mb-2 flex items-center justify-between",
-    columnTitle: "font-bold text-sm text-slate-700 uppercase tracking-wider",
-    cardList: "flex-1 space-y-2 p-2 min-h-[100px] md:min-h-[150px]"
-  },
-  roster: {
-    card: "border-slate-200 shadow-sm overflow-hidden bg-white",
-    scrollArea: "overflow-x-auto w-full",
-    tableWrapper: "min-w-[800px] md:min-w-[1000px]",
-    th: "p-3 md:p-4 text-left border-b border-r border-slate-200",
-    tdUser: "p-3 md:p-4 border-b border-r border-slate-200 bg-white sticky left-0 z-10 group-hover:bg-slate-50/30",
-    tdCell: "p-1 md:p-2 border-b border-r border-slate-200 align-top h-[100px]"
-  },
-  list: {
-    row: "hover:bg-slate-50/50 transition-colors",
-    cell: "px-4 md:px-6 py-3",
-    header: "bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500"
-  },
-  form: {
-    grid2: "grid grid-cols-1 sm:grid-cols-2 gap-4",
-    input: "rounded-xl",
-    timeWrapper: "bg-slate-50 p-3 rounded-xl"
-  }
+const SEVERITY_WEIGHTS: Record<string, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1
 };
 
-export default function ShiftManagement() {
-  const { hasPermission } = usePermission();
+type ReportForm = z.infer<typeof reportFormSchema>;
+
+export default function Reports() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState<"roster" | "kanban" | "list">("kanban");
-  const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
-    
-  // Dialogs
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
-
-  // Filter State
-  const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
-  const [filterType, setFilterType] = useState<string | null>(null);
-
-  if (!hasPermission(Permission.MANAGE_SCHEDULES)) {
-    return <div className="p-8 text-center text-slate-500">Access denied. You do not have permission to manage schedules.</div>;
-  }
-
-  const { data: teamMembers } = useQuery<User[]>({ queryKey: ["/api/team"] });
-  const { data: allSchedules, isLoading } = useQuery<Schedule[]>({ queryKey: ["/api/schedules/all"] });
   
-  const { data: leaves } = useQuery<LeaveRequest[]>({ queryKey: ["/api/leave-management/all"] });
-  const approvedLeaves = useMemo(() => leaves?.filter(l => l.status === 'approved') || [], [leaves]);
+  // --- UI STATE MANAGEMENT ---
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [view, setView] = useState<"list" | "analytics">("list");
+  
+  // --- FILTER STATE ---
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [monthFilter, setMonthFilter] = useState<string>("all");
+  const [personFilter, setPersonFilter] = useState<string>(""); 
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [sortBy, setSortBy] = useState<"date" | "priority">("date");
+  
+  // Combobox States
+  const [openFilterPicker, setOpenFilterPicker] = useState(false);
+  const [openEmployeePicker, setOpenEmployeePicker] = useState(false);
+  const [openNteAssignPicker, setOpenNteAssignPicker] = useState(false);
 
-  const getWeekBounds = (date: Date) => {
-    const start = new Date(date);
-    start.setDate(date.getDate() - date.getDay());
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
-  };
+  // Analytics State
+  const [analyticsRange, setAnalyticsRange] = useState<string>("6"); // 3, 6, 9, 12 months
 
-  const { start: weekStart, end: weekEnd } = getWeekBounds(currentDate);
+  // --- PAGINATION STATE ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
-  const getDaysOfWeek = () => Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
-    return d;
-  });
+  // --- DYNAMIC FORM STATE ---
+  const [newItem, setNewItem] = useState({ name: "", quantity: 1 });
+  const [newPerson, setNewPerson] = useState("");
+  const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false);
+  const [resolutionAction, setResolutionAction] = useState("");
+  const [nteResponse, setNteResponse] = useState("");
 
-  const isToday = (date: Date) => date.toDateString() === new Date().toDateString();
+  // --- CONFIGURATION CONSTANTS ---
+  const categories = [
+    { id: "awan", label: "AWAN", icon: Clock, color: "bg-blue-100 text-blue-700", fill: "#3b82f6" },
+    { id: "awol", label: "AWOL", icon: UserX, color: "bg-red-100 text-red-700", fill: "#ef4444" },
+    { id: "tardiness", label: "Tardiness", icon: History, color: "bg-amber-100 text-amber-700", fill: "#f59e0b" },
+    { id: "cashier_shortage", label: "Shortage", icon: Banknote, color: "bg-emerald-100 text-emerald-700", fill: "#10b981" },
+    { id: "breakages", label: "Breakages", icon: Hammer, color: "bg-orange-100 text-orange-700", fill: "#f97316" },
+    { id: "others", label: "Others", icon: FileText, color: "bg-slate-100 text-slate-700", fill: "#64748b" },
+  ];
 
+  // --- DATA FETCHING ---
+  const { data: reports, isLoading } = useQuery({ queryKey: ["/api/reports"] });
+  const { data: teamMembers } = useQuery<UserType[]>({ queryKey: ["/api/team"] });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, categoryFilter, monthFilter, personFilter, sortOrder]);
+
+  const monthOptions = useMemo(() => {
+    const options = [];
+    for (let i = 0; i < 12; i++) {
+        const d = subMonths(new Date(), i);
+        options.push({ value: format(d, "yyyy-MM"), label: format(d, "MMMM yyyy") });
+    }
+    return options;
+  }, []);
+
+  // UPDATED: Name Format (Last Name, First Name)
   const getEmployeeName = (userId: string) => {
     const emp = teamMembers?.find((m) => m.id === userId);
-    return emp ? `${emp.firstName} ${emp.lastName}` : "Unknown";
-  };
-  
-  const formatTimeForInput = (dateInput: string | number | Date) => {
-    const date = new Date(dateInput);
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutesRaw = date.getMinutes();
-    const minutes = minutesRaw < 15 ? '00' : minutesRaw < 45 ? '30' : '00';
-    return `${hours}:${minutes}`;
+    return emp ? `${emp.lastName}, ${emp.firstName}` : "Unknown";
   };
 
-  const getLocalYMD = (date: Date) => {
-    const offset = date.getTimezoneOffset() * 60000;
-    const localDate = new Date(date.getTime() - offset);
-    return localDate.toISOString().split('T')[0];
+  const getEmployeeRole = (userId: string) => {
+    const emp = teamMembers?.find((m) => m.id === userId);
+    return emp ? emp.role : "Unknown";
   };
 
-  const navigate = (direction: 'prev' | 'next') => {
-    const newDate = new Date(currentDate);
-    const delta = view === 'kanban' ? 1 : 7;
-    newDate.setDate(currentDate.getDate() + (direction === 'next' ? delta : -delta));
-    setCurrentDate(newDate);
-  };
+  // --- SORTED EMPLOYEES (Last Name) ---
+  const sortedEmployees = useMemo(() => {
+    if (!teamMembers) return [];
+    return [...teamMembers]
+        .filter(u => u.role !== 'admin')
+        .sort((a, b) => a.lastName.localeCompare(b.lastName));
+  }, [teamMembers]);
 
-  // --- Strict Conflict Detection Logic ---
-  const getShiftConflict = (userId: string, date: string, startTime: string, endTime: string, shiftType: string, excludeId?: string) => {
-    if (!userId || !date) return null;
-    
-    const targetDateStr = date; 
-
-    const leave = approvedLeaves.find(l => {
-        if (l.userId !== userId) return false;
-        const startStr = new Date(l.startDate).toISOString().split('T')[0];
-        const endStr = new Date(l.endDate).toISOString().split('T')[0];
-        return targetDateStr >= startStr && targetDateStr <= endStr;
-    });
-    if (leave) return { type: 'leave', message: `Employee has an approved leave (${new Date(leave.startDate).toLocaleDateString()} - ${new Date(leave.endDate).toLocaleDateString()}).` };
-
-    if (shiftType === 'off') return null;
-
-    const sameDayShift = allSchedules?.find(s => {
-        if (s.userId !== userId || s.id === excludeId || s.shiftType === 'off') return false;
-        const existingDateStr = new Date(s.date).toISOString().split('T')[0]; 
-        return existingDateStr === targetDateStr;
-    });
-
-    if (sameDayShift) {
-        return { type: 'daily_limit', message: `Employee already has a shift assigned on this date. Maximum 1 shift per day.` };
-    }
-
-    let st = startTime; let et = endTime;
-    if (!st || !et) {
-        const preset = SHIFT_PRESETS[shiftType as keyof typeof SHIFT_PRESETS];
-        if(preset) { st = preset.start; et = preset.end; }
-    }
-
-    if (st && et) {
-        const [y, m, d] = targetDateStr.split('-').map(Number);
-        const [sh, smin] = st.split(':').map(Number);
-        const [eh, emin] = et.split(':').map(Number);
-        
-        const sTs = new Date(y, m - 1, d, sh, smin).getTime();
-        let eTs = new Date(y, m - 1, d, eh, emin).getTime();
-        if (eTs <= sTs) eTs += 86400000;
-
-        const overlap = allSchedules?.find(s => {
-            if (s.userId !== userId || s.id === excludeId || s.shiftType === 'off') return false;
-            return sTs < s.endTime && eTs > s.startTime;
-        });
-        
-        if (overlap) {
-            const overlapDateStr = new Date(overlap.date).toISOString().split('T')[0];
-            return { type: 'overlap', message: `Times overlap with an existing shift starting on ${overlapDateStr} (${new Date(overlap.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(overlap.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}).` };
+  // --- FILTERING LOGIC (LIST VIEW) ---
+  const filteredReports = useMemo(() => {
+    if (!reports) return [];
+    return reports.filter((r: any) => {
+        if (statusFilter !== "all" && r.status !== statusFilter) return false;
+        if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
+        if (monthFilter !== "all" && r.dateOccurred) {
+            const reportMonth = format(new Date(r.dateOccurred), "yyyy-MM");
+            if (reportMonth !== monthFilter) return false;
         }
+        if (personFilter.trim() !== "") {
+            const search = personFilter.toLowerCase();
+            const parties = (r.partiesInvolved || "").toLowerCase();
+            const assignedName = getEmployeeName(r.assignedTo).toLowerCase();
+            const isIdMatch = r.assignedTo === personFilter; 
+            if (!parties.includes(search) && !assignedName.includes(search) && !isIdMatch) return false;
+        }
+        return true;
+    }).sort((a: any, b: any) => {
+    if (sortBy === "priority") {
+      const weightA = SEVERITY_WEIGHTS[a.severity] || 0;
+      const weightB = SEVERITY_WEIGHTS[b.severity] || 0;
+      if (weightB !== weightA) return weightB - weightA;
+    }
+    const timeA = new Date(a.dateOccurred).getTime();
+    const timeB = new Date(b.dateOccurred).getTime();
+    return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
+  });
+}, [reports, statusFilter, categoryFilter, monthFilter, personFilter, sortOrder, sortBy, teamMembers]);
+
+  const paginatedReports = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredReports.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredReports, currentPage]);
+
+  const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
+
+  // --- ADVANCED ANALYTICS CALCULATION (Filtered by Date Range) ---
+  const stats = useMemo(() => {
+    if (!reports) return { monthlyStacked: [], byCategory: [], mostInvolved: [] };
+
+    const range = parseInt(analyticsRange);
+    const startDate = startOfMonth(subMonths(new Date(), range - 1));
+
+    // 1. FILTER DATASET BY DATE RANGE FIRST
+    // This ensures ALL charts (Bar, Pie, List) reflect the selected months
+    const rangeReports = reports.filter((r: any) => new Date(r.dateOccurred) >= startDate);
+
+    // 2. Prepare Month Keys based on Range (For Bar Chart)
+    const monthsMap = new Map(); 
+    for (let i = range - 1; i >= 0; i--) {
+        const d = subMonths(new Date(), i);
+        const key = format(d, "MMM yyyy");
+        const initObj: any = { name: key };
+        categories.forEach(c => initObj[c.id] = 0); 
+        monthsMap.set(key, initObj);
     }
 
-    return null;
-  };
-
-  const evaluateScheduleConflict = (s: Schedule) => {
-     return getShiftConflict(
-         s.userId, 
-         new Date(s.date).toISOString().split('T')[0], 
-         formatTimeForInput(s.startTime), 
-         formatTimeForInput(s.endTime), 
-         s.shiftType || 'morning', 
-         s.id
-     );
-  };
-
-  // --- Duration Warning Logic (< 9 hours) ---
-  const getShiftDurationWarning = (startTime: string, endTime: string, shiftType: string) => {
-    if (shiftType === 'off' || !startTime || !endTime) return null;
-    
-    const [sh, sm] = startTime.split(':').map(Number);
-    const [eh, em] = endTime.split(':').map(Number);
-    if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return null;
-
-    let sMins = sh * 60 + sm;
-    let eMins = eh * 60 + em;
-    
-    // Handle overnight calculations
-    if (eMins <= sMins) eMins += 24 * 60;
-    
-    const hours = (eMins - sMins) / 60;
-    
-    if (hours > 0 && hours < 9) {
-        return `Shift is only ${hours.toFixed(1)} hours long (standard is 9 hours including break).`;
-    }
-    return null;
-  };
-
-  // --- Filtering ---
-  const filteredSchedules = useMemo(() => {
-    if (!allSchedules) return [];
-    return allSchedules.filter((s) => {
-        const d = new Date(s.date);
-        const inRange = view === 'roster' || view === 'list' 
-            ? d >= weekStart && d <= weekEnd 
-            : true;
-        const employeeMatch = selectedEmployee === "all" || s.userId === selectedEmployee;
-        return inRange && employeeMatch;
+    // 3. Aggregate Monthly Stacked Data (Bar Chart)
+    rangeReports.forEach((r: any) => {
+        const d = new Date(r.dateOccurred);
+        const key = format(d, "MMM yyyy");
+        if (monthsMap.has(key)) {
+            const entry = monthsMap.get(key);
+            if (entry[r.category] !== undefined) {
+                entry[r.category]++;
+            }
+        }
     });
-  }, [allSchedules, weekStart, weekEnd, selectedEmployee, view]);
 
-  const getSchedulesForDay = (date: Date) => {
-    const dateStr = getLocalYMD(date);
-    return filteredSchedules.filter(s => new Date(s.date).toISOString().split('T')[0] === dateStr);
-  };
+    const monthlyStacked = Array.from(monthsMap.values());
 
-  const getShiftsForEmployeeAndDate = (employeeId: string, date: Date) => {
-    const dateStr = getLocalYMD(date);
-    return filteredSchedules.filter(s => 
-        s.userId === employeeId && 
-        new Date(s.date).toISOString().split('T')[0] === dateStr
-    );
-  };
+    // 4. Category Pie Data (Using filtered rangeReports)
+    const catCounts: Record<string, number> = {};
+    rangeReports.forEach((r: any) => {
+        catCounts[r.category] = (catCounts[r.category] || 0) + 1;
+    });
+    const categoryData = Object.entries(catCounts).map(([id, value]) => {
+        const cat = categories.find(c => c.id === id);
+        return { name: cat?.label || id, value, fill: cat?.fill || "#cbd5e1" };
+    });
 
-  // --- Forms & Mutations ---
-  const createForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema) });
-  const editForm = useForm<ShiftForm>({ resolver: zodResolver(shiftFormSchema) });
+    // 5. Most Involved (Using filtered rangeReports)
+    const peopleCounts: Record<string, number> = {};
+    rangeReports.forEach((r: any) => {
+        if (r.partiesInvolved) {
+            r.partiesInvolved.split(',').forEach((name: string) => {
+                const n = name.trim();
+                if (n && n !== 'N/A') peopleCounts[n] = (peopleCounts[n] || 0) + 1;
+            });
+        }
+    });
+    const mostInvolved = Object.entries(peopleCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-  const createValues = createForm.watch();
-  const createConflict = useMemo(() => getShiftConflict(createValues.userId, createValues.date, createValues.startTime || "", createValues.endTime || "", createValues.shiftType), [createValues, allSchedules, approvedLeaves]);
-  const createDurationWarning = useMemo(() => getShiftDurationWarning(createValues.startTime || "", createValues.endTime || "", createValues.shiftType), [createValues]);
-  
-  const editValues = editForm.watch();
-  const editConflict = useMemo(() => getShiftConflict(editValues.userId, editValues.date, editValues.startTime || "", editValues.endTime || "", editValues.shiftType, selectedSchedule?.id), [editValues, selectedSchedule, allSchedules, approvedLeaves]);
-  const editDurationWarning = useMemo(() => getShiftDurationWarning(editValues.startTime || "", editValues.endTime || "", editValues.shiftType), [editValues]);
+    return { monthlyStacked, byCategory: categoryData, mostInvolved };
+  }, [reports, analyticsRange]);
 
-  const handleShiftTypeChange = (val: string, form: any) => {
-    form.setValue("shiftType", val, { shouldValidate: true });
-    if (val === "off") {
-      form.setValue("startTime", "00:00");
-      form.setValue("endTime", "00:00");
-    } else {
-      const preset = SHIFT_PRESETS[val as keyof typeof SHIFT_PRESETS];
-      if (preset) {
-        form.setValue("startTime", preset.start, { shouldValidate: true });
-        form.setValue("endTime", preset.end, { shouldValidate: true });
-      }
-    }
-  };
-
-  const onStartTimeChange = (val: string, form: any) => {
-    if (!val) return;
-    form.setValue("startTime", val, { shouldValidate: true });
+  // --- PDF GENERATION ---
+  const generateSinglePDF = (report: any) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
     
-    const hour = parseInt(val.split(':')[0], 10);
-    if (!isNaN(hour)) {
-        let detectedType: "morning" | "afternoon" | "night" = "night";
-        if (hour >= 5 && hour < 12) detectedType = "morning";
-        else if (hour >= 12 && hour < 18) detectedType = "afternoon";
-        form.setValue("shiftType", detectedType);
-    }
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Incident Report", pageWidth / 2, 20, { align: "center" });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Reference ID: #${report.id.toString().padStart(6, '0')}`, pageWidth / 2, 27, { align: "center" });
+    
+    // Status Badge visual
+    doc.setDrawColor(report.status === 'resolved' ? 16 : 245, report.status === 'resolved' ? 185 : 158, report.status === 'resolved' ? 129 : 11);
+    doc.setFillColor(report.status === 'resolved' ? 220 : 254, report.status === 'resolved' ? 252 : 251, report.status === 'resolved' ? 231 : 235);
+    doc.roundedRect(160, 15, 30, 8, 2, 2, "FD");
+    doc.setFontSize(9);
+    doc.setTextColor(report.status === 'resolved' ? 21 : 180, report.status === 'resolved' ? 128 : 83, report.status === 'resolved' ? 61 : 33);
+    doc.text(report.status.toUpperCase(), 175, 20, { align: "center" });
 
-    const [h, m] = val.split(':').map(Number);
-    if (!isNaN(h) && !isNaN(m)) {
-        const date = new Date();
-        date.setHours(h, m, 0);
-        date.setHours(date.getHours() + 9);
+    // Meta Data Grid
+    let y = 40;
+    doc.setTextColor(0);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text(report.title, 14, y);
+    
+    y += 10;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    
+    const details = [
+        ["Date", format(new Date(report.dateOccurred), "MMM dd, yyyy")],
+        ["Time", report.timeOccurred],
+        ["Location", report.location],
+        ["Category", categories.find(c=>c.id===report.category)?.label || report.category],
+        ["Severity", report.severity.toUpperCase()],
+        ["Filed By", getEmployeeName(report.userId)]
+    ];
+
+    autoTable(doc, {
+        startY: y,
+        head: [],
+        body: details,
+        theme: 'plain',
+        styles: { fontSize: 10, cellPadding: 1.5 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 30 } },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 10;
+
+    // Sections
+    const drawSection = (title: string, content: string) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(50);
+        doc.text(title, 14, y);
+        y += 5;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(0);
         
-        const endH = date.getHours().toString().padStart(2, '0');
-        const endM = date.getMinutes().toString().padStart(2, '0');
-        form.setValue("endTime", `${endH}:${endM}`, { shouldValidate: true });
-    }
-  };
-
-  const createShiftMutation = useMutation({
-    mutationFn: async (data: ShiftForm) => {
-      const startDateTime = new Date(`${data.date}T${data.startTime || "00:00"}`);
-      const endDateTime = new Date(`${data.date}T${data.endTime || "00:00"}`);
-      if (endDateTime <= startDateTime && data.shiftType !== 'off') {
-          endDateTime.setDate(endDateTime.getDate() + 1);
-      }
-
-      return (await apiRequest("POST", "/api/schedules", {
-        userId: data.userId, 
-        date: new Date(data.date).getTime(), 
-        startTime: startDateTime.getTime(), 
-        endTime: endDateTime.getTime(),
-        shiftType: data.shiftType,
-        type: "regular",
-        title: `${data.shiftType.charAt(0).toUpperCase() + data.shiftType.slice(1)} Shift`,
-        shiftRole: data.shiftRole, 
-        location: data.location,
-      })).json();
-    },
-    onSuccess: () => { 
-      toast.success("Shift created"); 
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] }); 
-      setIsCreateDialogOpen(false); 
-      createForm.reset(); 
-    },
-  });
-
-  const updateShiftMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<ShiftForm> }) => {
-      const updates: any = { ...data };
-      if (data.date && data.startTime && data.endTime) {
-         updates.date = new Date(data.date).getTime();
-         const start = new Date(`${data.date}T${data.startTime}`);
-         const end = new Date(`${data.date}T${data.endTime}`);
-         if (end <= start && data.shiftType !== 'off') end.setDate(end.getDate() + 1);
-         updates.startTime = start.getTime(); 
-         updates.endTime = end.getTime();
-      }
-      return (await apiRequest("PATCH", `/api/schedules/${id}`, updates)).json();
-    },
-    onSuccess: () => { toast.success("Shift updated"); queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] }); setIsEditDialogOpen(false); },
-  });
-
-  const deleteShiftMutation = useMutation({
-    mutationFn: async (id: string) => (await apiRequest("DELETE", `/api/schedules/${id}`, {})).json(),
-    onSuccess: () => { 
-        toast.success("Shift deleted"); 
-        queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] }); 
-        setIsDeleteDialogOpen(false); 
-        setIsEditDialogOpen(false); 
-    },
-  });
-
-  const copyWeekMutation = useMutation({
-    mutationFn: async () => (await apiRequest("POST", "/api/schedules/copy-week", {
-      sourceWeekStart: new Date(weekStart.getTime() - 7 * 86400000).toISOString(),
-      targetWeekStart: weekStart.toISOString(),
-    })).json(),
-    onSuccess: () => { toast.success("Schedule copied"); queryClient.invalidateQueries({ queryKey: ["/api/schedules/all"] }); },
-  });
-
-  const handleCreateSubmit = (data: ShiftForm) => {
-      if (createConflict) { toast.error("Scheduling Conflict", { description: createConflict.message }); return; }
-      createShiftMutation.mutate(data);
-  };
-
-  const handleEditSubmit = (data: ShiftForm) => {
-      if (editConflict) { toast.error("Scheduling Conflict", { description: editConflict.message }); return; }
-      if (selectedSchedule) updateShiftMutation.mutate({ id: selectedSchedule.id, data });
-  };
-
-  const handleEdit = (schedule: Schedule) => {
-    setSelectedSchedule(schedule);
-    const dateStr = new Date(schedule.date).toISOString().split('T')[0];
-    const startStr = formatTimeForInput(schedule.startTime);
-    const endStr = formatTimeForInput(schedule.endTime);
-
-    editForm.reset({ 
-        userId: schedule.userId, 
-        date: dateStr, 
-        shiftType: schedule.shiftType as any, 
-        shiftRole: schedule.shiftRole as any, 
-        startTime: startStr, 
-        endTime: endStr, 
-        location: schedule.location || "" 
-    });
-    setIsEditDialogOpen(true);
-  };
-
-  const handleDelete = (schedule: Schedule, e?: React.MouseEvent) => {
-    e?.stopPropagation(); setSelectedSchedule(schedule); setIsDeleteDialogOpen(true);
-  };
-
-  // Reusable Error Component
-  const ErrorMsg = ({ error }: { error?: { message?: string } }) => {
-    if (!error?.message) return null;
-    return <p className="text-xs text-rose-500 mt-1">{error.message}</p>;
-  };
-
-  const TimeInput = ({ form, name, label, onChangeOverride }: any) => (
-      <div className="space-y-1">
-        <Label className="text-xs font-semibold">{label}</Label>
-        <div className="relative">
-            <Clock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
-            <Input 
-                type="time" 
-                className="bg-white h-9 border-slate-200 pl-9 font-mono text-sm" 
-                {...form.register(name, {
-                    onChange: (e) => {
-                        if (onChangeOverride) onChangeOverride(e.target.value, form);
-                    }
-                })} 
-            />
-        </div>
-        <ErrorMsg error={form.formState.errors[name]} />
-      </div>
-  );
-
-  const Header = () => (
-    <div className={styles.header.container}>
-      <div>
-        <h1 className={styles.header.title}>Shift Management</h1>
-        <p className={styles.header.subtitle}>Assign and manage employee work schedules</p>
-      </div>
-      <div className={styles.header.actions}>
-        <Button variant="outline" className={styles.header.btnCopy} onClick={() => copyWeekMutation.mutate()} disabled={copyWeekMutation.isPending}>
-          <Copy className="w-4 h-4 mr-2" /> <span className="hidden sm:inline">Copy Previous Week</span><span className="sm:hidden">Copy Week</span>
-        </Button>
-        <Button 
-            onClick={() => {
-                createForm.reset({
-                    shiftType: "morning",
-                    shiftRole: "server",
-                    startTime: SHIFT_PRESETS.morning.start,
-                    endTime: SHIFT_PRESETS.morning.end,
-                    date: getLocalYMD(new Date()) 
-                });
-                setIsCreateDialogOpen(true);
-            }} 
-            className={styles.header.btnCreate}
-        >
-          <Plus className="w-4 h-4 mr-2" /> Assign Shift
-        </Button>
-      </div>
-    </div>
-  );
-
-  const Toolbar = () => (
-    <div className={styles.toolbar.container}>
-      <div className={styles.toolbar.leftGroup}>
-        <Users className="w-4 h-4 text-slate-400 hidden lg:block" />
-        <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" role="combobox" aria-expanded={openEmployeePicker} className={styles.toolbar.employeePickerBtn}>
-              {selectedEmployee === "all" ? "All Employees" : getEmployeeName(selectedEmployee)}
-              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-            <Command>
-              <CommandInput placeholder="Search employee..." />
-              <CommandList>
-                <CommandEmpty>No employee found.</CommandEmpty>
-                <CommandGroup>
-                  <CommandItem value="all" onSelect={() => { setSelectedEmployee("all"); setOpenEmployeePicker(false); }}>
-                    <Check className={cn("mr-2 h-4 w-4", selectedEmployee === "all" ? "opacity-100" : "opacity-0")} /> All Employees
-                  </CommandItem>
-                  {teamMembers?.map((m) => (
-                    <CommandItem key={m.id} value={`${m.firstName} ${m.lastName}`} onSelect={() => { setSelectedEmployee(m.id); setOpenEmployeePicker(false); }}>
-                      <Check className={cn("mr-2 h-4 w-4", selectedEmployee === m.id ? "opacity-100" : "opacity-0")} /> {m.firstName} {m.lastName}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      <div className={styles.toolbar.dateNav.container}>
-        <Button variant="ghost" size="icon" onClick={() => navigate('prev')} className={styles.toolbar.dateNav.btn}><ChevronLeft className="w-4 h-4" /></Button>
-        <div className={styles.toolbar.dateNav.text}>
-            <CalendarDays className="w-4 h-4 text-slate-400" />
-            {view === 'kanban' ? currentDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric'}) : 
-             `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
-        </div>
-        <Button variant="ghost" size="icon" onClick={() => navigate('next')} className={styles.toolbar.dateNav.btn}><ChevronRight className="w-4 h-4" /></Button>
-      </div>
-
-      <div className={styles.toolbar.rightGroup}>
-        <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())} className="w-full sm:w-auto">Today</Button>
-        <div className="h-4 w-px bg-slate-200 mx-2 hidden sm:block" />
-        <Tabs value={view} onValueChange={(v) => setView(v as any)} className="w-full sm:w-auto">
-          <TabsList className={styles.toolbar.tabsList}>
-            <TabsTrigger value="kanban" className={styles.toolbar.tabTrigger}><LayoutPanelLeft className="w-3.5 h-3.5"/> Day</TabsTrigger>
-            <TabsTrigger value="roster" className={styles.toolbar.tabTrigger}><Grid className="w-3.5 h-3.5"/> Roster</TabsTrigger>
-            <TabsTrigger value="list" className={styles.toolbar.tabTrigger}><List className="w-3.5 h-3.5"/> List</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-    </div>
-  );
-
-  const StatsBar = () => {
-    const shifts = getSchedulesForDay(currentDate).filter(s => s.shiftType !== 'off');
-    const counts = {
-      total: shifts.length,
-      morning: shifts.filter(s => s.shiftType === 'morning').length,
-      afternoon: shifts.filter(s => s.shiftType === 'afternoon').length,
-      night: shifts.filter(s => s.shiftType === 'night').length
+        const splitText = doc.splitTextToSize(content || "N/A", pageWidth - 28);
+        doc.text(splitText, 14, y);
+        y += (splitText.length * 5) + 8;
     };
 
-    const toggleFilter = (type: string | null) => setFilterType(prev => prev === type ? null : type);
+    drawSection("Description", report.description);
+    drawSection("Involved Parties", report.partiesInvolved);
+    drawSection("Immediate Action Taken", report.actionTaken);
+    
+    if (report.nteRequired) {
+        y += 5;
+        doc.setDrawColor(251, 146, 60); // Orange
+        doc.line(14, y, pageWidth - 14, y);
+        y += 8;
+        drawSection("Notice to Explain (NTE)", report.nteContent ? `Employee Response: ${report.nteContent}` : "Pending employee response.");
+    }
 
-    const StatCard = ({ type, count, icon: Icon, presetKey }: any) => {
-        const preset = presetKey ? SHIFT_PRESETS[presetKey as keyof typeof SHIFT_PRESETS] : null;
-        const isActive = presetKey ? filterType === presetKey : filterType === null;
-        
-        return (
-            <div 
-                onClick={() => toggleFilter(presetKey || null)}
-                className={cn(
-                    styles.stats.card,
-                    preset ? `${preset.color} hover:border-current` : "hover:border-slate-400",
-                    isActive && (preset ? preset.ring : "ring-slate-900") + " " + styles.stats.cardActive
-                )}
-            >
-                <div>
-                    <p className={cn(styles.stats.label, preset ? preset.title : "text-slate-400")}>{type}</p>
-                    <p className={cn(styles.stats.count, preset ? preset.text : "text-slate-900")}>{count}</p>
-                </div>
-                <Icon className={cn("w-8 h-8", preset ? preset.icon : "text-slate-100")} />
-            </div>
-        );
-    };
+    // Footer
+    const footerY = doc.internal.pageSize.getHeight() - 20;
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text(`Generated on ${new Date().toLocaleString()}`, 14, footerY);
+    doc.text("Internal Use Only", pageWidth - 14, footerY, { align: "right" });
 
-    return (
-      <div className={styles.stats.grid}>
-        <StatCard type="Total Staff" count={counts.total} icon={Users} />
-        <StatCard type="Morning" count={counts.morning} icon={Sun} presetKey="morning" />
-        <StatCard type="Afternoon" count={counts.afternoon} icon={Sunset} presetKey="afternoon" />
-        <StatCard type="Night" count={counts.night} icon={Moon} presetKey="night" />
-      </div>
-    );
+    doc.save(`report_${report.id}.pdf`);
   };
+
+  const generateAllReportsPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text("Incident Reports Summary", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 26);
+
+    const rows = filteredReports.map((r: any) => [
+        format(new Date(r.dateOccurred), "MMM dd, yyyy"),
+        r.category.toUpperCase(),
+        r.severity.toUpperCase(),
+        r.title,
+        r.status.toUpperCase(),
+        r.partiesInvolved
+    ]);
+
+    autoTable(doc, {
+        head: [["Date", "Cat", "Sev", "Title", "Status", "Involved"]],
+        body: rows,
+        startY: 35,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [15, 23, 42] }
+    });
+
+    doc.save("all_reports_summary.pdf");
+  };
+
+  // --- FORM HANDLING ---
+  const form = useForm<ReportForm>({
+    resolver: zodResolver(reportFormSchema),
+    defaultValues: {
+      category: "others",
+      severity: "low",
+      dateOccurred: new Date(),
+      timeOccurred: format(new Date(), "HH:mm"),
+      involvedPeople: [], 
+      details: { items: [] },
+      nteRequired: false
+    },
+  });
+
+  const selectedCategory = form.watch("category");
+  const currentPeople = form.watch("involvedPeople");
+  const currentItems = form.watch("details.items") || [];
+  const watchNteRequired = form.watch("nteRequired");
+  const watchAssignedTo = form.watch("assignedTo");
+
+  const createReportMutation = useMutation({
+    mutationFn: async (data: ReportForm) => {
+      const { involvedPeople, ...cleanData } = data;
+      const payload = {
+          ...cleanData,
+          partiesInvolved: involvedPeople.join(", "),
+          userId: user?.id,
+          dateOccurred: new Date(data.dateOccurred).getTime(),
+          witnesses: cleanData.witnesses || "", 
+          images: [],
+      };
+      const res = await apiRequest("POST", "/api/reports", payload);
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast.success("Report Filed Successfully");
+      queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+      setIsDialogOpen(false);
+      form.reset();
+    },
+    onError: (err) => {
+        toast.error("Failed to file report", { description: err.message });
+    }
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status, actionTaken, nteContent }: { id: number; status?: string; actionTaken?: string; nteContent?: string }) => {
+        const payload: any = {};
+        if (status) payload.status = status;
+        if (actionTaken) payload.actionTaken = actionTaken;
+        if (nteContent) payload.nteContent = nteContent;
+        
+        const res = await apiRequest("PATCH", `/api/reports/${id}`, payload);
+        return await res.json();
+    },
+    onSuccess: (updatedReport) => {
+        toast.success("Report updated successfully");
+        queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
+        setIsResolveDialogOpen(false); 
+        setResolutionAction(""); 
+        setNteResponse(""); 
+        if (selectedReport) {
+          setSelectedReport(updatedReport);
+        }
+    },
+    onError: (err) => {
+        toast.error("Failed to update status", { description: err.message });
+    }
+  });
+
+  const onInvalid = (errors: FieldErrors<ReportForm>) => {
+    const firstErrorKey = Object.keys(errors)[0];
+    const errorMessage = errors[firstErrorKey as keyof ReportForm]?.message;
+    toast.error("Validation Error", { description: errorMessage ? String(errorMessage) : "Please check the form fields." });
+  };
+
+  // --- HELPER FUNCTIONS ---
+
+  const addPerson = () => {
+      if (!newPerson.trim()) return;
+      const current = form.getValues("involvedPeople");
+      if (!current.includes(newPerson)) {
+          form.setValue("involvedPeople", [...current, newPerson]);
+          form.trigger("involvedPeople");
+      }
+      setNewPerson("");
+  };
+
+  const addStaffFromSelect = (member: UserType) => {
+      const name = `${member.lastName}, ${member.firstName}`;
+      const current = form.getValues("involvedPeople");
+      
+      if (!current.includes(name)) {
+          form.setValue("involvedPeople", [...current, name]);
+          form.trigger("involvedPeople");
+      }
+
+      if (form.getValues("nteRequired") && !form.getValues("assignedTo")) {
+        form.setValue("assignedTo", member.id);
+      }
+  };
+
+  const removePerson = (index: number) => {
+      const current = form.getValues("involvedPeople");
+      form.setValue("involvedPeople", current.filter((_, i) => i !== index));
+      form.trigger("involvedPeople");
+  };
+
+  const addItem = () => {
+      if (!newItem.name.trim()) return;
+      const current = form.getValues("details.items") || [];
+      form.setValue("details.items", [...current, newItem]);
+      setNewItem({ name: "", quantity: 1 });
+  };
+
+  const removeItem = (index: number) => {
+      const current = form.getValues("details.items") || [];
+      form.setValue("details.items", current.filter((_, i) => i !== index));
+  };
+
+  const [selectedReport, setSelectedReport] = useState<any>(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
 
   return (
-    <div className={styles.page.wrapper}>
-      <Header />
-      <Toolbar />
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+      {/* --- PAGE HEADER --- */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Reporting</h1>
+          <p className="text-slate-500 mt-1">Document AWOL, breakage, and other incidents</p>
+        </div>
+        <div className="flex items-center gap-2">
+            <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+                <Button variant="ghost" size="sm" onClick={() => setView("list")} className={cn("text-xs", view === "list" && "bg-white shadow-sm text-slate-900")}>
+                    <ListIcon className="w-4 h-4 mr-2" /> Reports
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setView("analytics")} className={cn("text-xs", view === "analytics" && "bg-white shadow-sm text-slate-900")}>
+                    <BarChart3 className="w-4 h-4 mr-2" /> Analytics
+                </Button>
+            </div>
+            
+            {view === "list" && (
+                <Button variant="outline" size="sm" onClick={generateAllReportsPDF} className="bg-white border-slate-200">
+                    <Download className="w-4 h-4 mr-2" /> Export List
+                </Button>
+            )}
 
-      {isLoading ? (
-          <div className="text-center py-20 text-slate-400">Loading schedule...</div>
-      ) : (
-          <>
-            {/* --- VIEW: ROSTER --- */}
-            {view === 'roster' && (
-                <Card className={styles.roster.card}>
-                    <div className={styles.roster.scrollArea}>
-                        <div className={styles.roster.tableWrapper}>
-                            <table className="w-full border-collapse">
-                                <thead>
-                                    <tr>
-                                        <th className={cn(styles.roster.th, "w-[200px] bg-slate-50 text-xs font-bold text-slate-500 uppercase sticky left-0 z-20")}>Employee</th>
-                                        {getDaysOfWeek().map((day, i) => (
-                                            <th key={i} className={cn(styles.roster.th, "text-center min-w-[140px]", isToday(day) && "bg-blue-50/50")}>
-                                                <div className={cn("text-[10px] font-bold uppercase", isToday(day) ? "text-blue-600" : "text-slate-400")}>{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                                                <div className={cn("text-lg font-bold", isToday(day) ? "text-blue-700" : "text-slate-700")}>{day.getDate()}</div>
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {teamMembers?.map((employee) => (
-                                        <tr key={employee.id} className="group hover:bg-slate-50/30 transition-colors">
-                                            <td className={styles.roster.tdUser}>
-                                                <div className="flex flex-col">
-                                                    <span className="font-bold text-sm text-slate-900">{employee.firstName} {employee.lastName}</span>
-                                                    <span className="text-xs text-slate-500 capitalize">{employee.position || "Staff"}</span>
-                                                </div>
-                                            </td>
-                                            {getDaysOfWeek().map((day, i) => {
-                                                const shifts = getShiftsForEmployeeAndDate(employee.id, day);
-                                                return (
-                                                    <td key={i} className={cn(styles.roster.tdCell, isToday(day) && "bg-blue-50/10")}>
-                                                        <div className="flex flex-col gap-2 h-full min-h-[60px]">
-                                                            {shifts.map(shift => (
-                                                              <RosterCard key={shift.id} schedule={shift} conflict={evaluateScheduleConflict(shift)} onEdit={handleEdit} onDelete={handleDelete} />
-                                                            ))}
-                                                            {shifts.length === 0 && (
-                                                                <button 
-                                                                    onClick={() => { 
-                                                                        const pos = employee.position?.toLowerCase();
-                                                                        const validRole = ROLES.includes(pos as any) ? pos : "server";
-                                                                        
-                                                                        createForm.reset({
-                                                                            userId: employee.id, 
-                                                                            date: getLocalYMD(day),
-                                                                            shiftType: "morning",
-                                                                            shiftRole: validRole as any,
-                                                                            startTime: SHIFT_PRESETS.morning.start,
-                                                                            endTime: SHIFT_PRESETS.morning.end
-                                                                        });
-                                                                        setIsCreateDialogOpen(true); 
-                                                                    }} 
-                                                                    className="flex-1 w-full h-full flex items-center justify-center rounded-lg border-2 border-dashed border-transparent hover:border-slate-300 text-slate-300 hover:text-slate-500 transition-all opacity-0 group-hover:opacity-100"
-                                                                >
-                                                                    <Plus className="w-5 h-5" />
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                );
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800 ml-2">
+                  <Plus className="w-4 h-4 mr-2" /> File Report
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl">
+                <DialogHeader className="border-b border-slate-100 pb-4">
+                  <DialogTitle>File a Report</DialogTitle>
+                  <DialogDescription>Please provide factual, objective details.</DialogDescription>
+                </DialogHeader>
+
+                <form onSubmit={form.handleSubmit((d) => createReportMutation.mutate(d), onInvalid)} className="space-y-6 pt-4">
+                  {/* Category & Severity */}
+                  <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                          <Label>Category</Label>
+                          <Select value={selectedCategory} onValueChange={(val: any) => form.setValue("category", val)}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                  {categories.map((cat) => (
+                                      <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
+                                  ))}
+                              </SelectContent>
+                          </Select>
+                      </div>
+                      <div className="space-y-2">
+                          <Label>Severity</Label>
+                          <Select onValueChange={(val) => form.setValue("severity", val)} defaultValue="low">
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value="low">Low</SelectItem>
+                                  <SelectItem value="medium">Medium</SelectItem>
+                                  <SelectItem value="high">High</SelectItem>
+                                  <SelectItem value="critical">Critical</SelectItem>
+                              </SelectContent>
+                          </Select>
+                      </div>
+                  </div>
+
+                  {/* Time & Location */}
+                  <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                          <Label>Date</Label>
+                          <Input type="date" value={format(new Date(form.watch("dateOccurred")), "yyyy-MM-dd")} onChange={(e) => { const value = e.target.value; if (value) form.setValue("dateOccurred", new Date(value), { shouldValidate: true }); }} />
+                      </div>
+                      <div className="space-y-2">
+                          <Label>Time</Label>
+                          <Input type="time" {...form.register("timeOccurred")} />
+                      </div>
+                      <div className="space-y-2">
+                          <Label>Location</Label>
+                          <Input placeholder="e.g. Kitchen / POS" {...form.register("location")} />
+                      </div>
+                  </div>
+
+                  {/* Narrative */}
+                  <div className="space-y-2">
+                      <Label>Title</Label>
+                      <Input placeholder="Brief summary" {...form.register("title")} />
+                  </div>
+                  <div className="space-y-2">
+                      <Label>Description</Label>
+                      <Textarea placeholder="Detailed description..." {...form.register("description")} />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                        <Label>Action Taken</Label>
+                        <Textarea placeholder="Immediate actions..." {...form.register("actionTaken")} />
+                    </div>
+                    <div className="space-y-2">
+                        <Label>Witnesses</Label>
+                        <Textarea placeholder="Names/Contacts..." {...form.register("witnesses")} />
+                    </div>
+                  </div>
+
+                  {/* People Involved (With Search) */}
+                  <div className="space-y-3 p-4 bg-slate-50/50 rounded-lg border border-slate-100">
+                      <Label>People Involved <span className="text-red-500">*</span></Label>
+                      <div className="flex flex-col gap-3">
+                          <div className="flex flex-col gap-1.5">
+                              <span className="text-xs text-slate-500 font-medium">Add Staff Member</span>
+                              
+                                <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
+                                    <PopoverTrigger asChild>
+                                    <Button variant="outline" role="combobox" aria-expanded={openEmployeePicker} className="w-full justify-between bg-white border-slate-200 font-normal hover:bg-slate-50">
+                                            <div className="flex items-center gap-2">
+                                            <Search className="h-4 w-4 opacity-50" />
+                                            <span>Search from team members...</span>
+                                            </div>
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                                      <Command>
+                                        <CommandInput placeholder="Type staff name..." />
+                                        <CommandList className="max-h-[300px] overflow-y-auto">
+                                          <CommandEmpty className="p-4 text-sm text-slate-500 text-center">No staff member found.</CommandEmpty>
+                                          <CommandGroup heading="Active Staff">
+                                            {sortedEmployees.map((member) => {
+                                              const fullName = `${member.lastName}, ${member.firstName}`;
+                                              const isAlreadyAdded = currentPeople.includes(fullName);
+                                              
+                                              return (
+                                                <CommandItem key={member.id} value={fullName} disabled={isAlreadyAdded} onSelect={() => { addStaffFromSelect(member); setOpenEmployeePicker(false); }} className={cn("flex items-center justify-between py-2 px-4 cursor-pointer", isAlreadyAdded && "opacity-50 grayscale pointer-events-none")}>
+                                                  <div className="flex items-center gap-3">
+                                                    <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px] bg-slate-100">{member.firstName[0]}{member.lastName[0]}</AvatarFallback></Avatar>
+                                                    <div className="flex flex-col"><span className="font-medium text-xs">{fullName}</span><span className="text-[9px] text-slate-400 uppercase">{member.position}</span></div>
+                                                  </div>
+                                                  {isAlreadyAdded ? <Badge variant="secondary" className="text-[8px] bg-emerald-50 text-emerald-600">Added</Badge> : <Plus className="w-3 h-3 text-slate-300" />}
+                                                </CommandItem>
+                                              );
                                             })}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </Card>
-            )}
+                                          </CommandGroup>
+                                        </CommandList>
+                                      </Command>
+                                    </PopoverContent>
+                                </Popover>
+                          </div>
 
-            {/* --- VIEW: DAY KANBAN --- */}
-            {view === 'kanban' && (
-                <div className="space-y-6">
-                    <StatsBar />
-                    <div className={styles.kanban.grid}>
-                        {ROLES.map(role => {
-                            const roleShifts = getSchedulesForDay(currentDate)
-                                .filter(s => {
-                                  const roleMatch = s.shiftRole === role && s.shiftType !== 'off';
-                                  const typeMatch = filterType ? s.shiftType === filterType : true; 
-                                  return roleMatch && typeMatch;
-                                })
-                                .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-                            return (
-                                <div key={role} className={styles.kanban.column}>
-                                    <div className={styles.kanban.columnHeader}>
-                                        <span className={styles.kanban.columnTitle}>{role}</span>
-                                        <Badge variant="secondary" className="bg-white">{roleShifts.length}</Badge>
-                                    </div>
-                                    <div className={styles.kanban.cardList}>
-                                        {roleShifts.length === 0 ? <div className="text-center py-8 text-slate-400 text-xs italic">No Staff</div> : 
-                                            roleShifts.map(s => <KanbanCard key={s.id} schedule={s} conflict={evaluateScheduleConflict(s)} employeeName={getEmployeeName(s.userId)} onEdit={handleEdit} onDelete={handleDelete} />)
-                                        }
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
+                          <div className="flex flex-col gap-1.5">
+                              <span className="text-xs text-slate-500 font-medium">Add Guest / Other</span>
+                              <div className="flex gap-2">
+                                  <Input value={newPerson} onChange={(e) => setNewPerson(e.target.value)} placeholder="Type name manually..." className="bg-white" onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); addPerson(); } }} />
+                                  <Button type="button" onClick={addPerson} variant="outline" className="bg-white">Add</Button>
+                              </div>
+                          </div>
+                      </div>
 
-            {/* --- VIEW: LIST --- */}
-            {view === 'list' && (
-                <Card className={styles.roster.card}>
-                  <CardContent className="p-0 overflow-x-auto">
-                    <table className="w-full text-sm text-left min-w-[600px]">
-                      <thead className={styles.list.header}>
-                        <tr>
-                          <th className={styles.list.cell}>Date</th>
-                          <th className={styles.list.cell}>Employee</th>
-                          <th className={styles.list.cell}>Shift</th>
-                          <th className={styles.list.cell}>Time</th>
-                          <th className={styles.list.cell}>Status</th>
-                          <th className={cn(styles.list.cell, "text-right")}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredSchedules.map(s => {
-                          const conflict = evaluateScheduleConflict(s);
-                          return (
-                            <tr key={s.id} className={styles.list.row}>
-                              <td className={cn(styles.list.cell, "font-medium")}>{new Date(s.date).toLocaleDateString()}</td>
-                              <td className={styles.list.cell}>{getEmployeeName(s.userId)}</td>
-                              <td className={styles.list.cell}>
-                                <Badge variant="outline" className={cn("capitalize", SHIFT_PRESETS[s.shiftType as keyof typeof SHIFT_PRESETS]?.color)}>
-                                  {SHIFT_PRESETS[s.shiftType as keyof typeof SHIFT_PRESETS]?.label || s.shiftType}
-                                </Badge>
-                              </td>
-                              <td className={cn(styles.list.cell, "text-slate-500 text-xs font-mono")}>
-                                {s.shiftType !== 'off' ? `${new Date(s.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${new Date(s.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : 'OFF'}
-                              </td>
-                              <td className={styles.list.cell}>
-                                {conflict ? (
-                                    <div className="flex items-center text-xs text-rose-500"><AlertTriangle className="w-3 h-3 mr-1"/> Conflict</div>
-                                ) : (
-                                    <div className="flex items-center text-xs text-emerald-500"><Check className="w-3 h-3 mr-1"/> Ok</div>
-                                )}
-                              </td>
-                              <td className={cn(styles.list.cell, "text-right")}>
-                                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(s)}><Edit className="w-4 h-4" /></Button>
-                                  <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500" onClick={() => handleDelete(s)}><Trash2 className="w-4 h-4" /></Button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-            )}
-          </>
-      )}
-
-      {/* --- Dialogs --- */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Assign New Shift</DialogTitle></DialogHeader>
-          <form onSubmit={createForm.handleSubmit(handleCreateSubmit)} className="space-y-4">
-            
-            {createConflict && (
-               <div className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-100 text-rose-700 text-sm">
-                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                   <div>
-                       <p className="font-semibold">Scheduling Conflict Detected</p>
-                       <p className="text-xs opacity-90">{createConflict.message}</p>
-                   </div>
-               </div>
-            )}
-            
-            {createDurationWarning && (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-100 text-amber-700 text-sm">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <div>
-                        <p className="font-semibold">Short Shift</p>
-                        <p className="text-xs opacity-90">{createDurationWarning}</p>
-                    </div>
-                </div>
-            )}
-
-            <div className={styles.form.grid2}>
-              <div className="space-y-2">
-                <Label>Employee</Label>
-                <Controller
-                  control={createForm.control}
-                  name="userId"
-                  render={({ field }) => (
-                    <Select 
-                        value={field.value} 
-                        onValueChange={(v) => {
-                            field.onChange(v);
-                            // Auto-detect role when employee changes
-                            const emp = teamMembers?.find(m => m.id === v);
-                            const pos = emp?.position?.toLowerCase();
-                            if (pos && ROLES.includes(pos as any)) {
-                                createForm.setValue("shiftRole", pos as any);
-                            } else {
-                                createForm.setValue("shiftRole", "server");
-                            }
-                        }}
-                    >
-                      <SelectTrigger className={styles.form.input}><SelectValue placeholder="Select..." /></SelectTrigger>
-                      <SelectContent>
-                        {teamMembers?.map(m => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                <ErrorMsg error={createForm.formState.errors.userId} />
-              </div>
-              <div className="space-y-2">
-                <Label>Date</Label>
-                <Input type="date" className={styles.form.input} {...createForm.register("date")} />
-                <ErrorMsg error={createForm.formState.errors.date} />
-              </div>
-            </div>
-            <div className={styles.form.grid2}>
-              <div className="space-y-2">
-                <Label>Shift Type</Label>
-                <Controller
-                  control={createForm.control}
-                  name="shiftType"
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={(val) => handleShiftTypeChange(val, createForm)}>
-                      <SelectTrigger className={styles.form.input}><SelectValue placeholder="Select Type..." /></SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(SHIFT_PRESETS).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                <ErrorMsg error={createForm.formState.errors.shiftType} />
-              </div>
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <Controller
-                  control={createForm.control}
-                  name="shiftRole"
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger className="rounded-xl capitalize"><SelectValue placeholder="Select Role..." /></SelectTrigger>
-                      <SelectContent>
-                        {ROLES.map(r => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                <ErrorMsg error={createForm.formState.errors.shiftRole} />
-              </div>
-            </div>
-            <div className={cn(styles.form.grid2, styles.form.timeWrapper)}>
-              <TimeInput form={createForm} name="startTime" label="Start Time" onChangeOverride={onStartTimeChange} />
-              <TimeInput form={createForm} name="endTime" label="End Time" />
-            </div>
-            <div className="space-y-2"><Label>Location</Label><Input className={styles.form.input} placeholder="e.g. Main Hall" {...createForm.register("location")} /></div>
-            <DialogFooter><Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>Cancel</Button><Button type="submit" disabled={createShiftMutation.isPending || !!createConflict}>Create Shift</Button></DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-        
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>Edit Shift</DialogTitle></DialogHeader>
-            <form onSubmit={editForm.handleSubmit(handleEditSubmit)} className="space-y-4 mt-2">
-                
-                {editConflict && (
-                   <div className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-100 text-rose-700 text-sm">
-                       <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                       <div>
-                           <p className="font-semibold">Scheduling Conflict Detected</p>
-                           <p className="text-xs opacity-90">{editConflict.message}</p>
-                       </div>
-                   </div>
-                )}
-                
-                {editDurationWarning && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-100 text-amber-700 text-sm">
-                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                        <div>
-                            <p className="font-semibold">Short Shift</p>
-                            <p className="text-xs opacity-90">{editDurationWarning}</p>
-                        </div>
-                    </div>
-                )}
-
-                <div className="space-y-2">
-                    <Label>Employee</Label>
-                    <div className="flex items-center px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-medium">
-                        <Users className="w-4 h-4 mr-2 opacity-50"/>
-                        {selectedSchedule ? getEmployeeName(selectedSchedule.userId) : "Loading..."}
-                    </div>
-                </div>
-
-                <div className={styles.form.grid2}>
-                    <div className="space-y-2">
-                      <Label>Date</Label>
-                      <Input type="date" className={styles.form.input} {...editForm.register("date")} />
-                      <ErrorMsg error={editForm.formState.errors.date} />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Role</Label>
-                        <Controller
-                          control={editForm.control}
-                          name="shiftRole"
-                          render={({ field }) => (
-                            <Select value={field.value} onValueChange={field.onChange}>
-                                <SelectTrigger className="rounded-xl capitalize"><SelectValue placeholder="Select Role..."/></SelectTrigger>
-                                <SelectContent>{ROLES.map(r => <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>)}</SelectContent>
-                            </Select>
-                          )}
-                        />
-                        <ErrorMsg error={editForm.formState.errors.shiftRole} />
-                    </div>
-                </div>
-                <div className="space-y-2">
-                    <Label>Shift Type</Label>
-                    <Controller
-                      control={editForm.control}
-                      name="shiftType"
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={(val) => handleShiftTypeChange(val, editForm)}>
-                            <SelectTrigger className={styles.form.input}><SelectValue placeholder="Select Type..."/></SelectTrigger>
-                            <SelectContent>{Object.entries(SHIFT_PRESETS).map(([k,v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
-                        </Select>
+                      {currentPeople.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-200/60">
+                              {currentPeople.map((p, i) => (
+                                  <Badge key={i} variant="secondary" className="pl-2 pr-1 py-1 flex items-center gap-1 bg-white border border-slate-200">
+                                      {p} <button type="button" onClick={() => removePerson(i)} className="hover:bg-slate-100 rounded-full p-0.5"><X className="w-3 h-3 text-slate-400 hover:text-red-500" /></button>
+                                  </Badge>
+                              ))}
+                          </div>
                       )}
-                    />
-                    <ErrorMsg error={editForm.formState.errors.shiftType} />
-                </div>
-                <div className={cn(styles.form.grid2, styles.form.timeWrapper)}>
-                    <TimeInput form={editForm} name="startTime" label="Start Time" onChangeOverride={onStartTimeChange} />
-                    <TimeInput form={editForm} name="endTime" label="End Time" />
-                </div>
-                <div className="space-y-2"><Label>Location</Label><Input {...editForm.register("location")} className={styles.form.input} /></div>
-                
-                <DialogFooter className="sm:justify-between items-center mt-6 border-t pt-4">
-                    <Button 
-                        type="button" 
-                        variant="destructive" 
-                        className="rounded-full w-full sm:w-auto mb-2 sm:mb-0" 
-                        onClick={() => {
-                            if (selectedSchedule) {
-                                setIsDeleteDialogOpen(true);
-                                setIsEditDialogOpen(false);
-                            }
-                        }}
-                    >
-                        <Trash2 className="w-4 h-4 mr-2" /> Delete
-                    </Button>
-                    <div className="flex gap-2 w-full sm:w-auto">
-                        <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} className="rounded-full flex-1">Cancel</Button>
-                        <Button type="submit" disabled={updateShiftMutation.isPending || !!editConflict} className="bg-slate-900 text-white rounded-full flex-1">Update</Button>
+                      {form.formState.errors.involvedPeople && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {form.formState.errors.involvedPeople.message}</p>}
+                  </div>
+
+                  {/* NTE SECTION */}
+                  {['admin', 'manager'].includes(user?.role || '') && (
+                    <div className="space-y-3 p-4 bg-orange-50/50 rounded-lg border border-orange-100">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox 
+                            id="nteRequired" 
+                            checked={watchNteRequired} 
+                            onCheckedChange={(checked) => form.setValue("nteRequired", checked as boolean)}
+                          />
+                          <Label htmlFor="nteRequired" className="font-medium text-orange-900 cursor-pointer">
+                            Require Notice to Explain (NTE)
+                          </Label>
+                        </div>
+                        
+                        {watchNteRequired && (
+                          <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
+                            <Label className="text-xs text-orange-800">Assign to Employee for NTE</Label>
+                            <Popover open={openNteAssignPicker} onOpenChange={setOpenNteAssignPicker}>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" role="combobox" className="w-full justify-between bg-white border-orange-200 text-orange-900 hover:bg-orange-50">
+                                  {watchAssignedTo ? getEmployeeName(watchAssignedTo) : "Select employee..."}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                                <Command>
+                                  <CommandInput placeholder="Search employee..." />
+                                  <CommandList>
+                                    <CommandEmpty>No employee found.</CommandEmpty>
+                                    <CommandGroup>
+                                      {sortedEmployees.map((member) => (
+                                        <CommandItem
+                                          key={member.id}
+                                          value={`${member.lastName}, ${member.firstName}`}
+                                          onSelect={() => { form.setValue("assignedTo", member.id); setOpenNteAssignPicker(false); }}
+                                        >
+                                          <Check className={cn("mr-2 h-4 w-4", watchAssignedTo === member.id ? "opacity-100" : "opacity-0")} />
+                                          {member.lastName}, {member.firstName}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                        )}
                     </div>
+                  )}
+
+                  {selectedCategory === 'breakages' && (
+                      <div className="bg-slate-50 p-4 rounded-lg space-y-4 border border-slate-200">
+                          <h4 className="font-medium text-sm text-slate-900">Damaged Items</h4>
+                          <div className="grid grid-cols-12 gap-2 items-end">
+                              <div className="col-span-9"><Label className="text-xs">Item Name</Label><Input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Plate" /></div>
+                              <div className="col-span-2"><Label className="text-xs">Qty</Label><Input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: +e.target.value})} /></div>
+                              <div className="col-span-1"><Button type="button" size="icon" onClick={addItem}><Plus className="w-4 h-4" /></Button></div>
+                          </div>
+                          <div className="space-y-2">{currentItems.map((item, i) => <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded border"><span>{item.quantity}x {item.name}</span><button type="button" onClick={() => removeItem(i)}><X className="w-4 h-4 hover:text-red-500" /></button></div>)}</div>
+                      </div>
+                  )}
+
+                  <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+                    <Button type="submit" disabled={createReportMutation.isPending}>
+                        {createReportMutation.isPending ? "Submitting..." : "Submit Report"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+        </div>
+      </div>
+
+      {view === "list" ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Main Reports List */}
+            <Card className="bg-white border-slate-200 shadow-sm md:col-span-2">
+                <CardContent className="p-0">
+                    {/* --- FILTER BAR --- */}
+                    <div className="flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl items-center">
+                        <Filter className="w-4 h-4 text-slate-400" />
+                        
+                        {/* CUSTOM EMPLOYEE SEARCH COMBOBOX */}
+                        <Popover open={openFilterPicker} onOpenChange={setOpenFilterPicker}>
+                            <PopoverTrigger asChild>
+                                <Button variant="outline" role="combobox" aria-expanded={openFilterPicker} className="w-[180px] h-8 justify-between text-xs bg-white font-normal border-slate-200">
+                                    <span className="truncate">{personFilter || "Filter by person..."}</span>
+                                    {personFilter ? 
+                                        <X className="h-3 w-3 opacity-50 hover:opacity-100 ml-1" onClick={(e) => { e.stopPropagation(); setPersonFilter(""); }} /> :
+                                        <ChevronsUpDown className="ml-1 h-3 w-3 opacity-50" />
+                                    }
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[180px] p-0" align="start">
+                                <Command>
+                                    <CommandInput placeholder="Search staff..." className="h-8 text-xs" />
+                                    <CommandList>
+                                        <CommandEmpty className="py-2 text-xs text-center text-slate-500">No one found.</CommandEmpty>
+                                        <CommandGroup>
+                                            {sortedEmployees.map((member) => (
+                                                <CommandItem 
+                                                    key={member.id} 
+                                                    value={`${member.lastName}, ${member.firstName}`}
+                                                    onSelect={(val) => { setPersonFilter(val === personFilter ? "" : val); setOpenFilterPicker(false); }}
+                                                    className="text-xs"
+                                                >
+                                                    <Check className={cn("mr-2 h-3 w-3", personFilter === `${member.lastName}, ${member.firstName}` ? "opacity-100" : "opacity-0")} />
+                                                    {member.lastName}, {member.firstName}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+
+                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                            <SelectTrigger className="w-[160px] h-8 text-xs bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Categories</SelectItem>
+                                {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                        
+                        <Select value={monthFilter} onValueChange={setMonthFilter}>
+                            <SelectTrigger className="w-[140px] h-8 text-xs bg-white"><SelectValue placeholder="Month" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Months</SelectItem>
+                                {monthOptions.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                            <SelectTrigger className="w-[120px] h-8 text-xs bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+                            <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="resolved">Resolved</SelectItem></SelectContent>
+                        </Select>
+
+                        {(categoryFilter !== 'all' || statusFilter !== 'all' || monthFilter !== 'all' || personFilter !== "") && (
+                            <Button variant="ghost" size="sm" onClick={() => {setCategoryFilter('all'); setStatusFilter('all'); setMonthFilter('all'); setPersonFilter('');}} className="h-8 text-xs text-red-500 hover:text-red-600 hover:bg-red-50">Reset</Button>
+                        )}
+                    </div>
+
+                    {/* --- LIST ITEMS --- */}
+                    <div className="divide-y divide-slate-100 min-h-[300px]">
+                        {isLoading ? <div className="p-8 text-center text-slate-400">Loading...</div> : 
+                        paginatedReports.length === 0 ? <div className="p-8 text-center text-slate-400">No reports found.</div> :
+                        paginatedReports.map((report: any) => (
+                            <div 
+                              key={report.id} 
+                              onClick={() => { setSelectedReport(report); setIsViewOpen(true); }} 
+                              className={cn(
+                                "flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors border-l-4",
+                                report.severity === 'critical' ? "border-l-red-600 bg-red-50/30" : 
+                                report.severity === 'high' ? "border-l-orange-500" : "border-l-transparent"
+                              )}
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className="relative">
+                                  <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color || "bg-slate-100 text-slate-600")}>
+                                    {(() => { const Icon = categories.find(c=>c.id===report.category)?.icon || FileText; return <Icon className="w-5 h-5" /> })()}
+                                  </div>
+                                  {(report.severity === 'critical' || report.severity === 'high') && (
+                                    <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
+                                      <AlertTriangle className={cn("w-3.5 h-3.5", report.severity === 'critical' ? "text-red-600" : "text-orange-500")} />
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-sm font-bold text-slate-800">{report.title}</h4>
+                                    {report.nteRequired && <Badge variant="outline" className="text-[9px] border-orange-200 text-orange-600 bg-orange-50 px-1.5 h-4">NTE REQ</Badge>}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                    <span>{format(new Date(report.dateOccurred), "MMM dd")}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <Badge variant={report.status === 'resolved' ? 'default' : 'secondary'} className="capitalize">{report.status}</Badge>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    {filteredReports.length > 0 && (
+                        <div className="flex items-center justify-between p-3 border-t border-slate-100 bg-white rounded-b-xl">
+                            <div className="text-xs text-slate-500 font-medium">
+                                Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredReports.length)} of {filteredReports.length}
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}><ChevronsLeft className="w-3 h-3" /></Button>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="w-3 h-3" /></Button>
+                                <span className="text-xs font-medium px-2 min-w-[3rem] text-center">{currentPage} / {totalPages || 1}</span>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages}><ChevronRight className="w-3 h-3" /></Button>
+                                <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}><ChevronsRight className="w-3 h-3" /></Button>
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* --- MOST INVOLVED SIDEBAR --- */}
+            <Card className="bg-white border-slate-200 shadow-sm h-fit">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                        <Users className="w-4 h-4" /> Most Involved
+                    </CardTitle>
+                    <CardDescription className="text-xs">Frequent names in recent incidents</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-2">
+                        {stats.mostInvolved?.map(([name, count], i) => (
+                            <button key={name} onClick={() => setPersonFilter(name)} className={cn("w-full flex items-center justify-between text-sm p-2 rounded-lg transition-colors hover:bg-slate-100 text-left", personFilter === name ? "bg-blue-50 border border-blue-100" : "bg-transparent")}>
+                                <div className="flex items-center gap-2">
+                                    <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold", i === 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600")}>{i + 1}</span>
+                                    <span className={cn("font-medium truncate max-w-[120px]", personFilter === name ? "text-blue-700" : "text-slate-700")} title={name}>{name}</span>
+                                </div>
+                                <Badge variant="secondary" className="text-[10px] bg-white border border-slate-100">{count}</Badge>
+                            </button>
+                        ))}
+                    </div>
+                </CardContent>
+            </Card>
+        </div>
+      ) : (
+        /* --- ANALYTICS VIEW --- */
+        <div className="space-y-6">
+            <div className="flex justify-end">
+                {/* NEW: BUTTON GROUP FILTER FOR MONTHS */}
+                <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+                    {['3', '6', '9', '12'].map((range) => (
+                        <Button 
+                            key={range}
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => setAnalyticsRange(range)} 
+                            className={cn("text-xs h-7 px-3", analyticsRange === range && "bg-white shadow-sm text-slate-900 font-medium")}
+                        >
+                            {range} Months
+                        </Button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 1. STACKED BAR CHART: Incident Trend by Category */}
+                <Card className="col-span-1 md:col-span-2 lg:col-span-1">
+                    <CardHeader><CardTitle className="text-lg">Incident Trends</CardTitle><CardDescription>Stacked Breakdown by Month</CardDescription></CardHeader>
+                    <CardContent>
+                        <div className="h-[350px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={stats.monthlyStacked} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                                    <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                                    <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+                                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                                    
+                                    {/* Generate Bars for each Category */}
+                                    {categories.map((cat, index) => (
+                                        <Bar key={cat.id} dataKey={cat.id} stackId="a" fill={cat.fill} name={cat.label} radius={index === categories.length - 1 ? [4, 4, 0, 0] : [0,0,0,0]} />
+                                    ))}
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* 2. PIE CHART: Overall Breakdown */}
+                <Card className="col-span-1 md:col-span-2 lg:col-span-1">
+                    <CardHeader><CardTitle className="text-lg">Reports by Category</CardTitle><CardDescription>Distribution over {analyticsRange} months</CardDescription></CardHeader>
+                    <CardContent>
+                        <div className="h-[350px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={2} dataKey="value">
+                                        {stats.byCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                                    </Pie>
+                                    <RechartsTooltip contentStyle={{borderRadius: '8px', border: 'none'}} />
+                                    <Legend verticalAlign="middle" align="right" layout="vertical" wrapperStyle={{ fontSize: '11px' }} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+        </div>
+      )}
+
+      {/* View Details Dialog */}
+        <Dialog open={isViewOpen} onOpenChange={(open) => {
+          setIsViewOpen(open);
+          if (!open) {
+             setSelectedReport(null);
+             setNteResponse("");
+          }
+        }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            {!selectedReport ? (
+            <div className="p-8 text-center flex justify-center items-center h-40">
+                <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+            </div>
+            ) : (
+            <>
+                <DialogHeader>
+                <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="uppercase tracking-wider text-[10px]">
+                        {categories.find(c => c.id === selectedReport.category)?.label || selectedReport.category}
+                        </Badge>
+                        <Badge className={cn("capitalize", 
+                        selectedReport.severity === 'critical' ? "bg-red-100 text-red-700 hover:bg-red-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"
+                        )}>
+                        {selectedReport.severity} Priority
+                        </Badge>
+                    </div>
+                    {/* INDIVIDUAL DOWNLOAD BUTTON */}
+                    <Button variant="ghost" size="icon" onClick={() => generateSinglePDF(selectedReport)} title="Download PDF">
+                        <FileDown className="w-4 h-4 text-slate-500" />
+                    </Button>
+                </div>
+                <DialogTitle className="text-2xl font-bold text-slate-900">{selectedReport.title}</DialogTitle>
+                <DialogDescription className="flex items-center gap-2 text-slate-500">
+                    <CalendarIcon className="w-4 h-4" /> {format(new Date(selectedReport.dateOccurred), "MMMM dd, yyyy")} 
+                    <Clock className="w-4 h-4 ml-2" /> {selectedReport.timeOccurred}
+                </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-6 py-4">
+                  {/* Status & Location Bar */}
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
+                      <div className="flex items-center gap-2 font-medium text-slate-900">
+                          <MapPin className="w-4 h-4 text-slate-400" />
+                          {selectedReport.location}
+                      </div>
+                      </div>
+                      <div className="space-y-1">
+                      <span className="text-xs font-semibold text-slate-400 uppercase">Status</span>
+                      <div className="flex items-center gap-2 font-medium text-slate-900 capitalize">
+                          {selectedReport.status === 'resolved' ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <AlertCircle className="w-4 h-4 text-amber-500" />}
+                          {selectedReport.status}
+                      </div>
+                      </div>
+                  </div>
+                  
+                  {/* Reporter Info */}
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+                              <Users className="w-5 h-5 text-slate-500" />
+                          </div>
+                          <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Filed By</p>
+                              <p className="text-sm font-bold text-slate-900">{getEmployeeName(selectedReport.userId)}</p>
+                              <p className="text-xs text-slate-500 capitalize">{getEmployeeRole(selectedReport.userId)}</p>
+                          </div>
+                      </div>
+                      <div className="text-right">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase leading-none mb-1">Submission Date</p>
+                          <p className="text-xs font-medium text-slate-700">
+                              {format(new Date(selectedReport.createdAt), "MMM dd, yyyy p")}
+                          </p>
+                      </div>
+                  </div>
+
+                  {/* Incident Description */}
+                  <div className="space-y-4">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 mb-2">Incident Description</h4>
+                        <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.description}</p>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 mb-2">Immediate Action Taken</h4>
+                        <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.actionTaken || "No immediate action recorded."}</p>
+                      </div>
+                  </div>
+                  
+                  {/* NTE SECTION: Display/Input */}
+                  {selectedReport.nteRequired && (
+                    <div className="bg-orange-50/50 border border-orange-100 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="bg-white text-orange-600 border-orange-200">Action Required</Badge>
+                            <span className="font-semibold text-sm text-orange-900">Notice to Explain (NTE)</span>
+                        </div>
+                        
+                        {/* CASE 1: Manager View (Show content or pending status) */}
+                        {['admin', 'manager'].includes(user?.role || '') && (
+                            <div className="text-sm">
+                                {selectedReport.nteContent ? (
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-semibold text-orange-800">Employee Explanation:</p>
+                                        <p className="bg-white p-3 rounded border border-orange-100 text-slate-700">{selectedReport.nteContent}</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-orange-600 italic">Waiting for employee explanation...</p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* CASE 2: Employee View (Show Input if Assigned & Pending) */}
+                        {user?.id === selectedReport.assignedTo && !['admin', 'manager'].includes(user?.role || '') && (
+                            <div className="space-y-3">
+                                {selectedReport.nteContent ? (
+                                      <div className="space-y-1">
+                                        <p className="text-xs font-semibold text-orange-800">Your Submitted Explanation:</p>
+                                        <p className="bg-white p-3 rounded border border-orange-100 text-slate-700">{selectedReport.nteContent}</p>
+                                      </div>
+                                ) : (
+                                      <>
+                                        <p className="text-xs text-orange-800">Please provide your explanation regarding this incident.</p>
+                                        <Textarea 
+                                            placeholder="Write your explanation here..."
+                                            value={nteResponse}
+                                            onChange={(e) => setNteResponse(e.target.value)}
+                                            className="bg-white border-orange-200 focus-visible:ring-orange-500"
+                                        />
+                                        <Button 
+                                            size="sm" 
+                                            className="bg-orange-600 hover:bg-orange-700 text-white w-full"
+                                            disabled={!nteResponse.trim() || updateStatusMutation.isPending}
+                                            onClick={() => updateStatusMutation.mutate({ 
+                                                id: selectedReport.id, 
+                                                nteContent: nteResponse 
+                                            })}
+                                        >
+                                            {updateStatusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <Send className="w-3 h-3 mr-2" />}
+                                            Submit Explanation
+                                        </Button>
+                                      </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-400 uppercase">Witnesses</span>
+                        <p className="text-sm font-medium text-slate-900">{selectedReport.witnesses || "None listed"}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-xs font-semibold text-slate-400 uppercase">Parties Involved</span>
+                        <p className="text-sm font-medium text-slate-900">{selectedReport.partiesInvolved || "None listed"}</p>
+                      </div>
+                  </div>
+                </div>
+
+                <DialogFooter className="flex-row justify-between sm:justify-between border-t pt-4">
+                <Button variant="ghost" onClick={() => setIsViewOpen(false)}>Close</Button>
+                
+                {['admin', 'manager'].includes(user?.role || '') && (
+                    selectedReport.status === 'resolved' ? (
+                        <Button 
+                        variant="outline"
+                        className="border-amber-500 text-amber-600 hover:bg-amber-50"
+                        onClick={() => updateStatusMutation.mutate({ id: selectedReport.id, status: 'pending' })}
+                        disabled={updateStatusMutation.isPending}
+                        >
+                        <Clock className="w-4 h-4 mr-2" /> Mark as Pending
+                        </Button>
+                    ) : (
+                        <Button 
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => {
+                            setResolutionAction(selectedReport.actionTaken || ""); 
+                            setIsViewOpen(false); 
+                            setTimeout(() => setIsResolveDialogOpen(true), 150);
+                        }}
+                        >
+                        <CheckCircle2 className="w-4 h-4 mr-2" /> Mark as Resolved
+                        </Button>
+                    )
+                )}
                 </DialogFooter>
-            </form>
+            </>
+            )}
         </DialogContent>
-      </Dialog>
+        </Dialog>
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent className="rounded-2xl">
-            <AlertDialogHeader><AlertDialogTitle>Delete Shift</AlertDialogTitle><AlertDialogDescription>Are you sure you want to delete this shift? This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-            <AlertDialogFooter><AlertDialogCancel className="rounded-full">Cancel</AlertDialogCancel><AlertDialogAction onClick={() => selectedSchedule && deleteShiftMutation.mutate(selectedSchedule.id)} className="bg-rose-600 hover:bg-rose-700 rounded-full">Delete</AlertDialogAction></AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
-// --- Cards ---
-
-function RosterCard({ schedule, conflict, onEdit, onDelete }: any) {
-  const typeKey = schedule.shiftType?.toLowerCase() || 'morning';
-  const style = SHIFT_PRESETS[typeKey as keyof typeof SHIFT_PRESETS] || SHIFT_PRESETS.morning;
-  const label = schedule.shiftType || "Shift"; 
-
-  if (typeKey === 'off') {
-      return (
-        <div onClick={() => onEdit(schedule)} className="rounded-md bg-slate-50 border border-slate-100 p-2 text-center cursor-pointer hover:bg-slate-100 relative">
-            <span className="text-[10px] font-bold text-slate-300">OFF</span>
-            {conflict && <AlertTriangle className="w-3 h-3 text-rose-500 absolute top-1 right-1" title={conflict.message} />}
-        </div>
-      );
-  }
-
-  return (
-    <div onClick={() => onEdit(schedule)} className={cn("relative rounded-lg p-2 text-xs border shadow-sm cursor-pointer hover:scale-[1.02] transition-all group", style.color, conflict && "border-rose-400 ring-1 ring-rose-400 bg-rose-50")}>
-      <div className="flex justify-between items-center mb-1 pr-3">
-        <span className={cn("font-bold capitalize", conflict && "text-rose-700")}>{label}</span>
-        <Badge variant="secondary" className={cn("h-4 px-1 text-[8px] bg-white/60 border-0 uppercase", conflict && "bg-rose-100 text-rose-700")}>{schedule.shiftRole}</Badge>
-      </div>
-      <div className={cn("font-mono text-[10px] opacity-90", conflict && "text-rose-600")}>
-        {new Date(schedule.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-      </div>
-      {conflict && <AlertTriangle className="w-3 h-3 text-rose-500 absolute top-1 right-1" title={conflict.message} />}
-      {!conflict && (
-        <button onClick={(e) => onDelete(schedule, e)} className="absolute top-1 right-1 p-1 rounded-full bg-white/40 hover:bg-red-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
-          <Trash2 className="w-3 h-3" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function KanbanCard({ schedule, conflict, employeeName, onEdit, onDelete }: any) {
-  const typeKey = schedule.shiftType?.toLowerCase() || 'morning';
-  const style = SHIFT_PRESETS[typeKey as keyof typeof SHIFT_PRESETS] || SHIFT_PRESETS.morning;
-
-  return (
-    <div onClick={() => onEdit(schedule)} className={cn("group relative bg-white p-3 rounded-lg border shadow-sm hover:shadow-md transition-all cursor-pointer", conflict ? "border-rose-300" : "border-slate-100")}>
-      <div className="flex justify-between items-start mb-1">
-        <span className={cn("font-bold text-sm", conflict ? "text-rose-800" : "text-slate-800")}>{employeeName}</span>
-        {!conflict && <div className={cn("w-2 h-2 rounded-full", style.indicator)} />}
-        {conflict && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" title={conflict.message} />}
-      </div>
-      <div className="flex items-center text-xs text-slate-500 gap-1.5 mb-1">
-        <Clock className="w-3 h-3" />
-        {new Date(schedule.startTime).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})} - {new Date(schedule.endTime).toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}
-      </div>
-      <div className="flex items-center text-[10px] text-slate-400 gap-1.5">
-        <MapPin className="w-3 h-3" /> {schedule.location || "Main Hall"}
-      </div>
-      {conflict && (
-        <div className="mt-2 text-[10px] font-semibold text-rose-600 bg-rose-50 p-1.5 rounded">
-            {conflict.message}
-        </div>
-      )}
-      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-        {!conflict && (
-            <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500" onClick={(e) => onDelete(schedule, e)}>
-                <Trash2 className="w-3 h-3" />
+        {/* Resolve Action Popup */}
+        <Dialog open={isResolveDialogOpen} onOpenChange={setIsResolveDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                Resolve Report
+            </DialogTitle>
+            <DialogDescription>
+                Document the final action taken to address this incident.
+            </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+            <div className="space-y-2">
+                <Label htmlFor="resolution">Immediate Action Taken</Label>
+                <Textarea 
+                id="resolution"
+                placeholder="e.g. Discussed with staff, issued warning, or item replaced..."
+                className="min-h-[120px]"
+                value={resolutionAction}
+                onChange={(e) => setResolutionAction(e.target.value)}
+                />
+            </div>
+            </div>
+            <DialogFooter>
+            <Button 
+                variant="ghost" 
+                onClick={() => {
+                setIsResolveDialogOpen(false);
+                setIsViewOpen(true); 
+                }}
+            >
+                Back
             </Button>
-        )}
-      </div>
+            <Button 
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={!resolutionAction.trim() || updateStatusMutation.isPending}
+                onClick={() => {
+                if (!selectedReport) return;
+                updateStatusMutation.mutate({ 
+                    id: selectedReport.id, 
+                    status: 'resolved',
+                    actionTaken: resolutionAction 
+                });
+                }}
+            >
+                {updateStatusMutation.isPending ? "Saving..." : "Confirm & Resolve"}
+            </Button>
+            </DialogFooter>
+        </DialogContent>
+        </Dialog>
+
     </div>
   );
 }
