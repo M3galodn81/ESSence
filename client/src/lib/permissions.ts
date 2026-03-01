@@ -142,6 +142,7 @@ export const RolePermissions: Record<Role, Permission[]> = {
     // =========================================================
     [Role.PAYROLL_OFFICER]: [ // FIXED: Updated Key
         Permission.VIEW_OWN_PROFILE,
+        // Permission.MANAGE_USERS,
         Permission.VIEW_ALL_USERS,
         Permission.VIEW_SENSITIVE_USER_DATA, 
         
@@ -175,6 +176,7 @@ export const RolePermissions: Record<Role, Permission[]> = {
     [Role.MANAGER]: [
         Permission.VIEW_OWN_PROFILE,
         Permission.VIEW_ALL_USERS, 
+        Permission.MANAGE_USERS,
         
         Permission.SUBMIT_ATTENDANCE,
         Permission.VIEW_OWN_ATTENDANCE,

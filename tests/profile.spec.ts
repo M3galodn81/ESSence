@@ -10,7 +10,7 @@ test.describe('Profile Management', () => {
   
   test.beforeEach(async ({ page }) => {
     // 1. Navigate to the app using the absolute URL
-    await page.goto('http://localhost:5000/');
+    await page.goto('/');
     
     // 2. Resilient Login Check using your exact data-testids from AuthPage.tsx
     try {
