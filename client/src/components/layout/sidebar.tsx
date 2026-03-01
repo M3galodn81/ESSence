@@ -1,23 +1,24 @@
 import { useAuth } from "@/hooks/use-auth";
-import { usePermission } from "@/hooks/use-permission"; // <-- Import your new hook
-import { Permission } from "@/lib/permissions";         // <-- Import your permissions enum
+import { usePermission } from "@/hooks/use-permission"; 
+import { Permission } from "@/lib/permissions";         
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Home, User, Calendar, FileText, Clock, Users,
-  Megaphone, LogOut, Settings, Menu, X, AlertTriangle,
+  Megaphone, LogOut, Settings, AlertTriangle,
   PhilippinePeso, UserPlus, Timer, Briefcase
 } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
+// Accept the state from MainLayout
 interface SidebarProps {
   className?: string;
+  isMobileOpen: boolean;
+  setIsMobileOpen: (open: boolean) => void;
 }
 
-// 1. Map each route to a specific Permission instead of a generic Role.
-// Items without a permission requirement (like Dashboard) will always render.
 const navigationItems = [
   { path: "/", label: "Dashboard", icon: Home },
   { path: "/announcements", label: "Announcements", icon: Megaphone, permission: Permission.VIEW_ANNOUNCEMENTS },
@@ -45,12 +46,11 @@ const payrollItems = [
   { path: "/holiday-calendar", label: "Holiday Calendar", icon: Calendar, permission: Permission.MANAGE_HOLIDAYS },
 ];
 
-export default function Sidebar({ className }: SidebarProps) {
+export default function Sidebar({ className, isMobileOpen, setIsMobileOpen }: SidebarProps) {
   const { user, logoutMutation } = useAuth();
-  const { hasPermission } = usePermission(); // <-- Initialize your permission hook
+  const { hasPermission } = usePermission(); 
   
   const [location, navigate] = useLocation();
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -72,7 +72,7 @@ export default function Sidebar({ className }: SidebarProps) {
 
   const handleNavigation = (path: string) => {
     navigate(path);
-    setIsMobileOpen(false);
+    setIsMobileOpen(false); // Close sidebar on navigation
   };
 
   const isActive = (path: string) => {
@@ -80,7 +80,6 @@ export default function Sidebar({ className }: SidebarProps) {
     return location.startsWith(path) && path !== "/";
   };
 
-  // 2. Filter the items based on the user's granular permissions
   const visibleNavItems = navigationItems.filter(item => 
     !item.permission || hasPermission(item.permission)
   );
@@ -94,7 +93,7 @@ export default function Sidebar({ className }: SidebarProps) {
   );
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-slate-900/95 backdrop-blur-xl text-slate-300">
+    <div className="flex flex-col h-full bg-slate-900 text-slate-300">
       {/* Logo Section */}
       <div className="p-6 flex flex-col items-center border-b border-slate-800/50 shrink-0">
         <div className="relative">
@@ -137,7 +136,6 @@ export default function Sidebar({ className }: SidebarProps) {
           ))}
         </div>
 
-        {/* 3. Dynamically hide headers if the user has 0 permitted items in that category */}
         {visibleManagementItems.length > 0 && (
           <div className="mt-8 space-y-1">
             <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
@@ -219,7 +217,6 @@ export default function Sidebar({ className }: SidebarProps) {
           variant="outline"
           className="w-full border-slate-700/50 bg-transparent text-slate-400 hover:text-white hover:bg-slate-800/50 hover:border-slate-600 transition-colors h-9 text-xs"
           onClick={handleLogout}
-          disabled={logoutMutation.isPending}
         >
           <LogOut className="w-3.5 h-3.5 mr-2" />
           Sign Out
@@ -232,25 +229,17 @@ export default function Sidebar({ className }: SidebarProps) {
     <>
       {isMobileOpen && (
         <div 
-          className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-40 lg:hidden animate-in fade-in duration-200"
+          className="fixed inset-0 bg-slate-900/80 z-40 lg:hidden animate-in fade-in duration-200"
           onClick={() => setIsMobileOpen(false)}
           data-testid="mobile-overlay"
         />
       )}
 
-      <Button
-        variant="ghost"
-        size="sm"
-        className="lg:hidden fixed top-4 left-4 z-50 bg-white/10 backdrop-blur-md border border-white/20 text-slate-800 hover:bg-white/20 shadow-sm"
-        onClick={() => setIsMobileOpen(!isMobileOpen)}
-        data-testid="mobile-menu-toggle"
-      >
-        {isMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-      </Button>
+      {/* Reverted floating button, relies entirely on MainLayout/Header state now */}
       
       <aside
         className={cn(
-          "w-64 fixed inset-y-0 left-0 z-50 bg-slate-900/95 backdrop-blur-xl shadow-2xl lg:translate-x-0 transition-transform duration-300 ease-in-out border-r border-slate-800/50",
+          "w-64 fixed inset-y-0 left-0 z-50 bg-slate-900 shadow-2xl lg:translate-x-0 transition-transform duration-300 ease-in-out border-r border-slate-800/50 will-change-transform transform-gpu",
           isMobileOpen ? "translate-x-0" : "-translate-x-full",
           className
         )}

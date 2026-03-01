@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6c725357-579c-4d9f-90e1-1eda0876338f",
+  "id": "01b1e032-e3a5-44b3-8e6d-25a9a0b761e2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "activities": {
@@ -1689,13 +1689,61 @@
           "autoincrement": false,
           "default": 10
         },
-        "emergency_leave_balance": {
-          "name": "emergency_leave_balance",
+        "service_incentive_leave_balance": {
+          "name": "service_incentive_leave_balance",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false,
           "default": 5
+        },
+        "bereavement_leave_balance": {
+          "name": "bereavement_leave_balance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 3
+        },
+        "maternity_leave_balance": {
+          "name": "maternity_leave_balance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 105
+        },
+        "paternity_leave_balance": {
+          "name": "paternity_leave_balance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 7
+        },
+        "solo_parent_leave_balance": {
+          "name": "solo_parent_leave_balance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 7
+        },
+        "magna_carta_leave_balance": {
+          "name": "magna_carta_leave_balance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 60
+        },
+        "vawc_leave_balance": {
+          "name": "vawc_leave_balance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 10
         },
         "annual_leave_balance_limit": {
           "name": "annual_leave_balance_limit",
@@ -1713,13 +1761,61 @@
           "autoincrement": false,
           "default": 10
         },
-        "emergency_leave_balance_limit": {
-          "name": "emergency_leave_balance_limit",
+        "service_incentive_leave_balance_limit": {
+          "name": "service_incentive_leave_balance_limit",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false,
           "default": 5
+        },
+        "bereavement_leave_balance_limit": {
+          "name": "bereavement_leave_balance_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 3
+        },
+        "maternity_leave_balance_limit": {
+          "name": "maternity_leave_balance_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 105
+        },
+        "paternity_leave_balance_limit": {
+          "name": "paternity_leave_balance_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 7
+        },
+        "solo_parent_leave_balance_limit": {
+          "name": "solo_parent_leave_balance_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 7
+        },
+        "magna_carta_leave_balance_limit": {
+          "name": "magna_carta_leave_balance_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 60
+        },
+        "vawc_leave_balance_limit": {
+          "name": "vawc_leave_balance_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 10
         },
         "created_at": {
           "name": "created_at",

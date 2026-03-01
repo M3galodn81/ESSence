@@ -137,6 +137,8 @@ export default function Dashboard() {
               isLoading={activitiesLoading}
             />
           )}
+
+          <PendingTasksCard />
         </div>
 
         {/* Right Column: Tools & Tasks (1/3 width) */}
@@ -150,7 +152,7 @@ export default function Dashboard() {
             />
           )}
           
-          <PendingTasksCard />
+          
         </div>
       </div>
     </div>

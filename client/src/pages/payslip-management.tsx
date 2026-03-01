@@ -3,38 +3,75 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Search, Edit2, Loader2, CalendarDays, Users, FileCheck, Clock, Filter, Calculator, Moon, Flame, Calendar, Briefcase } from 'lucide-react';
+import { Search, Edit2, Loader2, Users, FileCheck, Clock, Filter, Calculator, Moon, Flame, Calendar, Briefcase, Shield } from 'lucide-react';
 import { HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER, computeSSS, computePhilHealth, computePagIbig } from "../utils/salary_computation"; 
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BentoCard } from "@/components/custom/bento-card"; 
+import type { PayItems } from "@shared/schema";
+
+// --- RBAC Imports ---
+import { usePermission } from "@/hooks/use-permission";
+import { Permission } from "@/lib/permissions";
 
 // Helper for consistent rounding
 const round2 = (num: number) => Math.round(num * 100) / 100;
 
+// --- SEPARATED STYLES ---
+const styles = {
+  container: "p-6 md:p-8 max-w-7xl mx-auto space-y-8",
+  headerRow: "flex flex-col md:flex-row md:items-center justify-between gap-4",
+  title: "text-3xl font-bold tracking-tight text-slate-900",
+  subtitle: "text-slate-500 mt-1 text-sm",
+  
+  // Filters
+  filterBox: "flex items-center gap-4 bg-white/80 backdrop-blur-md p-2 rounded-2xl border border-slate-200/60 shadow-sm",
+  filterWrapper: "flex items-center gap-2 px-2",
+  divider: "w-px h-4 bg-slate-200",
+  
+  // Search
+  searchCardHeader: "px-6 py-4 border-b border-slate-100 bg-white/50",
+  searchContainer: "relative w-full max-w-sm",
+  searchInput: "pl-9 bg-white/60 border-slate-200/60 focus:bg-white rounded-xl transition-all",
+  
+  // Table
+  tableBase: "w-full text-sm text-left",
+  tableHead: "bg-slate-50/50 border-b border-slate-200/60",
+  thBase: "px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs",
+  trBase: "hover:bg-white/60 transition-colors group",
+  
+  // Employee Cell
+  empName: "font-medium text-slate-900",
+  empRole: "text-xs text-slate-500",
+  
+  // Hours Cell
+  hoursBox: "bg-slate-50 rounded-lg p-2 border border-slate-100 space-y-1.5 min-w-[140px] group-hover:border-slate-200 transition-colors relative",
+  hoursRow: "flex justify-between items-center text-xs",
+  
+  // Dialogs
+  editInput: "rounded-xl border-slate-200",
+  sectionTitle: "font-medium text-sm text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-2",
+  calcSummaryBox: "space-y-4 bg-slate-50/80 p-5 rounded-2xl border border-slate-100",
+  
+  // Viewer
+  viewerHeader: "bg-slate-50/50 p-6 border-b border-slate-100 flex flex-col gap-4",
+  viewerStatBoxBase: "px-3 py-2 border rounded-xl shadow-sm flex flex-col items-center min-w-[70px]",
+};
+
 export default function PayrollManagement() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermission();
+  
+  // RBAC Check
+  const canManagePayroll = hasPermission(Permission.MANAGE_PAYROLL);
 
   // --- State ---
   const currentYear = new Date().getFullYear();
@@ -52,21 +89,10 @@ export default function PayrollManagement() {
   const [attendanceViewerId, setAttendanceViewerId] = useState<string | null>(null);
 
   const [editForm, setEditForm] = useState({
-    regularHours: 0,
-    overtimeHours: 0,
-    nightDiffHours: 0,
-    bonuses: 0,
-    otherAllowances: 0,
-    otherDeductions: 0,
-    basicSalary: 0,
-    grossPay: 0,
-    sss: 0,
-    philHealth: 0,
-    pagIbig: 0,
-    tax: 0,
-    netPay: 0,
-    overtimePay: 0,
-    nightDiffPay: 0
+    regularHours: 0, overtimeHours: 0, nightDiffHours: 0,
+    bonuses: 0, otherAllowances: 0, otherDeductions: 0,
+    basicSalary: 0, grossPay: 0, sss: 0, philHealth: 0, pagIbig: 0, tax: 0, netPay: 0,
+    overtimePay: 0, nightDiffPay: 0
   });
 
   // --- Data Fetching ---
@@ -77,7 +103,6 @@ export default function PayrollManagement() {
   const { data: existingPayslips, isLoading: isLoadingPayslips } = useQuery({
     queryKey: ["/api/payslips", "all", selectedPeriod.month, selectedPeriod.year, selectedPeriod.half],
     queryFn: async () => {
-       // FIX: Changed from /api/payslips/all to /api/payslips?all=true
        const res = await fetch(`/api/payslips?all=true`);
        if (!res.ok) throw new Error("Failed");
        const allPayslips = await res.json();
@@ -154,6 +179,14 @@ export default function PayrollManagement() {
     };
   };
 
+  const getExistingPayslip = (userId: string) => {
+      if (!existingPayslips) return undefined;
+      return existingPayslips.find((p: any) => 
+        p.userId === userId && 
+        (Number(p.period) === Number(selectedPeriod.half) || (!p.period && Number(selectedPeriod.half) === 1))
+      );
+  };
+
   // --- Mutations ---
   const savePayslipMutation = useMutation({
     mutationFn: async ({ url, method, data }: { url: string, method: string, data: any }) => {
@@ -174,14 +207,6 @@ export default function PayrollManagement() {
     }
   });
 
-  const getExistingPayslip = (userId: string) => {
-      if (!existingPayslips) return undefined;
-      return existingPayslips.find((p: any) => 
-        p.userId === userId && 
-        (Number(p.period) === Number(selectedPeriod.half) || (!p.period && Number(selectedPeriod.half) === 1))
-      );
-  };
-
   const handleEdit = (employee: any) => {
     setEditingId(employee.id);
     setIsEditOpen(true);
@@ -189,107 +214,86 @@ export default function PayrollManagement() {
     const existingSlip = getExistingPayslip(employee.id);
 
     if (existingSlip) {
+        // SCHEMA FIX: Map to new explicit DB columns
         const basic = existingSlip.basicSalary / 100;
-        const allowances = existingSlip.allowances || {};
-        const deductions = existingSlip.deductions || {};
+        const otVal = (existingSlip.overtimePay || 0) / 100;
+        const ndVal = (existingSlip.nightDiffPay || 0) / 100;
+
+        const allowancesArr = (existingSlip.allowances as PayItems[]) || [];
+        const bonuses = allowancesArr.find(a => a.name.toLowerCase().includes("bonus"))?.amount || 0;
+        const otherAlls = allowancesArr.filter(a => !a.name.toLowerCase().includes("bonus")).reduce((sum, a) => sum + a.amount, 0);
+
+        const deductionsArr = (existingSlip.otherDeductions as PayItems[]) || [];
+        const otherDeds = deductionsArr.reduce((sum, d) => sum + d.amount, 0);
+
         const regHours = basic / HOURLY_RATE;
-        const otHours = (allowances.overtime || 0) / 100 / (HOURLY_RATE * OT_MULTIPLIER);
-        const ndHours = (allowances.nightDiff || 0) / 100 / (HOURLY_RATE * ND_MULTIPLIER);
+        const otHours = otVal / (HOURLY_RATE * OT_MULTIPLIER);
+        const ndHours = ndVal / (HOURLY_RATE * ND_MULTIPLIER);
 
         setEditForm({
             regularHours: round2(regHours),
             overtimeHours: round2(otHours),
             nightDiffHours: round2(ndHours),
-            bonuses: (allowances.bonuses || 0) / 100,
-            otherAllowances: (allowances.otherAllowances || allowances.allowances || 0) / 100,
-            otherDeductions: (deductions.others || 0) / 100,
+            bonuses: bonuses / 100,
+            otherAllowances: otherAlls / 100,
+            otherDeductions: otherDeds / 100,
             basicSalary: basic,
-            overtimePay: (allowances.overtime || 0) / 100,
-            nightDiffPay: (allowances.nightDiff || 0) / 100,
+            overtimePay: otVal,
+            nightDiffPay: ndVal,
             grossPay: existingSlip.grossPay / 100,
-            sss: (deductions.sss || 0) / 100,
-            philHealth: (deductions.philHealth || 0) / 100,
-            pagIbig: (deductions.pagIbig || 0) / 100,
-            tax: (deductions.tax || 0) / 100,
+            sss: (existingSlip.sssContribution || 0) / 100,
+            philHealth: (existingSlip.philHealthContribution || 0) / 100,
+            pagIbig: (existingSlip.pagIbigContribution || 0) / 100,
+            tax: (existingSlip.withholdingTax || 0) / 100,
             netPay: existingSlip.netPay / 100
         });
     } else {
-        // FIX: Replaced fetchStatsMutation with local processing
-        // Since we already have attendanceData loaded in useQuery, we process it locally
         const stats = processAttendanceForUser(employee.id, attendanceData || []);
         
         setEditForm({
-            regularHours: stats.regularHours,
-            overtimeHours: stats.overtimeHours,
-            nightDiffHours: stats.nightDiffHours,
-            bonuses: 0,
-            otherAllowances: 0,
-            otherDeductions: 0,
-            basicSalary: 0,
-            grossPay: 0,
-            sss: 0,
-            philHealth: 0,
-            pagIbig: 0,
-            tax: 0,
-            netPay: 0,
-            overtimePay: 0,
-            nightDiffPay: 0
+            regularHours: stats.regularHours, overtimeHours: stats.overtimeHours, nightDiffHours: stats.nightDiffHours,
+            bonuses: 0, otherAllowances: 0, otherDeductions: 0, basicSalary: 0, grossPay: 0,
+            sss: 0, philHealth: 0, pagIbig: 0, tax: 0, netPay: 0, overtimePay: 0, nightDiffPay: 0
         });
     }
   };
 
-  // --- Auto-Calculation Effect (Replaces API Calc) ---
+  // --- Auto-Calculation Effect ---
   useEffect(() => {
     if (!isEditOpen) return;
 
-    // 1. Calculate Earnings
     const basicSalary = round2(editForm.regularHours * HOURLY_RATE);
     const overtimePay = round2(editForm.overtimeHours * (HOURLY_RATE * OT_MULTIPLIER));
     const nightDiffPay = round2(editForm.nightDiffHours * (HOURLY_RATE * ND_MULTIPLIER));
     const grossPay = round2(basicSalary + overtimePay + nightDiffPay + editForm.bonuses + editForm.otherAllowances);
 
-    // 2. Calculate Deductions (Locally using imported helpers)
     let previousDeductions = { sss: 0, philHealth: 0, pagIbig: 0 };
     
-    // Logic: If 2nd half, check if deductions were already paid in 1st half
     if (Number(selectedPeriod.half) === 2 && existingPayslips && editingId) {
         const slip1 = existingPayslips.find((p: any) => 
             p.userId === editingId && (Number(p.period) === 1 || !p.period)
         );
-        if (slip1 && slip1.deductions) {
-            const d = slip1.deductions as any;
+        if (slip1) {
+            // SCHEMA FIX: Read direct columns, not JSON object
             previousDeductions = {
-                sss: (d.sss || 0) / 100,
-                philHealth: (d.philHealth || 0) / 100,
-                pagIbig: (d.pagIbig || 0) / 100
+                sss: (slip1.sssContribution || 0) / 100,
+                philHealth: (slip1.philHealthContribution || 0) / 100,
+                pagIbig: (slip1.pagIbigContribution || 0) / 100
             };
         }
     }
 
-    // Calculate statutory (Simple Logic: Computed - Previous Paid)
-    // Note: computeSSS/PH/PagIbig usually takes total monthly compensation. 
-    // If calculating per cutoff, you might need to adjust inputs, but here we assume helpers handle logic based on input.
     const sss = Math.max(0, round2(computeSSS(grossPay) - previousDeductions.sss));
     const philHealth = Math.max(0, round2(computePhilHealth(basicSalary) - previousDeductions.philHealth));
     const pagIbig = Math.max(0, round2(computePagIbig(basicSalary) - previousDeductions.pagIbig));
     
-    // Tax placeholder (Assuming 0 for now as no helper was imported, or user manually edits)
     const tax = editForm.tax; 
     
     const totalDeductions = round2(sss + philHealth + pagIbig + tax + editForm.otherDeductions);
     const netPay = round2(grossPay - totalDeductions);
 
-    // Update State (Debounced slightly to prevent jitter if needed, but safe here)
     setEditForm(prev => ({
-        ...prev,
-        basicSalary,
-        overtimePay,
-        nightDiffPay,
-        grossPay,
-        sss,
-        philHealth,
-        pagIbig,
-        netPay
+        ...prev, basicSalary, overtimePay, nightDiffPay, grossPay, sss, philHealth, pagIbig, netPay
     }));
 
   }, [
@@ -300,27 +304,37 @@ export default function PayrollManagement() {
 
   const handleConfirmSave = async () => {
     if (!editingId) return;
+    
+    // SCHEMA FIX: Build strict payload matching `insertPayslipSchema`
     const payload = {
       userId: editingId,
       month: selectedPeriod.month,
       year: selectedPeriod.year,
       period: selectedPeriod.half, 
+      
       basicSalary: Math.round(editForm.basicSalary * 100),
-      allowances: {
-        overtime: Math.round(editForm.overtimePay * 100),
-        nightDiff: Math.round(editForm.nightDiffPay * 100),
-        allowances: Math.round(editForm.otherAllowances * 100),
-        bonuses: Math.round(editForm.bonuses * 100),
-      },
-      deductions: {
-        tax: Math.round(editForm.tax * 100),
-        sss: Math.round(editForm.sss * 100),
-        philHealth: Math.round(editForm.philHealth * 100),
-        pagIbig: Math.round(editForm.pagIbig * 100),
-        others: Math.round(editForm.otherDeductions * 100),
-      },
+      overtimePay: Math.round(editForm.overtimePay * 100),
+      nightDiffPay: Math.round(editForm.nightDiffPay * 100),
+      
+      sssContribution: Math.round(editForm.sss * 100),
+      philHealthContribution: Math.round(editForm.philHealth * 100),
+      pagIbigContribution: Math.round(editForm.pagIbig * 100),
+      withholdingTax: Math.round(editForm.tax * 100),
+      
+      allowances: [
+          { name: "Bonus", amount: Math.round(editForm.bonuses * 100) },
+          { name: "Other Allowances", amount: Math.round(editForm.otherAllowances * 100) }
+      ].filter(a => a.amount > 0),
+      
+      otherDeductions: [
+          { name: "Other Deductions", amount: Math.round(editForm.otherDeductions * 100) }
+      ].filter(d => d.amount > 0),
+
       grossPay: Math.round(editForm.grossPay * 100),
-      netPay: Math.round(editForm.netPay * 100)
+      totalDeductions: Math.round((editForm.sss + editForm.philHealth + editForm.pagIbig + editForm.tax + editForm.otherDeductions) * 100),
+      netPay: Math.round(editForm.netPay * 100),
+      
+      paymentStatus: "paid"
     };
 
     const existingSlip = getExistingPayslip(editingId);
@@ -368,7 +382,6 @@ export default function PayrollManagement() {
         .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [attendanceViewerId, attendanceData]);
 
-  // FIX: Don't subtract break again, totalWorkMinutes is already net
   const viewerTotals = useMemo(() => {
       return viewingEmployeeRecords.reduce((acc: any, record: any) => {
           const workMinutes = record.totalWorkMinutes || 0;
@@ -388,10 +401,6 @@ export default function PayrollManagement() {
       }, { regMinutes: 0, otMinutes: 0, ndHours: 0, breakMinutes: 0, totalMinutes: 0 });
   }, [viewingEmployeeRecords]);
 
-  const currentNetPay = useMemo(() => {
-    return editForm.netPay;
-  }, [editForm]);
-
   const formatTime = (ts: number) => format(new Date(ts), "h:mm a");
   const formatDate = (ts: number) => format(new Date(ts), "MMM d");
   const formatDuration = (minutes: number | null) => {
@@ -401,18 +410,37 @@ export default function PayrollManagement() {
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
-  if (isLoadingTeam || isLoadingAttendance || isLoadingPayslips) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
+  // --- UI Renders ---
+
+  // RBAC Lockout
+  if (!canManagePayroll) {
+    return (
+      <div className="p-8 flex justify-center items-center h-[80vh]">
+        <Card className="w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-lg rounded-3xl">
+          <CardContent className="py-12 text-center space-y-4">
+            <div className="w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto text-rose-500">
+                <Shield className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-slate-800">Access Restricted</h2>
+            <p className="text-slate-500">You do not have permission to manage payroll generation. Please contact the administrator.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isLoadingTeam || isLoadingAttendance || isLoadingPayslips) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>;
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+    <div className={styles.container}>
       {/* Header, Stats, Filter */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className={styles.headerRow}>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900" data-testid="page-title">Payroll Generator</h1>
-          <p className="text-slate-500 mt-1 text-sm">Process employee salaries and deductions</p>
+          <h1 className={styles.title} data-testid="page-title">Payroll Generator</h1>
+          <p className={styles.subtitle}>Process employee salaries and deductions</p>
         </div>
-        <div className="flex items-center gap-4 bg-white/80 backdrop-blur-md p-2 rounded-2xl border border-slate-200/60 shadow-sm">
-            <div className="flex items-center gap-2 px-2">
+        <div className={styles.filterBox}>
+            <div className={styles.filterWrapper}>
                 <Filter className="w-4 h-4 text-slate-400" />
                 <Select value={selectedPeriod.month.toString()} onValueChange={(val) => setSelectedPeriod(prev => ({ ...prev, month: parseInt(val) }))}>
                     <SelectTrigger className="w-[110px] h-8 border-none bg-transparent shadow-none text-xs font-medium"><SelectValue /></SelectTrigger>
@@ -423,14 +451,14 @@ export default function PayrollManagement() {
                     </SelectContent>
                 </Select>
             </div>
-            <div className="w-px h-4 bg-slate-200" />
+            <div className={styles.divider} />
             <Select value={selectedPeriod.year.toString()} onValueChange={(val) => setSelectedPeriod(prev => ({ ...prev, year: parseInt(val) }))}>
                 <SelectTrigger className="w-[80px] h-8 border-none bg-transparent shadow-none text-xs font-medium"><SelectValue /></SelectTrigger>
                 <SelectContent>
                     {[currentYear - 1, currentYear, currentYear + 1].map((yr) => (<SelectItem key={yr} value={yr.toString()}>{yr}</SelectItem>))}
                 </SelectContent>
             </Select>
-            <div className="w-px h-4 bg-slate-200" />
+            <div className={styles.divider} />
             <Select value={selectedPeriod.half.toString()} onValueChange={(val) => setSelectedPeriod(prev => ({ ...prev, half: parseInt(val) }))}>
                 <SelectTrigger className="w-[100px] h-8 border-none bg-transparent shadow-none text-xs font-medium"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -447,13 +475,13 @@ export default function PayrollManagement() {
         <BentoCard title="Pending" value={stats.pending} icon={Clock} variant="amber" testIdPrefix="stat-pending" />
       </div>
 
-      <Card className="glass-card">
-        <CardHeader className="px-6 py-4 border-b border-slate-100 bg-white/50">
-             <div className="relative w-full max-w-sm">
+      <Card className="bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-3xl overflow-hidden">
+        <CardHeader className={styles.searchCardHeader}>
+             <div className={styles.searchContainer}>
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input 
                     placeholder="Search employees..." 
-                    className="pl-9 bg-white/60 border-slate-200/60 focus:bg-white rounded-xl transition-all"
+                    className={styles.searchInput}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -461,15 +489,15 @@ export default function PayrollManagement() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-slate-50/50 border-b border-slate-200/60">
+            <table className={styles.tableBase}>
+              <thead className={styles.tableHead}>
                 <tr>
-                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs">Employee</th>
-                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-center">Hours Detail</th>
-                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right">Gross</th>
-                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right">Deductions</th>
-                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right">Net Pay</th>
-                  <th className="px-6 py-4 font-semibold text-slate-500 uppercase tracking-wider text-xs text-center">Actions</th>
+                  <th className={styles.thBase}>Employee</th>
+                  <th className={`${styles.thBase} text-center`}>Hours Detail</th>
+                  <th className={`${styles.thBase} text-right`}>Gross</th>
+                  <th className={`${styles.thBase} text-right`}>Deductions</th>
+                  <th className={`${styles.thBase} text-right`}>Net Pay</th>
+                  <th className={`${styles.thBase} text-center`}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -477,12 +505,12 @@ export default function PayrollManagement() {
                   let computed = processAttendanceForUser(employee.id, attendanceData || []);
                   let viewBasic = 0, viewOT = 0, viewND = 0, viewGross = 0, viewNet = 0, viewTotalDeductions = 0;
 
+                  // SCHEMA FIX: Reading from new explicit columns instead of JSON object
                   if (employee.lastPay) {
                       const lp = employee.lastPay;
-                      const allowances = lp.allowances || {};
                       viewBasic = lp.basicSalary / 100 / HOURLY_RATE;
-                      viewOT = (allowances.overtime || 0) / 100 / (HOURLY_RATE * OT_MULTIPLIER);
-                      viewND = (allowances.nightDiff || 0) / 100 / (HOURLY_RATE * ND_MULTIPLIER);
+                      viewOT = (lp.overtimePay || 0) / 100 / (HOURLY_RATE * OT_MULTIPLIER);
+                      viewND = (lp.nightDiffPay || 0) / 100 / (HOURLY_RATE * ND_MULTIPLIER);
                       viewGross = lp.grossPay / 100;
                       viewNet = lp.netPay / 100;
                       viewTotalDeductions = (lp.grossPay - lp.netPay) / 100;
@@ -498,10 +526,11 @@ export default function PayrollManagement() {
                           const slip1 = existingPayslips.find((p: any) => p.userId === employee.id && (Number(p.period) === 1 || !p.period));
                           if (slip1) {
                               viewCalcBase += (slip1.grossPay / 100);
-                              if (slip1.deductions) {
-                                  const d = slip1.deductions as any;
-                                  prevDeduc = { sss: (d.sss || 0) / 100, philHealth: (d.philHealth || 0) / 100, pagIbig: (d.pagIbig || 0) / 100 };
-                              }
+                              prevDeduc = { 
+                                sss: (slip1.sssContribution || 0) / 100, 
+                                philHealth: (slip1.philHealthContribution || 0) / 100, 
+                                pagIbig: (slip1.pagIbigContribution || 0) / 100 
+                              };
                           }
                       }
                       const vSSS = Math.max(0, round2(computeSSS(viewCalcBase) - prevDeduc.sss));
@@ -512,25 +541,25 @@ export default function PayrollManagement() {
                   }
                   
                   return (
-                    <tr key={employee.id} className="hover:bg-white/60 transition-colors group">
+                    <tr key={employee.id} className={styles.trBase}>
                       <td className="px-6 py-4 align-top">
-                        <div className="font-medium text-slate-900">{employee.firstName} {employee.lastName}</div>
-                        <div className="text-xs text-slate-500">{employee.position}</div>
+                        <div className={styles.empName}>{employee.firstName} {employee.lastName}</div>
+                        <div className={styles.empRole}>{employee.position}</div>
                       </td>
                       <td className="px-6 py-4 align-top">
-                          <div className="bg-slate-50 rounded-lg p-2 border border-slate-100 space-y-1.5 min-w-[140px] group-hover:border-slate-200 transition-colors relative">
-                             <div className="flex justify-between items-center text-xs">
+                          <div className={styles.hoursBox}>
+                             <div className={styles.hoursRow}>
                                 <span className="text-slate-500">Regular</span>
                                 <span className="font-mono font-medium text-slate-700">{viewBasic.toFixed(2)}h</span>
                              </div>
                              {(viewOT > 0) && (
-                                <div className="flex justify-between items-center text-xs">
+                                <div className={styles.hoursRow}>
                                     <span className="text-amber-600/90 font-medium">Overtime</span>
                                     <span className="font-mono font-bold text-amber-600">{viewOT.toFixed(2)}h</span>
                                 </div>
                              )}
                              {(viewND > 0) && (
-                                <div className="flex justify-between items-center text-xs">
+                                <div className={styles.hoursRow}>
                                     <span className="text-indigo-600/90 font-medium">Night Diff</span>
                                     <span className="font-mono font-bold text-indigo-600">{viewND.toFixed(2)}h</span>
                                 </div>
@@ -563,7 +592,7 @@ export default function PayrollManagement() {
       {/* Attendance Detail Dialog */}
       <Dialog open={!!attendanceViewerId} onOpenChange={(open) => !open && setAttendanceViewerId(null)}>
         <DialogContent className="max-w-5xl rounded-3xl p-0 overflow-hidden">
-            <div className="bg-slate-50/50 p-6 border-b border-slate-100 flex flex-col gap-4">
+            <div className={styles.viewerHeader}>
                 <div className="flex items-center justify-between">
                     <div>
                         <DialogTitle className="text-xl font-bold text-slate-900">
@@ -578,23 +607,23 @@ export default function PayrollManagement() {
                         </DialogDescription>
                     </div>
                     <div className="flex gap-2">
-                        <div className="px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                        <div className={`${styles.viewerStatBoxBase} bg-white border-slate-200`}>
                             <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Regular</span>
                             <span className="text-lg font-bold text-slate-700">{(viewerTotals.regMinutes / 60).toFixed(1)}h</span>
                         </div>
-                        <div className="px-3 py-2 bg-amber-50 border border-amber-100 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                        <div className={`${styles.viewerStatBoxBase} bg-amber-50 border-amber-100`}>
                             <span className="text-[10px] uppercase font-bold text-amber-500 tracking-wider">OT</span>
                             <span className="text-lg font-bold text-amber-700">{(viewerTotals.otMinutes / 60).toFixed(1)}h</span>
                         </div>
-                        <div className="px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                        <div className={`${styles.viewerStatBoxBase} bg-indigo-50 border-indigo-100`}>
                             <span className="text-[10px] uppercase font-bold text-indigo-500 tracking-wider">ND</span>
                             <span className="text-lg font-bold text-indigo-700">{viewerTotals.ndHours.toFixed(1)}h</span>
                         </div>
-                         <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                         <div className={`${styles.viewerStatBoxBase} bg-slate-50 border-slate-200`}>
                             <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Break</span>
                             <span className="text-lg font-bold text-slate-600">{(viewerTotals.breakMinutes / 60).toFixed(1)}h</span>
                         </div>
-                        <div className="px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl shadow-sm flex flex-col items-center min-w-[70px]">
+                        <div className={`${styles.viewerStatBoxBase} bg-emerald-50 border-emerald-100`}>
                             <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider">Net</span>
                             <span className="text-lg font-bold text-emerald-700">{(viewerTotals.totalMinutes / 60).toFixed(1)}h</span>
                         </div>
@@ -622,10 +651,8 @@ export default function PayrollManagement() {
                             </tr>
                         ) : (
                             viewingEmployeeRecords.map((record: any) => {
-                                // FIX: totalWorkMinutes is already net in DB
                                 const workMinutes = record.totalWorkMinutes || 0;
                                 const breakMinutes = record.totalBreakMinutes || 0;
-
                                 const otMins = Math.max(0, workMinutes - 480);
                                 const regMins = workMinutes - otMins;
                                 const otHours = otMins / 60;
@@ -642,12 +669,8 @@ export default function PayrollManagement() {
                                                 </span>
                                             </div>
                                         </td>
-                                        <td className="px-4 py-4 text-right text-slate-500 text-xs">
-                                            {formatDuration(breakMinutes)}
-                                        </td>
-                                        <td className="px-4 py-4 text-right font-medium text-slate-700 text-xs">
-                                            {formatDuration(regMins)}
-                                        </td>
+                                        <td className="px-4 py-4 text-right text-slate-500 text-xs">{formatDuration(breakMinutes)}</td>
+                                        <td className="px-4 py-4 text-right font-medium text-slate-700 text-xs">{formatDuration(regMins)}</td>
                                         <td className="px-4 py-4 text-right">
                                             {otHours > 0 ? (
                                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">
@@ -662,9 +685,7 @@ export default function PayrollManagement() {
                                                 </span>
                                             ) : <span className="text-slate-300 text-xs">-</span>}
                                         </td>
-                                        <td className="px-4 py-4 text-right font-bold text-slate-900 text-xs">
-                                            {formatDuration(workMinutes)}
-                                        </td>
+                                        <td className="px-4 py-4 text-right font-bold text-slate-900 text-xs">{formatDuration(workMinutes)}</td>
                                         <td className="px-4 py-4 text-center">
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide 
                                                 ${record.status === 'clocked_out' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}>
@@ -697,42 +718,38 @@ export default function PayrollManagement() {
                 <div className="grid grid-cols-2 gap-6">
                     {/* Left Column: Inputs */}
                     <div className="space-y-4">
-                        <h3 className="font-medium text-sm text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-2">Hours & Adjustments</h3>
+                        <h3 className={styles.sectionTitle}>Hours & Adjustments</h3>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <Label className="text-xs text-slate-500">Reg Hours</Label>
-                                <Input type="number" className="rounded-xl border-slate-200" value={editForm.regularHours} onChange={e => setEditForm({...editForm, regularHours: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                                <Input type="number" className={styles.editInput} value={editForm.regularHours} onChange={e => setEditForm({...editForm, regularHours: Math.max(0, parseFloat(e.target.value) || 0)})} />
                             </div>
                             <div>
                                 <Label className="text-xs text-slate-500">OT Hours</Label>
-                                <Input type="number" className="rounded-xl border-slate-200" value={editForm.overtimeHours} onChange={e => setEditForm({...editForm, overtimeHours: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                                <Input type="number" className={styles.editInput} value={editForm.overtimeHours} onChange={e => setEditForm({...editForm, overtimeHours: Math.max(0, parseFloat(e.target.value) || 0)})} />
                             </div>
                             <div>
                                 <Label className="text-xs text-slate-500">ND Hours</Label>
-                                <Input type="number" className="rounded-xl border-slate-200" value={editForm.nightDiffHours} onChange={e => setEditForm({...editForm, nightDiffHours: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                                <Input type="number" className={styles.editInput} value={editForm.nightDiffHours} onChange={e => setEditForm({...editForm, nightDiffHours: Math.max(0, parseFloat(e.target.value) || 0)})} />
                             </div>
                             <div>
                                 <Label className="text-xs text-slate-500">Bonuses</Label>
-                                <Input type="number" className="rounded-xl border-slate-200" value={editForm.bonuses} onChange={e => setEditForm({...editForm, bonuses: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                                <Input type="number" className={styles.editInput} value={editForm.bonuses} onChange={e => setEditForm({...editForm, bonuses: Math.max(0, parseFloat(e.target.value) || 0)})} />
                             </div>
                             <div className="col-span-2">
                                 <Label className="text-xs text-slate-500">Other Allowances</Label>
-                                <Input type="number" className="rounded-xl border-slate-200" value={editForm.otherAllowances} onChange={e => setEditForm({...editForm, otherAllowances: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                                <Input type="number" className={styles.editInput} value={editForm.otherAllowances} onChange={e => setEditForm({...editForm, otherAllowances: Math.max(0, parseFloat(e.target.value) || 0)})} />
                             </div>
                             <div className="col-span-2">
                                 <Label className="text-xs text-slate-500">Other Deductions</Label>
-                                <Input type="number" className="rounded-xl border-slate-200" value={editForm.otherDeductions} onChange={e => setEditForm({...editForm, otherDeductions: Math.max(0, parseFloat(e.target.value) || 0)})} />
+                                <Input type="number" className={styles.editInput} value={editForm.otherDeductions} onChange={e => setEditForm({...editForm, otherDeductions: Math.max(0, parseFloat(e.target.value) || 0)})} />
                             </div>
-                             {/* <div className="col-span-2">
-                                <Label className="text-xs text-slate-500">Tax</Label>
-                                <Input type="number" className="rounded-xl border-slate-200" value={editForm.tax} onChange={e => setEditForm({...editForm, tax: Math.max(0, parseFloat(e.target.value) || 0)})} />
-                            </div> */}
                         </div>
                     </div>
 
                     {/* Right Column: Computed Values */}
-                    <div className="space-y-4 bg-slate-50/80 p-5 rounded-2xl border border-slate-100">
-                         <h3 className="font-medium text-sm text-slate-500 uppercase tracking-wider border-b border-slate-200 pb-2">Calculated Summary</h3>
+                    <div className={styles.calcSummaryBox}>
+                         <h3 className={styles.sectionTitle}>Calculated Summary</h3>
                          <div className="space-y-2 text-sm">
                             <div className="flex justify-between"><span className="text-slate-500">Basic Salary:</span><span className="font-medium text-slate-700">₱{editForm.basicSalary.toLocaleString()}</span></div>
                             <div className="flex justify-between"><span className="text-slate-500">Overtime Pay:</span><span className="font-medium text-slate-700">₱{editForm.overtimePay.toLocaleString()}</span></div>
@@ -743,7 +760,6 @@ export default function PayrollManagement() {
                                 <div className="flex justify-between text-xs text-rose-600"><span>SSS:</span><span>-{editForm.sss.toLocaleString()}</span></div>
                                 <div className="flex justify-between text-xs text-rose-600"><span>PhilHealth:</span><span>-{editForm.philHealth.toLocaleString()}</span></div>
                                 <div className="flex justify-between text-xs text-rose-600"><span>Pag-IBIG:</span><span>-{editForm.pagIbig.toLocaleString()}</span></div>
-                                {/* <div className="flex justify-between text-xs text-rose-600"><span>Tax:</span><span>-{editForm.tax.toLocaleString()}</span></div> */}
                                 <div className="flex justify-between text-xs text-rose-600"><span>Other Ded:</span><span>-{editForm.otherDeductions.toLocaleString()}</span></div>
                             </div>
 
@@ -756,7 +772,7 @@ export default function PayrollManagement() {
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => setIsEditOpen(false)} className="rounded-full">Cancel</Button>
-                <Button onClick={handleConfirmSave} className="rounded-full bg-slate-900 hover:bg-slate-800">Save & Confirm</Button>
+                <Button onClick={() => setIsConfirmOpen(true)} className="rounded-full bg-slate-900 hover:bg-slate-800">Save & Confirm</Button>
             </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -771,9 +787,9 @@ export default function PayrollManagement() {
               <br/><br/>
               Period: {selectedPeriod.month}/{selectedPeriod.year} (Cutoff: {selectedPeriod.half === 1 ? '1st Half' : '2nd Half'})
               <br/>
-              Net Pay: <strong>₱{currentNetPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+              Net Pay: <strong>₱{editForm.netPay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
               <br/>
-              <span className="text-xs text-slate-500">This action cannot be undone easily.</span>
+              <span className="text-xs text-slate-500 mt-2 block">This action cannot be undone easily.</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

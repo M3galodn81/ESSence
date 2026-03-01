@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -18,7 +18,7 @@ import { insertReportSchema, type User as UserType } from "@shared/schema";
 import { z } from "zod";
 import { 
   AlertTriangle, UserX, Hammer, Plus, Calendar as CalendarIcon, Clock, 
-  FileText, MapPin, CheckCircle2, AlertCircle, X, Users,
+  FileText, MapPin, CheckCircle2, AlertCircle, X, Users, Shield,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, 
   List as ListIcon, Banknote, Search, History, Filter, Check,
   Loader2, ChevronsUpDown, Send, FileDown, Download
@@ -34,6 +34,81 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Avatar, AvatarFallback } from "@radix-ui/react-avatar";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+
+// --- RBAC Imports ---
+import { usePermission } from "@/hooks/use-permission";
+import { Permission } from "@/lib/permissions";
+
+// --- SEPARATED STYLES ---
+const styles = {
+  container: "p-6 md:p-8 max-w-7xl mx-auto space-y-8",
+  headerRow: "flex flex-col md:flex-row md:items-center justify-between gap-4",
+  title: "text-3xl font-bold text-slate-900",
+  subtitle: "text-slate-500 mt-1",
+  
+  // Action Buttons & Toggles
+  topActionsGroup: "flex items-center gap-2",
+  viewToggleGroup: "flex items-center bg-slate-100 p-1 rounded-lg",
+  viewToggleBtn: "text-xs",
+  viewToggleActive: "bg-white shadow-sm text-slate-900",
+  exportBtn: "bg-white border-slate-200",
+  fileReportBtn: "bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800 ml-2",
+  
+  // Filters
+  filterBar: "flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl items-center",
+  filterBtn: "w-[180px] h-8 justify-between text-xs bg-white font-normal border-slate-200",
+  filterSelect: "w-[160px] h-8 text-xs bg-white",
+  filterResetBtn: "h-8 text-xs text-red-500 hover:text-red-600 hover:bg-red-50",
+  
+  // List Items
+  listWrapper: "divide-y divide-slate-100 min-h-[300px]",
+  listItemBase: "flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors border-l-4",
+  listItemCritical: "border-l-red-600 bg-red-50/30",
+  listItemHigh: "border-l-orange-500",
+  listItemNormal: "border-l-transparent",
+  listIconBox: "w-10 h-10 rounded-full flex items-center justify-center relative",
+  listTitle: "text-sm font-bold text-slate-800",
+  listMetaRow: "flex items-center gap-2 text-xs text-slate-500 mt-0.5",
+  paginationBar: "flex items-center justify-between p-3 border-t border-slate-100 bg-white rounded-b-xl",
+  
+  // Analytics
+  analyticsRangeGroup: "flex items-center bg-slate-100 p-1 rounded-lg",
+  analyticsRangeBtn: "text-xs h-7 px-3",
+  analyticsRangeActive: "bg-white shadow-sm text-slate-900 font-medium",
+  
+  // Dialog (View Report)
+  viewHeaderMeta: "flex items-center gap-3",
+  viewHeaderCategory: "uppercase tracking-wider text-[10px]",
+  viewTitle: "text-2xl font-bold text-slate-900",
+  viewDescRow: "flex items-center gap-2 text-slate-500",
+  viewStatusBox: "grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100",
+  viewReporterBox: "p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between",
+  viewTextSection: "space-y-4",
+  viewTextTitle: "text-sm font-bold text-slate-900 mb-2",
+  viewTextContent: "text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg",
+  
+  // Dialog (NTE Section)
+  nteBox: "bg-orange-50/50 border border-orange-100 rounded-xl p-4 space-y-3",
+  nteHeaderBadge: "bg-white text-orange-600 border-orange-200",
+  nteHeaderTitle: "font-semibold text-sm text-orange-900",
+  nteManagerLabel: "text-xs font-semibold text-orange-800",
+  nteManagerContent: "bg-white p-3 rounded border border-orange-100 text-slate-700",
+  nteEmpLabel: "text-xs text-orange-800",
+  nteEmpTextarea: "bg-white border-orange-200 focus-visible:ring-orange-500",
+  nteEmpSubmitBtn: "bg-orange-600 hover:bg-orange-700 text-white w-full",
+  
+  // Form Elements
+  formFieldContainer: "space-y-2",
+  peopleBox: "space-y-3 p-4 bg-slate-50/50 rounded-lg border border-slate-100",
+  peopleAddTitle: "text-xs text-slate-500 font-medium",
+  peopleAddedBadge: "pl-2 pr-1 py-1 flex items-center gap-1 bg-white border border-slate-200",
+  nteToggleBox: "space-y-3 p-4 bg-orange-50/50 rounded-lg border border-orange-100",
+  
+  // Lockout State
+  lockoutCard: "w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-lg rounded-3xl",
+  lockoutContent: "py-12 text-center space-y-4",
+  lockoutIconBox: "w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto text-rose-500",
+};
 
 /**
  * REPORT FORM SCHEMA CONFIGURATION
@@ -52,10 +127,7 @@ const reportFormSchema = insertReportSchema.omit({ userId: true, partiesInvolved
 });
 
 const SEVERITY_WEIGHTS: Record<string, number> = {
-  critical: 4,
-  high: 3,
-  medium: 2,
-  low: 1
+  critical: 4, high: 3, medium: 2, low: 1
 };
 
 type ReportForm = z.infer<typeof reportFormSchema>;
@@ -63,7 +135,16 @@ type ReportForm = z.infer<typeof reportFormSchema>;
 export default function Reports() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermission();
   
+  // --- RBAC CHECKS ---
+  const canSubmitReport = hasPermission(Permission.SUBMIT_REPORT);
+  const canManageReports = hasPermission(Permission.MANAGE_REPORTS);
+  const canViewAllReports = hasPermission(Permission.VIEW_ALL_REPORTS);
+  const canViewOwnReports = hasPermission(Permission.VIEW_OWN_REPORTS);
+
+  const canViewPage = canViewAllReports || canViewOwnReports;
+
   // --- UI STATE MANAGEMENT ---
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [view, setView] = useState<"list" | "analytics">("list");
@@ -82,7 +163,7 @@ export default function Reports() {
   const [openNteAssignPicker, setOpenNteAssignPicker] = useState(false);
 
   // Analytics State
-  const [analyticsRange, setAnalyticsRange] = useState<string>("6"); // 3, 6, 9, 12 months
+  const [analyticsRange, setAnalyticsRange] = useState<string>("6"); 
 
   // --- PAGINATION STATE ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -94,6 +175,8 @@ export default function Reports() {
   const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false);
   const [resolutionAction, setResolutionAction] = useState("");
   const [nteResponse, setNteResponse] = useState("");
+  const [selectedReport, setSelectedReport] = useState<any>(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
 
   // --- CONFIGURATION CONSTANTS ---
   const categories = [
@@ -106,8 +189,16 @@ export default function Reports() {
   ];
 
   // --- DATA FETCHING ---
-  const { data: reports, isLoading } = useQuery({ queryKey: ["/api/reports"] });
-  const { data: teamMembers } = useQuery<UserType[]>({ queryKey: ["/api/team"] });
+  // The API automatically handles filtering Own vs All based on user role inside the endpoint
+  const { data: reports, isLoading } = useQuery({ 
+    queryKey: ["/api/reports"],
+    enabled: canViewPage
+  });
+  
+  const { data: teamMembers } = useQuery<UserType[]>({ 
+    queryKey: ["/api/team"],
+    enabled: canViewPage
+  });
 
   useEffect(() => {
     setCurrentPage(1);
@@ -122,7 +213,6 @@ export default function Reports() {
     return options;
   }, []);
 
-  // UPDATED: Name Format (Last Name, First Name)
   const getEmployeeName = (userId: string) => {
     const emp = teamMembers?.find((m) => m.id === userId);
     return emp ? `${emp.lastName}, ${emp.firstName}` : "Unknown";
@@ -133,7 +223,6 @@ export default function Reports() {
     return emp ? emp.role : "Unknown";
   };
 
-  // --- SORTED EMPLOYEES (Last Name) ---
   const sortedEmployees = useMemo(() => {
     if (!teamMembers) return [];
     return [...teamMembers]
@@ -160,16 +249,16 @@ export default function Reports() {
         }
         return true;
     }).sort((a: any, b: any) => {
-    if (sortBy === "priority") {
-      const weightA = SEVERITY_WEIGHTS[a.severity] || 0;
-      const weightB = SEVERITY_WEIGHTS[b.severity] || 0;
-      if (weightB !== weightA) return weightB - weightA;
-    }
-    const timeA = new Date(a.dateOccurred).getTime();
-    const timeB = new Date(b.dateOccurred).getTime();
-    return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
-  });
-}, [reports, statusFilter, categoryFilter, monthFilter, personFilter, sortOrder, sortBy, teamMembers]);
+        if (sortBy === "priority") {
+          const weightA = SEVERITY_WEIGHTS[a.severity] || 0;
+          const weightB = SEVERITY_WEIGHTS[b.severity] || 0;
+          if (weightB !== weightA) return weightB - weightA;
+        }
+        const timeA = new Date(a.dateOccurred).getTime();
+        const timeB = new Date(b.dateOccurred).getTime();
+        return sortOrder === "newest" ? timeB - timeA : timeA - timeB;
+    });
+  }, [reports, statusFilter, categoryFilter, monthFilter, personFilter, sortOrder, sortBy, teamMembers]);
 
   const paginatedReports = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -178,18 +267,15 @@ export default function Reports() {
 
   const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
 
-  // --- ADVANCED ANALYTICS CALCULATION (Filtered by Date Range) ---
+  // --- ADVANCED ANALYTICS CALCULATION ---
   const stats = useMemo(() => {
     if (!reports) return { monthlyStacked: [], byCategory: [], mostInvolved: [] };
 
     const range = parseInt(analyticsRange);
-    const startDate = startOfMonth(subMonths(new Date(), range - 1));
+    const startDateObj = startOfMonth(subMonths(new Date(), range - 1));
 
-    // 1. FILTER DATASET BY DATE RANGE FIRST
-    // This ensures ALL charts (Bar, Pie, List) reflect the selected months
-    const rangeReports = reports.filter((r: any) => new Date(r.dateOccurred) >= startDate);
+    const rangeReports = reports.filter((r: any) => new Date(r.dateOccurred) >= startDateObj);
 
-    // 2. Prepare Month Keys based on Range (For Bar Chart)
     const monthsMap = new Map(); 
     for (let i = range - 1; i >= 0; i--) {
         const d = subMonths(new Date(), i);
@@ -199,7 +285,6 @@ export default function Reports() {
         monthsMap.set(key, initObj);
     }
 
-    // 3. Aggregate Monthly Stacked Data (Bar Chart)
     rangeReports.forEach((r: any) => {
         const d = new Date(r.dateOccurred);
         const key = format(d, "MMM yyyy");
@@ -213,7 +298,6 @@ export default function Reports() {
 
     const monthlyStacked = Array.from(monthsMap.values());
 
-    // 4. Category Pie Data (Using filtered rangeReports)
     const catCounts: Record<string, number> = {};
     rangeReports.forEach((r: any) => {
         catCounts[r.category] = (catCounts[r.category] || 0) + 1;
@@ -223,7 +307,6 @@ export default function Reports() {
         return { name: cat?.label || id, value, fill: cat?.fill || "#cbd5e1" };
     });
 
-    // 5. Most Involved (Using filtered rangeReports)
     const peopleCounts: Record<string, number> = {};
     rangeReports.forEach((r: any) => {
         if (r.partiesInvolved) {
@@ -243,7 +326,6 @@ export default function Reports() {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     
-    // Header
     doc.setFontSize(22);
     doc.setTextColor(15, 23, 42);
     doc.text("Incident Report", pageWidth / 2, 20, { align: "center" });
@@ -252,7 +334,6 @@ export default function Reports() {
     doc.setTextColor(100);
     doc.text(`Reference ID: #${report.id.toString().padStart(6, '0')}`, pageWidth / 2, 27, { align: "center" });
     
-    // Status Badge visual
     doc.setDrawColor(report.status === 'resolved' ? 16 : 245, report.status === 'resolved' ? 185 : 158, report.status === 'resolved' ? 129 : 11);
     doc.setFillColor(report.status === 'resolved' ? 220 : 254, report.status === 'resolved' ? 252 : 251, report.status === 'resolved' ? 231 : 235);
     doc.roundedRect(160, 15, 30, 8, 2, 2, "FD");
@@ -260,7 +341,6 @@ export default function Reports() {
     doc.setTextColor(report.status === 'resolved' ? 21 : 180, report.status === 'resolved' ? 128 : 83, report.status === 'resolved' ? 61 : 33);
     doc.text(report.status.toUpperCase(), 175, 20, { align: "center" });
 
-    // Meta Data Grid
     let y = 40;
     doc.setTextColor(0);
     doc.setFontSize(11);
@@ -291,7 +371,6 @@ export default function Reports() {
 
     y = (doc as any).lastAutoTable.finalY + 10;
 
-    // Sections
     const drawSection = (title: string, content: string) => {
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
@@ -313,13 +392,12 @@ export default function Reports() {
     
     if (report.nteRequired) {
         y += 5;
-        doc.setDrawColor(251, 146, 60); // Orange
+        doc.setDrawColor(251, 146, 60); 
         doc.line(14, y, pageWidth - 14, y);
         y += 8;
         drawSection("Notice to Explain (NTE)", report.nteContent ? `Employee Response: ${report.nteContent}` : "Pending employee response.");
     }
 
-    // Footer
     const footerY = doc.internal.pageSize.getHeight() - 20;
     doc.setFontSize(8);
     doc.setTextColor(150);
@@ -433,7 +511,6 @@ export default function Reports() {
   };
 
   // --- HELPER FUNCTIONS ---
-
   const addPerson = () => {
       if (!newPerson.trim()) return;
       const current = form.getValues("involvedPeople");
@@ -476,262 +553,296 @@ export default function Reports() {
       form.setValue("details.items", current.filter((_, i) => i !== index));
   };
 
-  const [selectedReport, setSelectedReport] = useState<any>(null);
-  const [isViewOpen, setIsViewOpen] = useState(false);
+
+  // --- UI RENDERS ---
+  
+  if (!canViewPage) {
+    return (
+      <div className="p-8 flex justify-center items-center h-[80vh]">
+        <Card className={styles.lockoutCard}>
+          <CardContent className={styles.lockoutContent}>
+            <div className={styles.lockoutIconBox}>
+                <Shield className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-slate-800">Access Restricted</h2>
+            <p className="text-slate-500">You do not have permission to view incident reports.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+    <div className={styles.container}>
       {/* --- PAGE HEADER --- */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className={styles.headerRow}>
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Reporting</h1>
-          <p className="text-slate-500 mt-1">Document AWOL, breakage, and other incidents</p>
+          <h1 className={styles.title}>Reporting</h1>
+          <p className={styles.subtitle}>Document AWOL, breakage, and other incidents</p>
         </div>
-        <div className="flex items-center gap-2">
-            <div className="flex items-center bg-slate-100 p-1 rounded-lg">
-                <Button variant="ghost" size="sm" onClick={() => setView("list")} className={cn("text-xs", view === "list" && "bg-white shadow-sm text-slate-900")}>
-                    <ListIcon className="w-4 h-4 mr-2" /> Reports
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setView("analytics")} className={cn("text-xs", view === "analytics" && "bg-white shadow-sm text-slate-900")}>
-                    <BarChart3 className="w-4 h-4 mr-2" /> Analytics
-                </Button>
-            </div>
+        <div className={styles.topActionsGroup}>
+            
+            {/* Analytics Toggle (Only for Managers/Admins) */}
+            {canManageReports && (
+              <div className={styles.viewToggleGroup}>
+                  <Button variant="ghost" size="sm" onClick={() => setView("list")} className={cn(styles.viewToggleBtn, view === "list" && styles.viewToggleActive)}>
+                      <ListIcon className="w-4 h-4 mr-2" /> Reports
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setView("analytics")} className={cn(styles.viewToggleBtn, view === "analytics" && styles.viewToggleActive)}>
+                      <BarChart3 className="w-4 h-4 mr-2" /> Analytics
+                  </Button>
+              </div>
+            )}
             
             {view === "list" && (
-                <Button variant="outline" size="sm" onClick={generateAllReportsPDF} className="bg-white border-slate-200">
+                <Button variant="outline" size="sm" onClick={generateAllReportsPDF} className={styles.exportBtn}>
                     <Download className="w-4 h-4 mr-2" /> Export List
                 </Button>
             )}
 
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800 ml-2">
-                  <Plus className="w-4 h-4 mr-2" /> File Report
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl">
-                <DialogHeader className="border-b border-slate-100 pb-4">
-                  <DialogTitle>File a Report</DialogTitle>
-                  <DialogDescription>Please provide factual, objective details.</DialogDescription>
-                </DialogHeader>
+            {canSubmitReport && (
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className={styles.fileReportBtn}>
+                    <Plus className="w-4 h-4 mr-2" /> File Report
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl">
+                  <DialogHeader className="border-b border-slate-100 pb-4">
+                    <DialogTitle>File a Report</DialogTitle>
+                    <DialogDescription>Please provide factual, objective details.</DialogDescription>
+                  </DialogHeader>
 
-                <form onSubmit={form.handleSubmit((d) => createReportMutation.mutate(d), onInvalid)} className="space-y-6 pt-4">
-                  {/* Category & Severity */}
-                  <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                          <Label>Category</Label>
-                          <Select value={selectedCategory} onValueChange={(val: any) => form.setValue("category", val)}>
-                              <SelectTrigger><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                  {categories.map((cat) => (
-                                      <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
-                                  ))}
-                              </SelectContent>
-                          </Select>
-                      </div>
-                      <div className="space-y-2">
-                          <Label>Severity</Label>
-                          <Select onValueChange={(val) => form.setValue("severity", val)} defaultValue="low">
-                              <SelectTrigger><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                  <SelectItem value="low">Low</SelectItem>
-                                  <SelectItem value="medium">Medium</SelectItem>
-                                  <SelectItem value="high">High</SelectItem>
-                                  <SelectItem value="critical">Critical</SelectItem>
-                              </SelectContent>
-                          </Select>
-                      </div>
-                  </div>
-
-                  {/* Time & Location */}
-                  <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                          <Label>Date</Label>
-                          <Input type="date" value={format(new Date(form.watch("dateOccurred")), "yyyy-MM-dd")} onChange={(e) => { const value = e.target.value; if (value) form.setValue("dateOccurred", new Date(value), { shouldValidate: true }); }} />
-                      </div>
-                      <div className="space-y-2">
-                          <Label>Time</Label>
-                          <Input type="time" {...form.register("timeOccurred")} />
-                      </div>
-                      <div className="space-y-2">
-                          <Label>Location</Label>
-                          <Input placeholder="e.g. Kitchen / POS" {...form.register("location")} />
-                      </div>
-                  </div>
-
-                  {/* Narrative */}
-                  <div className="space-y-2">
-                      <Label>Title</Label>
-                      <Input placeholder="Brief summary" {...form.register("title")} />
-                  </div>
-                  <div className="space-y-2">
-                      <Label>Description</Label>
-                      <Textarea placeholder="Detailed description..." {...form.register("description")} />
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                        <Label>Action Taken</Label>
-                        <Textarea placeholder="Immediate actions..." {...form.register("actionTaken")} />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Witnesses</Label>
-                        <Textarea placeholder="Names/Contacts..." {...form.register("witnesses")} />
-                    </div>
-                  </div>
-
-                  {/* People Involved (With Search) */}
-                  <div className="space-y-3 p-4 bg-slate-50/50 rounded-lg border border-slate-100">
-                      <Label>People Involved <span className="text-red-500">*</span></Label>
-                      <div className="flex flex-col gap-3">
-                          <div className="flex flex-col gap-1.5">
-                              <span className="text-xs text-slate-500 font-medium">Add Staff Member</span>
-                              
-                                <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
-                                    <PopoverTrigger asChild>
-                                    <Button variant="outline" role="combobox" aria-expanded={openEmployeePicker} className="w-full justify-between bg-white border-slate-200 font-normal hover:bg-slate-50">
-                                            <div className="flex items-center gap-2">
-                                            <Search className="h-4 w-4 opacity-50" />
-                                            <span>Search from team members...</span>
-                                            </div>
-                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                                      <Command>
-                                        <CommandInput placeholder="Type staff name..." />
-                                        <CommandList className="max-h-[300px] overflow-y-auto">
-                                          <CommandEmpty className="p-4 text-sm text-slate-500 text-center">No staff member found.</CommandEmpty>
-                                          <CommandGroup heading="Active Staff">
-                                            {sortedEmployees.map((member) => {
-                                              const fullName = `${member.lastName}, ${member.firstName}`;
-                                              const isAlreadyAdded = currentPeople.includes(fullName);
-                                              
-                                              return (
-                                                <CommandItem key={member.id} value={fullName} disabled={isAlreadyAdded} onSelect={() => { addStaffFromSelect(member); setOpenEmployeePicker(false); }} className={cn("flex items-center justify-between py-2 px-4 cursor-pointer", isAlreadyAdded && "opacity-50 grayscale pointer-events-none")}>
-                                                  <div className="flex items-center gap-3">
-                                                    <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px] bg-slate-100">{member.firstName[0]}{member.lastName[0]}</AvatarFallback></Avatar>
-                                                    <div className="flex flex-col"><span className="font-medium text-xs">{fullName}</span><span className="text-[9px] text-slate-400 uppercase">{member.position}</span></div>
-                                                  </div>
-                                                  {isAlreadyAdded ? <Badge variant="secondary" className="text-[8px] bg-emerald-50 text-emerald-600">Added</Badge> : <Plus className="w-3 h-3 text-slate-300" />}
-                                                </CommandItem>
-                                              );
-                                            })}
-                                          </CommandGroup>
-                                        </CommandList>
-                                      </Command>
-                                    </PopoverContent>
-                                </Popover>
-                          </div>
-
-                          <div className="flex flex-col gap-1.5">
-                              <span className="text-xs text-slate-500 font-medium">Add Guest / Other</span>
-                              <div className="flex gap-2">
-                                  <Input value={newPerson} onChange={(e) => setNewPerson(e.target.value)} placeholder="Type name manually..." className="bg-white" onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); addPerson(); } }} />
-                                  <Button type="button" onClick={addPerson} variant="outline" className="bg-white">Add</Button>
-                              </div>
-                          </div>
-                      </div>
-
-                      {currentPeople.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-200/60">
-                              {currentPeople.map((p, i) => (
-                                  <Badge key={i} variant="secondary" className="pl-2 pr-1 py-1 flex items-center gap-1 bg-white border border-slate-200">
-                                      {p} <button type="button" onClick={() => removePerson(i)} className="hover:bg-slate-100 rounded-full p-0.5"><X className="w-3 h-3 text-slate-400 hover:text-red-500" /></button>
-                                  </Badge>
-                              ))}
-                          </div>
-                      )}
-                      {form.formState.errors.involvedPeople && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {form.formState.errors.involvedPeople.message}</p>}
-                  </div>
-
-                  {/* NTE SECTION */}
-                  {['admin', 'manager'].includes(user?.role || '') && (
-                    <div className="space-y-3 p-4 bg-orange-50/50 rounded-lg border border-orange-100">
-                        <div className="flex items-center space-x-2">
-                          <Checkbox 
-                            id="nteRequired" 
-                            checked={watchNteRequired} 
-                            onCheckedChange={(checked) => form.setValue("nteRequired", checked as boolean)}
-                          />
-                          <Label htmlFor="nteRequired" className="font-medium text-orange-900 cursor-pointer">
-                            Require Notice to Explain (NTE)
-                          </Label>
+                  <form onSubmit={form.handleSubmit((d) => createReportMutation.mutate(d), onInvalid)} className="space-y-6 pt-4">
+                    {/* Category & Severity */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className={styles.formFieldContainer}>
+                            <Label>Category</Label>
+                            <Select value={selectedCategory} onValueChange={(val: any) => form.setValue("category", val)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    {categories.map((cat) => (
+                                        <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
-                        
-                        {watchNteRequired && (
-                          <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
-                            <Label className="text-xs text-orange-800">Assign to Employee for NTE</Label>
-                            <Popover open={openNteAssignPicker} onOpenChange={setOpenNteAssignPicker}>
-                              <PopoverTrigger asChild>
-                                <Button variant="outline" role="combobox" className="w-full justify-between bg-white border-orange-200 text-orange-900 hover:bg-orange-50">
-                                  {watchAssignedTo ? getEmployeeName(watchAssignedTo) : "Select employee..."}
-                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                                <Command>
-                                  <CommandInput placeholder="Search employee..." />
-                                  <CommandList>
-                                    <CommandEmpty>No employee found.</CommandEmpty>
-                                    <CommandGroup>
-                                      {sortedEmployees.map((member) => (
-                                        <CommandItem
-                                          key={member.id}
-                                          value={`${member.lastName}, ${member.firstName}`}
-                                          onSelect={() => { form.setValue("assignedTo", member.id); setOpenNteAssignPicker(false); }}
-                                        >
-                                          <Check className={cn("mr-2 h-4 w-4", watchAssignedTo === member.id ? "opacity-100" : "opacity-0")} />
-                                          {member.lastName}, {member.firstName}
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </CommandList>
-                                </Command>
-                              </PopoverContent>
-                            </Popover>
-                          </div>
-                        )}
+                        <div className={styles.formFieldContainer}>
+                            <Label>Severity</Label>
+                            <Select onValueChange={(val) => form.setValue("severity", val)} defaultValue="low">
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="low">Low</SelectItem>
+                                    <SelectItem value="medium">Medium</SelectItem>
+                                    <SelectItem value="high">High</SelectItem>
+                                    <SelectItem value="critical">Critical</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
-                  )}
 
-                  {selectedCategory === 'breakages' && (
-                      <div className="bg-slate-50 p-4 rounded-lg space-y-4 border border-slate-200">
-                          <h4 className="font-medium text-sm text-slate-900">Damaged Items</h4>
-                          <div className="grid grid-cols-12 gap-2 items-end">
-                              <div className="col-span-9"><Label className="text-xs">Item Name</Label><Input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Plate" /></div>
-                              <div className="col-span-2"><Label className="text-xs">Qty</Label><Input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: +e.target.value})} /></div>
-                              <div className="col-span-1"><Button type="button" size="icon" onClick={addItem}><Plus className="w-4 h-4" /></Button></div>
-                          </div>
-                          <div className="space-y-2">{currentItems.map((item, i) => <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded border"><span>{item.quantity}x {item.name}</span><button type="button" onClick={() => removeItem(i)}><X className="w-4 h-4 hover:text-red-500" /></button></div>)}</div>
+                    {/* Time & Location */}
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className={styles.formFieldContainer}>
+                            <Label>Date</Label>
+                            {/* FIX: Ensure proper ISO string conversion without breaking form state */}
+                            <Input 
+                              type="date" 
+                              value={form.watch("dateOccurred") ? format(new Date(form.watch("dateOccurred")), "yyyy-MM-dd") : ""} 
+                              onChange={(e) => { 
+                                const val = e.target.value; 
+                                if (val) form.setValue("dateOccurred", new Date(val), { shouldValidate: true }); 
+                              }} 
+                            />
+                        </div>
+                        <div className={styles.formFieldContainer}>
+                            <Label>Time</Label>
+                            <Input type="time" {...form.register("timeOccurred")} />
+                        </div>
+                        <div className={styles.formFieldContainer}>
+                            <Label>Location</Label>
+                            <Input placeholder="e.g. Kitchen / POS" {...form.register("location")} />
+                        </div>
+                    </div>
+
+                    {/* Narrative */}
+                    <div className={styles.formFieldContainer}>
+                        <Label>Title</Label>
+                        <Input placeholder="Brief summary" {...form.register("title")} />
+                    </div>
+                    <div className={styles.formFieldContainer}>
+                        <Label>Description</Label>
+                        <Textarea placeholder="Detailed description..." {...form.register("description")} />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className={styles.formFieldContainer}>
+                          <Label>Action Taken</Label>
+                          <Textarea placeholder="Immediate actions..." {...form.register("actionTaken")} />
                       </div>
-                  )}
+                      <div className={styles.formFieldContainer}>
+                          <Label>Witnesses</Label>
+                          <Textarea placeholder="Names/Contacts..." {...form.register("witnesses")} />
+                      </div>
+                    </div>
 
-                  <DialogFooter>
-                    <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                    <Button type="submit" disabled={createReportMutation.isPending}>
-                        {createReportMutation.isPending ? "Submitting..." : "Submit Report"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+                    {/* People Involved (With Search) */}
+                    <div className={styles.peopleBox}>
+                        <Label>People Involved <span className="text-red-500">*</span></Label>
+                        <div className="flex flex-col gap-3">
+                            <div className="flex flex-col gap-1.5">
+                                <span className={styles.peopleAddTitle}>Add Staff Member</span>
+                                
+                                  <Popover open={openEmployeePicker} onOpenChange={setOpenEmployeePicker}>
+                                      <PopoverTrigger asChild>
+                                      <Button variant="outline" role="combobox" aria-expanded={openEmployeePicker} className="w-full justify-between bg-white border-slate-200 font-normal hover:bg-slate-50">
+                                              <div className="flex items-center gap-2">
+                                              <Search className="h-4 w-4 opacity-50" />
+                                              <span>Search from team members...</span>
+                                              </div>
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                      </Button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                                        <Command>
+                                          <CommandInput placeholder="Type staff name..." />
+                                          <CommandList className="max-h-[300px] overflow-y-auto">
+                                            <CommandEmpty className="p-4 text-sm text-slate-500 text-center">No staff member found.</CommandEmpty>
+                                            <CommandGroup heading="Active Staff">
+                                              {sortedEmployees.map((member) => {
+                                                const fullName = `${member.lastName}, ${member.firstName}`;
+                                                const isAlreadyAdded = currentPeople.includes(fullName);
+                                                
+                                                return (
+                                                  <CommandItem key={member.id} value={fullName} disabled={isAlreadyAdded} onSelect={() => { addStaffFromSelect(member); setOpenEmployeePicker(false); }} className={cn("flex items-center justify-between py-2 px-4 cursor-pointer", isAlreadyAdded && "opacity-50 grayscale pointer-events-none")}>
+                                                    <div className="flex items-center gap-3">
+                                                      <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px] bg-slate-100 flex h-full w-full items-center justify-center rounded-full">{member.firstName[0]}{member.lastName[0]}</AvatarFallback></Avatar>
+                                                      <div className="flex flex-col"><span className="font-medium text-xs">{fullName}</span><span className="text-[9px] text-slate-400 uppercase">{member.position}</span></div>
+                                                    </div>
+                                                    {isAlreadyAdded ? <Badge variant="secondary" className="text-[8px] bg-emerald-50 text-emerald-600">Added</Badge> : <Plus className="w-3 h-3 text-slate-300" />}
+                                                  </CommandItem>
+                                                );
+                                              })}
+                                            </CommandGroup>
+                                          </CommandList>
+                                        </Command>
+                                      </PopoverContent>
+                                  </Popover>
+                            </div>
+
+                            <div className="flex flex-col gap-1.5">
+                                <span className={styles.peopleAddTitle}>Add Guest / Other</span>
+                                <div className="flex gap-2">
+                                    <Input value={newPerson} onChange={(e) => setNewPerson(e.target.value)} placeholder="Type name manually..." className="bg-white" onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); addPerson(); } }} />
+                                    <Button type="button" onClick={addPerson} variant="outline" className="bg-white">Add</Button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {currentPeople.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-200/60">
+                                {currentPeople.map((p, i) => (
+                                    <Badge key={i} variant="secondary" className={styles.peopleAddedBadge}>
+                                        {p} <button type="button" onClick={() => removePerson(i)} className="hover:bg-slate-100 rounded-full p-0.5"><X className="w-3 h-3 text-slate-400 hover:text-red-500" /></button>
+                                    </Badge>
+                                ))}
+                            </div>
+                        )}
+                        {form.formState.errors.involvedPeople && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {form.formState.errors.involvedPeople.message}</p>}
+                    </div>
+
+                    {/* NTE SECTION */}
+                    {canManageReports && (
+                      <div className={styles.nteToggleBox}>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox 
+                              id="nteRequired" 
+                              checked={watchNteRequired} 
+                              onCheckedChange={(checked) => form.setValue("nteRequired", checked as boolean)}
+                            />
+                            <Label htmlFor="nteRequired" className="font-medium text-orange-900 cursor-pointer">
+                              Require Notice to Explain (NTE)
+                            </Label>
+                          </div>
+                          
+                          {watchNteRequired && (
+                            <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
+                              <Label className="text-xs text-orange-800">Assign to Employee for NTE</Label>
+                              <Popover open={openNteAssignPicker} onOpenChange={setOpenNteAssignPicker}>
+                                <PopoverTrigger asChild>
+                                  <Button variant="outline" role="combobox" className="w-full justify-between bg-white border-orange-200 text-orange-900 hover:bg-orange-50">
+                                    {watchAssignedTo ? getEmployeeName(watchAssignedTo) : "Select employee..."}
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                                  <Command>
+                                    <CommandInput placeholder="Search employee..." />
+                                    <CommandList>
+                                      <CommandEmpty>No employee found.</CommandEmpty>
+                                      <CommandGroup>
+                                        {sortedEmployees.map((member) => (
+                                          <CommandItem
+                                            key={member.id}
+                                            value={`${member.lastName}, ${member.firstName}`}
+                                            onSelect={() => { form.setValue("assignedTo", member.id); setOpenNteAssignPicker(false); }}
+                                          >
+                                            <Check className={cn("mr-2 h-4 w-4", watchAssignedTo === member.id ? "opacity-100" : "opacity-0")} />
+                                            {member.lastName}, {member.firstName}
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                          )}
+                      </div>
+                    )}
+
+                    {/* Breakages Section */}
+                    {selectedCategory === 'breakages' && (
+                        <div className="bg-slate-50 p-4 rounded-lg space-y-4 border border-slate-200">
+                            <h4 className="font-medium text-sm text-slate-900">Damaged Items</h4>
+                            <div className="grid grid-cols-12 gap-2 items-end">
+                                <div className="col-span-9"><Label className="text-xs">Item Name</Label><Input value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Plate" /></div>
+                                <div className="col-span-2"><Label className="text-xs">Qty</Label><Input type="number" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: +e.target.value})} /></div>
+                                <div className="col-span-1"><Button type="button" size="icon" onClick={addItem}><Plus className="w-4 h-4" /></Button></div>
+                            </div>
+                            <div className="space-y-2">{currentItems.map((item, i) => <div key={i} className="flex justify-between items-center text-sm bg-white p-2 rounded border"><span>{item.quantity}x {item.name}</span><button type="button" onClick={() => removeItem(i)}><X className="w-4 h-4 hover:text-red-500" /></button></div>)}</div>
+                        </div>
+                    )}
+
+                    <DialogFooter>
+                      <Button type="button" variant="ghost" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+                      <Button type="submit" disabled={createReportMutation.isPending}>
+                          {createReportMutation.isPending ? "Submitting..." : "Submit Report"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
         </div>
       </div>
 
+      {/* --- CONDITIONAL VIEW LOGIC --- */}
       {view === "list" ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
             {/* Main Reports List */}
             <Card className="bg-white border-slate-200 shadow-sm md:col-span-2">
                 <CardContent className="p-0">
+                    
                     {/* --- FILTER BAR --- */}
-                    <div className="flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl items-center">
+                    <div className={styles.filterBar}>
                         <Filter className="w-4 h-4 text-slate-400" />
                         
                         {/* CUSTOM EMPLOYEE SEARCH COMBOBOX */}
                         <Popover open={openFilterPicker} onOpenChange={setOpenFilterPicker}>
                             <PopoverTrigger asChild>
-                                <Button variant="outline" role="combobox" aria-expanded={openFilterPicker} className="w-[180px] h-8 justify-between text-xs bg-white font-normal border-slate-200">
+                                <Button variant="outline" role="combobox" aria-expanded={openFilterPicker} className={styles.filterBtn}>
                                     <span className="truncate">{personFilter || "Filter by person..."}</span>
                                     {personFilter ? 
                                         <X className="h-3 w-3 opacity-50 hover:opacity-100 ml-1" onClick={(e) => { e.stopPropagation(); setPersonFilter(""); }} /> :
@@ -763,7 +874,7 @@ export default function Reports() {
                         </Popover>
 
                         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                            <SelectTrigger className="w-[160px] h-8 text-xs bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
+                            <SelectTrigger className={styles.filterSelect}><SelectValue placeholder="Category" /></SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Categories</SelectItem>
                                 {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
@@ -784,27 +895,27 @@ export default function Reports() {
                         </Select>
 
                         {(categoryFilter !== 'all' || statusFilter !== 'all' || monthFilter !== 'all' || personFilter !== "") && (
-                            <Button variant="ghost" size="sm" onClick={() => {setCategoryFilter('all'); setStatusFilter('all'); setMonthFilter('all'); setPersonFilter('');}} className="h-8 text-xs text-red-500 hover:text-red-600 hover:bg-red-50">Reset</Button>
+                            <Button variant="ghost" size="sm" onClick={() => {setCategoryFilter('all'); setStatusFilter('all'); setMonthFilter('all'); setPersonFilter('');}} className={styles.filterResetBtn}>Reset</Button>
                         )}
                     </div>
 
                     {/* --- LIST ITEMS --- */}
-                    <div className="divide-y divide-slate-100 min-h-[300px]">
-                        {isLoading ? <div className="p-8 text-center text-slate-400">Loading...</div> : 
+                    <div className={styles.listWrapper}>
+                        {isLoading ? <div className="p-8 text-center flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div> : 
                         paginatedReports.length === 0 ? <div className="p-8 text-center text-slate-400">No reports found.</div> :
                         paginatedReports.map((report: any) => (
                             <div 
                               key={report.id} 
                               onClick={() => { setSelectedReport(report); setIsViewOpen(true); }} 
                               className={cn(
-                                "flex items-center justify-between p-4 hover:bg-slate-50 cursor-pointer group transition-colors border-l-4",
-                                report.severity === 'critical' ? "border-l-red-600 bg-red-50/30" : 
-                                report.severity === 'high' ? "border-l-orange-500" : "border-l-transparent"
+                                styles.listItemBase,
+                                report.severity === 'critical' ? styles.listItemCritical : 
+                                report.severity === 'high' ? styles.listItemHigh : styles.listItemNormal
                               )}
                             >
                               <div className="flex items-center gap-4">
                                 <div className="relative">
-                                  <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", categories.find(c=>c.id===report.category)?.color || "bg-slate-100 text-slate-600")}>
+                                  <div className={cn(styles.listIconBox, categories.find(c=>c.id===report.category)?.color || "bg-slate-100 text-slate-600")}>
                                     {(() => { const Icon = categories.find(c=>c.id===report.category)?.icon || FileText; return <Icon className="w-5 h-5" /> })()}
                                   </div>
                                   {(report.severity === 'critical' || report.severity === 'high') && (
@@ -815,10 +926,10 @@ export default function Reports() {
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-2">
-                                    <h4 className="text-sm font-bold text-slate-800">{report.title}</h4>
+                                    <h4 className={styles.listTitle}>{report.title}</h4>
                                     {report.nteRequired && <Badge variant="outline" className="text-[9px] border-orange-200 text-orange-600 bg-orange-50 px-1.5 h-4">NTE REQ</Badge>}
                                   </div>
-                                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                  <div className={styles.listMetaRow}>
                                     <span>{format(new Date(report.dateOccurred), "MMM dd")}</span>
                                   </div>
                                 </div>
@@ -829,7 +940,7 @@ export default function Reports() {
                     </div>
                     
                     {filteredReports.length > 0 && (
-                        <div className="flex items-center justify-between p-3 border-t border-slate-100 bg-white rounded-b-xl">
+                        <div className={styles.paginationBar}>
                             <div className="text-xs text-slate-500 font-medium">
                                 Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredReports.length)} of {filteredReports.length}
                             </div>
@@ -855,7 +966,8 @@ export default function Reports() {
                 </CardHeader>
                 <CardContent>
                     <div className="space-y-2">
-                        {stats.mostInvolved?.map(([name, count], i) => (
+                        {stats.mostInvolved?.length === 0 ? <p className="text-xs text-slate-400 italic">No data available.</p> :
+                         stats.mostInvolved?.map(([name, count], i) => (
                             <button key={name} onClick={() => setPersonFilter(name)} className={cn("w-full flex items-center justify-between text-sm p-2 rounded-lg transition-colors hover:bg-slate-100 text-left", personFilter === name ? "bg-blue-50 border border-blue-100" : "bg-transparent")}>
                                 <div className="flex items-center gap-2">
                                     <span className={cn("w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold", i === 0 ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600")}>{i + 1}</span>
@@ -872,15 +984,14 @@ export default function Reports() {
         /* --- ANALYTICS VIEW --- */
         <div className="space-y-6">
             <div className="flex justify-end">
-                {/* NEW: BUTTON GROUP FILTER FOR MONTHS */}
-                <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+                <div className={styles.analyticsRangeGroup}>
                     {['3', '6', '9', '12'].map((range) => (
                         <Button 
                             key={range}
                             variant="ghost" 
                             size="sm" 
                             onClick={() => setAnalyticsRange(range)} 
-                            className={cn("text-xs h-7 px-3", analyticsRange === range && "bg-white shadow-sm text-slate-900 font-medium")}
+                            className={cn(styles.analyticsRangeBtn, analyticsRange === range && styles.analyticsRangeActive)}
                         >
                             {range} Months
                         </Button>
@@ -889,7 +1000,7 @@ export default function Reports() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* 1. STACKED BAR CHART: Incident Trend by Category */}
+                {/* 1. STACKED BAR CHART */}
                 <Card className="col-span-1 md:col-span-2 lg:col-span-1">
                     <CardHeader><CardTitle className="text-lg">Incident Trends</CardTitle><CardDescription>Stacked Breakdown by Month</CardDescription></CardHeader>
                     <CardContent>
@@ -902,7 +1013,6 @@ export default function Reports() {
                                     <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
                                     <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                                     
-                                    {/* Generate Bars for each Category */}
                                     {categories.map((cat, index) => (
                                         <Bar key={cat.id} dataKey={cat.id} stackId="a" fill={cat.fill} name={cat.label} radius={index === categories.length - 1 ? [4, 4, 0, 0] : [0,0,0,0]} />
                                     ))}
@@ -912,7 +1022,7 @@ export default function Reports() {
                     </CardContent>
                 </Card>
 
-                {/* 2. PIE CHART: Overall Breakdown */}
+                {/* 2. PIE CHART */}
                 <Card className="col-span-1 md:col-span-2 lg:col-span-1">
                     <CardHeader><CardTitle className="text-lg">Reports by Category</CardTitle><CardDescription>Distribution over {analyticsRange} months</CardDescription></CardHeader>
                     <CardContent>
@@ -933,13 +1043,10 @@ export default function Reports() {
         </div>
       )}
 
-      {/* View Details Dialog */}
+      {/* --- VIEW DETAILS DIALOG --- */}
         <Dialog open={isViewOpen} onOpenChange={(open) => {
           setIsViewOpen(open);
-          if (!open) {
-             setSelectedReport(null);
-             setNteResponse("");
-          }
+          if (!open) { setSelectedReport(null); setNteResponse(""); }
         }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             {!selectedReport ? (
@@ -950,8 +1057,8 @@ export default function Reports() {
             <>
                 <DialogHeader>
                 <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                        <Badge variant="outline" className="uppercase tracking-wider text-[10px]">
+                    <div className={styles.viewHeaderMeta}>
+                        <Badge variant="outline" className={styles.viewHeaderCategory}>
                         {categories.find(c => c.id === selectedReport.category)?.label || selectedReport.category}
                         </Badge>
                         <Badge className={cn("capitalize", 
@@ -961,12 +1068,14 @@ export default function Reports() {
                         </Badge>
                     </div>
                     {/* INDIVIDUAL DOWNLOAD BUTTON */}
-                    <Button variant="ghost" size="icon" onClick={() => generateSinglePDF(selectedReport)} title="Download PDF">
-                        <FileDown className="w-4 h-4 text-slate-500" />
-                    </Button>
+                    {canManageReports && (
+                      <Button variant="ghost" size="icon" onClick={() => generateSinglePDF(selectedReport)} title="Download PDF">
+                          <FileDown className="w-4 h-4 text-slate-500" />
+                      </Button>
+                    )}
                 </div>
-                <DialogTitle className="text-2xl font-bold text-slate-900">{selectedReport.title}</DialogTitle>
-                <DialogDescription className="flex items-center gap-2 text-slate-500">
+                <DialogTitle className={styles.viewTitle}>{selectedReport.title}</DialogTitle>
+                <DialogDescription className={styles.viewDescRow}>
                     <CalendarIcon className="w-4 h-4" /> {format(new Date(selectedReport.dateOccurred), "MMMM dd, yyyy")} 
                     <Clock className="w-4 h-4 ml-2" /> {selectedReport.timeOccurred}
                 </DialogDescription>
@@ -974,7 +1083,7 @@ export default function Reports() {
 
                 <div className="space-y-6 py-4">
                   {/* Status & Location Bar */}
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className={styles.viewStatusBox}>
                       <div className="space-y-1">
                       <span className="text-xs font-semibold text-slate-400 uppercase">Location</span>
                       <div className="flex items-center gap-2 font-medium text-slate-900">
@@ -992,7 +1101,7 @@ export default function Reports() {
                   </div>
                   
                   {/* Reporter Info */}
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+                  <div className={styles.viewReporterBox}>
                       <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
                               <Users className="w-5 h-5 text-slate-500" />
@@ -1012,32 +1121,32 @@ export default function Reports() {
                   </div>
 
                   {/* Incident Description */}
-                  <div className="space-y-4">
+                  <div className={styles.viewTextSection}>
                       <div>
-                        <h4 className="text-sm font-bold text-slate-900 mb-2">Incident Description</h4>
-                        <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.description}</p>
+                        <h4 className={styles.viewTextTitle}>Incident Description</h4>
+                        <p className={styles.viewTextContent}>{selectedReport.description}</p>
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-slate-900 mb-2">Immediate Action Taken</h4>
-                        <p className="text-sm text-slate-600 leading-relaxed bg-white border border-slate-100 p-3 rounded-lg">{selectedReport.actionTaken || "No immediate action recorded."}</p>
+                        <h4 className={styles.viewTextTitle}>Immediate Action Taken</h4>
+                        <p className={styles.viewTextContent}>{selectedReport.actionTaken || "No immediate action recorded."}</p>
                       </div>
                   </div>
                   
                   {/* NTE SECTION: Display/Input */}
                   {selectedReport.nteRequired && (
-                    <div className="bg-orange-50/50 border border-orange-100 rounded-xl p-4 space-y-3">
+                    <div className={styles.nteBox}>
                         <div className="flex items-center gap-2 mb-2">
-                            <Badge variant="outline" className="bg-white text-orange-600 border-orange-200">Action Required</Badge>
-                            <span className="font-semibold text-sm text-orange-900">Notice to Explain (NTE)</span>
+                            <Badge variant="outline" className={styles.nteHeaderBadge}>Action Required</Badge>
+                            <span className={styles.nteHeaderTitle}>Notice to Explain (NTE)</span>
                         </div>
                         
                         {/* CASE 1: Manager View (Show content or pending status) */}
-                        {['admin', 'manager'].includes(user?.role || '') && (
+                        {canManageReports && (
                             <div className="text-sm">
                                 {selectedReport.nteContent ? (
                                     <div className="space-y-1">
-                                        <p className="text-xs font-semibold text-orange-800">Employee Explanation:</p>
-                                        <p className="bg-white p-3 rounded border border-orange-100 text-slate-700">{selectedReport.nteContent}</p>
+                                        <p className={styles.nteManagerLabel}>Employee Explanation:</p>
+                                        <p className={styles.nteManagerContent}>{selectedReport.nteContent}</p>
                                     </div>
                                 ) : (
                                     <p className="text-orange-600 italic">Waiting for employee explanation...</p>
@@ -1046,25 +1155,25 @@ export default function Reports() {
                         )}
 
                         {/* CASE 2: Employee View (Show Input if Assigned & Pending) */}
-                        {user?.id === selectedReport.assignedTo && !['admin', 'manager'].includes(user?.role || '') && (
+                        {user?.id === selectedReport.assignedTo && !canManageReports && (
                             <div className="space-y-3">
                                 {selectedReport.nteContent ? (
                                       <div className="space-y-1">
-                                        <p className="text-xs font-semibold text-orange-800">Your Submitted Explanation:</p>
-                                        <p className="bg-white p-3 rounded border border-orange-100 text-slate-700">{selectedReport.nteContent}</p>
+                                        <p className={styles.nteManagerLabel}>Your Submitted Explanation:</p>
+                                        <p className={styles.nteManagerContent}>{selectedReport.nteContent}</p>
                                       </div>
                                 ) : (
                                       <>
-                                        <p className="text-xs text-orange-800">Please provide your explanation regarding this incident.</p>
+                                        <p className={styles.nteEmpLabel}>Please provide your explanation regarding this incident.</p>
                                         <Textarea 
                                             placeholder="Write your explanation here..."
                                             value={nteResponse}
                                             onChange={(e) => setNteResponse(e.target.value)}
-                                            className="bg-white border-orange-200 focus-visible:ring-orange-500"
+                                            className={styles.nteEmpTextarea}
                                         />
                                         <Button 
                                             size="sm" 
-                                            className="bg-orange-600 hover:bg-orange-700 text-white w-full"
+                                            className={styles.nteEmpSubmitBtn}
                                             disabled={!nteResponse.trim() || updateStatusMutation.isPending}
                                             onClick={() => updateStatusMutation.mutate({ 
                                                 id: selectedReport.id, 
@@ -1096,7 +1205,7 @@ export default function Reports() {
                 <DialogFooter className="flex-row justify-between sm:justify-between border-t pt-4">
                 <Button variant="ghost" onClick={() => setIsViewOpen(false)}>Close</Button>
                 
-                {['admin', 'manager'].includes(user?.role || '') && (
+                {canManageReports && (
                     selectedReport.status === 'resolved' ? (
                         <Button 
                         variant="outline"
@@ -1125,7 +1234,7 @@ export default function Reports() {
         </DialogContent>
         </Dialog>
 
-        {/* Resolve Action Popup */}
+        {/* --- RESOLVE ACTION POPUP --- */}
         <Dialog open={isResolveDialogOpen} onOpenChange={setIsResolveDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
@@ -1152,10 +1261,7 @@ export default function Reports() {
             <DialogFooter>
             <Button 
                 variant="ghost" 
-                onClick={() => {
-                setIsResolveDialogOpen(false);
-                setIsViewOpen(true); 
-                }}
+                onClick={() => { setIsResolveDialogOpen(false); setIsViewOpen(true); }}
             >
                 Back
             </Button>
@@ -1163,12 +1269,12 @@ export default function Reports() {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 disabled={!resolutionAction.trim() || updateStatusMutation.isPending}
                 onClick={() => {
-                if (!selectedReport) return;
-                updateStatusMutation.mutate({ 
-                    id: selectedReport.id, 
-                    status: 'resolved',
-                    actionTaken: resolutionAction 
-                });
+                  if (!selectedReport) return;
+                  updateStatusMutation.mutate({ 
+                      id: selectedReport.id, 
+                      status: 'resolved',
+                      actionTaken: resolutionAction 
+                  });
                 }}
             >
                 {updateStatusMutation.isPending ? "Saving..." : "Confirm & Resolve"}

@@ -1,138 +1,202 @@
 import { Router } from "express";
 import { storage } from "../storage";
 import { hashPassword } from "../auth";
+import { Permission, RolePermissions, Role } from "@/lib/permissions";
 
 const router = Router();
 
-// --- Get all users ---
-  router.get("/", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const user = req.user!;
-    if (user.role !== 'admin' && user.role !== 'manager') return res.status(403).json({ message: "Access denied" });
-    try {
-      const users = await storage.getAllUsers();
-      res.json(users);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch users" });
-    }
-  });
+// Backend helper to check permissions based on the shared RBAC config
+const hasServerPermission = (role: string, permission: Permission) => {
+  const userPermissions = RolePermissions[role as Role] || [];
+  return userPermissions.includes(permission);
+};
 
-  // --- Make users ---
-  router.post("/", async (req, res) => {
-  if (!req.isAuthenticated()) return res.sendStatus(401);
+// --- Get all users ---
+router.get("/", async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: "Unauthorized", message: "Please log in." });
+  }
+
+  const user = req.user!;
+  if (!hasServerPermission(user.role, Permission.VIEW_ALL_USERS)) {
+    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to view all users." });
+  }
+
+  try {
+    const users = await storage.getAllUsers();
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: "Internal Server Error", message: "Failed to fetch users." });
+  }
+});
+
+// --- Make users ---
+router.post("/", async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: "Unauthorized", message: "Please log in." });
+  }
+
   const user = req.user!;
   const requestedRole = req.body.role;
 
-  if (user.role === 'manager' && requestedRole !== 'employee') return res.status(403).send("Managers can only create employee accounts");
-  if (user.role !== 'admin' && user.role !== 'manager') return res.status(403).send("Access denied");
+  if (!hasServerPermission(user.role, Permission.MANAGE_USERS)) {
+    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to create users." });
+  }
+
+  // Specific business logic: Managers can manage users, but ONLY create employees
+  if (user.role === 'manager' && requestedRole !== 'employee') {
+    return res.status(403).json({ error: "Forbidden", message: "Managers can only create employee accounts." });
+  }
 
   try {
     const userData = { ...req.body, password: await hashPassword(req.body.password) };
     
-    // FIX: Convert timestamps to Date objects for Drizzle
+    // Convert timestamps to Date objects for Drizzle
     if (userData.birthDate) userData.birthDate = new Date(userData.birthDate);
     if (userData.hireDate) userData.hireDate = new Date(userData.hireDate);
 
-    if (user.role === 'manager' && requestedRole === 'employee' && !userData.managerId) userData.managerId = user.id;
+    // Auto-assign managerId if a manager is creating an employee
+    if (user.role === 'manager' && requestedRole === 'employee' && !userData.managerId) {
+      userData.managerId = user.id;
+    }
+
+    // Validate manager assignment if creating a manager
     if (requestedRole === 'manager') {
-      if (!userData.managerId || userData.managerId === '') delete userData.managerId;
-      else {
+      if (!userData.managerId || userData.managerId === '') {
+        delete userData.managerId;
+      } else {
         const managerExists = await storage.getUser(userData.managerId);
-        if (!managerExists) return res.status(400).send("Invalid manager ID provided");
+        if (!managerExists) {
+          return res.status(400).json({ error: "Bad Request", message: "Invalid manager ID provided." });
+        }
       }
     }
+
     const newUser = await storage.createUser(userData, user.id);
-    res.json(newUser);
+    res.status(201).json(newUser);
   } catch (error: any) {
-    res.status(400).send(error.message || "Failed to create user");
+    res.status(400).json({ error: "Bad Request", message: error.message || "Failed to create user." });
   }
 });
 
+// --- Edit Own Profile ---
 router.patch("/profile", async (req, res) => {
-  // 1. Ensure user is logged in
-  if (!req.isAuthenticated()) return res.sendStatus(401);
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: "Unauthorized", message: "Please log in." });
+  }
   
+  if (!hasServerPermission(req.user!.role, Permission.VIEW_OWN_PROFILE)) {
+    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to edit your profile." });
+  }
+
   try {
-    // 2. Get the ID from the authenticated session, NOT req.params
     const userId = req.user!.id; 
     const updates = { ...req.body };
     
-    // 3. SECURITY: Prevent mass-assignment vulnerabilities.
-    // Strip out fields that employees should never be able to change themselves.
+    // SECURITY: Prevent mass-assignment vulnerabilities.
+    // Strip out all employment, salary, and newly added DOLE leave fields.
     const protectedFields = [
       'id', 'role', 'salary', 'managerId', 'employmentStatus', 
       'department', 'position', 'hireDate', 'employeeId', 'isActive',
-      'annualLeaveBalanceLimit', 'sickLeaveBalanceLimit', 'serviceIncentiveLeaveBalanceLimit',
-      'annualLeaveBalance', 'sickLeaveBalance', 'serviceIncentiveLeaveBalance'
+      'annualLeaveBalance', 'annualLeaveBalanceLimit',
+      'sickLeaveBalance', 'sickLeaveBalanceLimit',
+      'serviceIncentiveLeaveBalance', 'serviceIncentiveLeaveBalanceLimit',
+      'bereavementLeaveBalance', 'bereavementLeaveBalanceLimit',
+      'maternityLeaveBalance', 'maternityLeaveBalanceLimit',
+      'paternityLeaveBalance', 'paternityLeaveBalanceLimit',
+      'soloParentLeaveBalance', 'soloParentLeaveBalanceLimit',
+      'magnaCartaLeaveBalance', 'magnaCartaLeaveBalanceLimit',
+      'vawcLeaveBalance', 'vawcLeaveBalanceLimit'
     ];
     
     protectedFields.forEach(field => {
       delete updates[field];
     });
 
-    // 4. Convert timestamps to Date objects for Drizzle (for allowed fields)
     if (updates.birthDate) updates.birthDate = new Date(updates.birthDate);
 
-    // 5. Update the user in the database
     const updatedUser = await storage.updateUser(userId, updates);
     
-    if (!updatedUser) return res.status(404).send("User not found");
+    if (!updatedUser) {
+      return res.status(404).json({ error: "Not Found", message: "User not found." });
+    }
     
-    // Return the updated profile
     res.json(updatedUser);
-    
   } catch (error: any) {
-    res.status(400).send(error.message || "Failed to update profile");
+    res.status(400).json({ error: "Bad Request", message: error.message || "Failed to update profile." });
   }
 });
 
-  // --- Edit users ---
+// --- Edit users (Admins/HR/Managers) ---
 router.patch("/:id", async (req, res) => {
-  if (!req.isAuthenticated()) return res.sendStatus(401);
-  if (req.user!.role !== 'admin') return res.status(403).send("Only admins can edit users");
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: "Unauthorized", message: "Please log in." });
+  }
+
+  if (!hasServerPermission(req.user!.role, Permission.MANAGE_USERS)) {
+    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to edit users." });
+  }
+
   try {
     const updates = { ...req.body };
     
-    // FIX: Convert timestamps to Date objects for Drizzle
     if (updates.birthDate) updates.birthDate = new Date(updates.birthDate);
     if (updates.hireDate) updates.hireDate = new Date(updates.hireDate);
 
     const updatedUser = await storage.updateUser(req.params.id, updates);
-    if (!updatedUser) return res.status(404).send("User not found");
+    if (!updatedUser) {
+      return res.status(404).json({ error: "Not Found", message: "User not found." });
+    }
     res.json(updatedUser);
   } catch (error: any) {
-    res.status(400).send(error.message || "Failed to update user");
+    res.status(400).json({ error: "Bad Request", message: error.message || "Failed to update user." });
   }
 });
 
+// --- Change password (Admins/HR) ---
+router.patch("/:id/password", async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: "Unauthorized", message: "Please log in." });
+  }
 
+  if (!hasServerPermission(req.user!.role, Permission.MANAGE_USERS)) {
+    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to change user passwords." });
+  }
 
-  // --- Change password ---
-  router.patch("/:id/password", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    if (req.user!.role !== 'admin') return res.status(403).send("Only admins can change passwords");
-    try {
-      const hashedPassword = await hashPassword(req.body.password);
-      const updatedUser = await storage.updateUser(req.params.id, { password: hashedPassword });
-      if (!updatedUser) return res.status(404).send("User not found");
-      res.json({ message: "Password updated successfully" });
-    } catch (error: any) {
-      res.status(400).send(error.message || "Failed to change password");
+  try {
+    const hashedPassword = await hashPassword(req.body.password);
+    const updatedUser = await storage.updateUser(req.params.id, { password: hashedPassword });
+    if (!updatedUser) {
+      return res.status(404).json({ error: "Not Found", message: "User not found." });
     }
-  });
+    res.json({ message: "Password updated successfully." });
+  } catch (error: any) {
+    res.status(400).json({ error: "Bad Request", message: error.message || "Failed to change password." });
+  }
+});
 
-  // --- Delete users ---
-  router.delete("/:id", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    const user = req.user!;
-    if (user.role !== 'admin') return res.status(403).send("Only admins can delete users");
-    if (user.id === req.params.id) return res.status(400).send("You cannot delete your own account");
-    try {
-      await storage.deleteUser(req.params.id);
-      res.json({ message: "User deleted successfully" });
-    } catch (error: any) {
-      res.status(400).send(error.message || "Failed to delete user");
-    }
-  });
+// --- Delete users ---
+router.delete("/:id", async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: "Unauthorized", message: "Please log in." });
+  }
+  
+  const user = req.user!;
+  
+  if (!hasServerPermission(user.role, Permission.MANAGE_USERS)) {
+    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to delete users." });
+  }
 
-  export default router;
+  if (user.id === req.params.id) {
+    return res.status(400).json({ error: "Bad Request", message: "You cannot delete your own account." });
+  }
+
+  try {
+    await storage.deleteUser(req.params.id);
+    res.json({ message: "User deleted successfully." });
+  } catch (error: any) {
+    res.status(400).json({ error: "Bad Request", message: error.message || "Failed to delete user." });
+  }
+});
+
+export default router;

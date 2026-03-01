@@ -6,7 +6,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { 
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter 
 } from "@/components/ui/dialog";
@@ -16,22 +16,63 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Pencil, Trash2, ChevronDown, ChevronRight, Eye, Filter, Search } from "lucide-react";
-import type { Payslip } from "@shared/schema";
+import type { Payslip, PayItems } from "@shared/schema";
 import { computeSSS, computePhilHealth, computePagIbig, HOURLY_RATE, OT_MULTIPLIER, ND_MULTIPLIER } from "@/utils/salary_computation";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+
+// --- RBAC Imports ---
+import { usePermission } from "@/hooks/use-permission";
+import { Permission } from "@/lib/permissions";
 
 // Helper for display rounding
 const round2 = (num: number) => Math.round(num * 100) / 100;
 
+// --- SEPARATED STYLES ---
+const styles = {
+  container: "p-6 md:p-8 max-w-7xl mx-auto space-y-8",
+  headerRow: "mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4",
+  title: "text-3xl font-bold tracking-tight text-slate-900",
+  subtitle: "text-slate-500 mt-1 text-sm",
+  
+  // Filters
+  filterBox: "flex flex-wrap items-center gap-4 bg-white/80 backdrop-blur-md p-2 rounded-2xl border border-slate-200/60 shadow-sm w-full md:w-auto",
+  searchWrapper: "relative w-full md:w-auto md:min-w-[200px] flex-1",
+  searchInput: "pl-9 h-8 border-none bg-transparent focus:ring-0 w-full",
+  divider: "hidden md:block w-px h-4 bg-slate-200",
+  selectWrapper: "flex items-center gap-2 px-2",
+  
+  // Table
+  tableCard: "bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-sm rounded-3xl overflow-hidden",
+  tableHead: "bg-slate-50/50 border-b border-slate-200/60",
+  thBase: "px-4 py-3 font-semibold text-slate-500 uppercase tracking-wider text-xs",
+  
+  // Rows
+  groupRow: "bg-slate-50/50 hover:bg-slate-100/80 cursor-pointer transition-colors border-l-4 border-l-transparent hover:border-l-primary/40",
+  detailRow: "bg-white hover:bg-gray-50 transition-colors border-b border-gray-100",
+  expandedSummaryBg: "bg-slate-50/30",
+  expandedSummaryCard: "grid grid-cols-1 md:grid-cols-2 gap-6 text-sm border border-slate-200/60 p-5 rounded-2xl bg-white/60 shadow-sm",
+  
+  // Buttons
+  actionBtnGroup: "flex justify-center gap-2",
+  viewBtn: "h-8 w-8 hover:text-emerald-600 hover:bg-emerald-50 rounded-full",
+  editBtn: "h-8 w-8 hover:text-blue-600 hover:bg-blue-50 rounded-full",
+  deleteBtn: "h-8 w-8 hover:text-red-600 hover:bg-red-50 rounded-full",
+  
+  // Dialog & View
+  sectionTitle: "font-medium text-sm text-slate-500 uppercase tracking-wider border-b border-slate-200 pb-2 mb-3",
+  detailCard: "grid grid-cols-2 gap-8 p-4 bg-slate-50 rounded-xl border border-slate-100",
+  netPayBanner: "flex justify-between items-center p-4 bg-green-50 border border-green-100 rounded-xl",
+};
+
 export default function PayslipHistory() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermission();
+  
+  const canManagePayroll = hasPermission(Permission.MANAGE_PAYROLL);
 
   const currentYear = new Date().getFullYear();
 
@@ -41,31 +82,17 @@ export default function PayslipHistory() {
   const [selectedPayslip, setSelectedPayslip] = useState<Payslip | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   
-  // Filters
   const [filterMonth, setFilterMonth] = useState<string>("all");
   const [filterYear, setFilterYear] = useState<string>(currentYear.toString());
   const [searchTerm, setSearchTerm] = useState("");
 
-  // State for the edit form
   const [editForm, setEditForm] = useState({
-    regularHours: 0,
-    overtimeHours: 0,
-    nightDiffHours: 0,
-    bonuses: 0,
-    otherAllowances: 0,
-    otherDeductions: 0,
-    basicSalary: 0,
-    overtimePay: 0,
-    nightDiffPay: 0,
-    grossPay: 0,
-    sss: 0,
-    philHealth: 0,
-    pagIbig: 0,
-    tax: 0,
-    netPay: 0
+    regularHours: 0, overtimeHours: 0, nightDiffHours: 0,
+    bonuses: 0, otherAllowances: 0, otherDeductions: 0,
+    basicSalary: 0, overtimePay: 0, nightDiffPay: 0,
+    grossPay: 0, sss: 0, philHealth: 0, pagIbig: 0, tax: 0, netPay: 0
   });
 
-  // Fetch ALL payslips
   const { data: payslips, isLoading } = useQuery({
     queryKey: ["/api/payslips", { all: true }],
     queryFn: async () => {
@@ -75,7 +102,6 @@ export default function PayslipHistory() {
     }
   });
 
-  // FIX: Added queryFn to fetch team members
   const { data: teamMembers } = useQuery({ 
     queryKey: ["/api/team"],
     queryFn: async () => {
@@ -85,9 +111,9 @@ export default function PayslipHistory() {
     }
   });
 
-  // --- Mutations ---
+  // FIXED: id is now string
   const updatePayslipMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
       const res = await fetch(`/api/payslips/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -101,13 +127,12 @@ export default function PayslipHistory() {
       queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
       setIsEditOpen(false);
     },
-    onError: (error: Error) => {
-        toast.error("Update Failed", { description: error.message });
-    }
+    onError: (error: Error) => toast.error("Update Failed", { description: error.message })
   });
 
+  // FIXED: id is now string
   const deletePayslipMutation = useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: string) => {
       const res = await fetch(`/api/payslips/${id}`, { method: "DELETE" });
       if(!res.ok) throw new Error("Failed to delete");
       return res.json();
@@ -117,24 +142,15 @@ export default function PayslipHistory() {
       queryClient.invalidateQueries({ queryKey: ["/api/payslips"] });
       setIsDeleteOpen(false);
     },
-    onError: (error: Error) => {
-        toast.error("Delete Failed", { description: error.message });
-    }
+    onError: (error: Error) => toast.error("Delete Failed", { description: error.message })
   });
 
-  // --- Helpers ---
   const getEmployeeName = (id: string) => {
-    // If it's the current user
     if (user && String(user.id) === String(id)) return `${user.firstName} ${user.lastName} (You)`;
-    
-    // Look up in team members
     const emp = teamMembers?.find((m: any) => String(m.id) === String(id));
     return emp ? `${emp.firstName} ${emp.lastName}` : `User ${id}`;
   };
 
-  // --- Auto-Calculation Effect for Edit ---
-  // This ensures that when you change hours/bonuses in the UI, the gross/net/deductions update automatically
-  
   useEffect(() => {
     if (!isEditOpen) return;
 
@@ -143,77 +159,59 @@ export default function PayslipHistory() {
     const nightDiffPay = round2(editForm.nightDiffHours * (HOURLY_RATE * ND_MULTIPLIER));
     
     const grossPay = round2(basicSalary + overtimePay + nightDiffPay + editForm.bonuses + editForm.otherAllowances);
-
-    // Re-calculate government deductions based on new basic salary
     const sss = round2(computeSSS(basicSalary)); 
     const philHealth = round2(computePhilHealth(basicSalary)); 
     const pagIbig = round2(computePagIbig(basicSalary)); 
-    
-    // Default tax to 0 or keep existing logic (simplified here)
     const tax = editForm.tax; 
 
     const totalDeductions = round2(sss + philHealth + pagIbig + tax + editForm.otherDeductions);
     const netPay = Math.max(0, round2(grossPay - totalDeductions));
 
     setEditForm(prev => ({
-      ...prev,
-      basicSalary,
-      overtimePay,
-      nightDiffPay,
-      grossPay,
-      sss,
-      philHealth,
-      pagIbig,
-      netPay
+      ...prev, basicSalary, overtimePay, nightDiffPay, grossPay, sss, philHealth, pagIbig, netPay
     }));
   }, [
-    editForm.regularHours, 
-    editForm.overtimeHours, 
-    editForm.nightDiffHours, 
-    editForm.bonuses, 
-    editForm.otherAllowances, 
-    editForm.otherDeductions,
-    editForm.tax,
-    isEditOpen
+    editForm.regularHours, editForm.overtimeHours, editForm.nightDiffHours, 
+    editForm.bonuses, editForm.otherAllowances, editForm.otherDeductions,
+    editForm.tax, isEditOpen
   ]);
 
-  // --- Handlers ---
-  const handleEdit = (payslip: any) => {
+  const handleEdit = (payslip: Payslip) => {
     setSelectedPayslip(payslip);
     
-    const allowances = payslip.allowances || {};
-    const deductions = payslip.deductions || {};
-
-    // Convert from cents (Integers) to Currency (Floats) for the form
+    // UPDATED: Mapping explicitly against new Schema
     const basicVal = payslip.basicSalary / 100;
-    const otVal = (allowances.overtime || 0) / 100;
-    const ndVal = (allowances.nightDiff || 0) / 100;
+    const otVal = (payslip.overtimePay || 0) / 100;
+    const ndVal = (payslip.nightDiffPay || 0) / 100;
 
-    const regularHours = basicVal / HOURLY_RATE;
-    const overtimeHours = otVal / (HOURLY_RATE * OT_MULTIPLIER);
-    const nightDiffHours = ndVal / (HOURLY_RATE * ND_MULTIPLIER);
+    const allowancesArr = (payslip.allowances as PayItems[]) || [];
+    const bonuses = allowancesArr.find(a => a.name.toLowerCase().includes("bonus"))?.amount || 0;
+    const otherAlls = allowancesArr.filter(a => !a.name.toLowerCase().includes("bonus")).reduce((sum, a) => sum + a.amount, 0);
+
+    const deductionsArr = (payslip.otherDeductions as PayItems[]) || [];
+    const otherDeds = deductionsArr.reduce((sum, d) => sum + d.amount, 0);
 
     setEditForm({
-        regularHours: round2(regularHours),
-        overtimeHours: round2(overtimeHours),
-        nightDiffHours: round2(nightDiffHours),
-        bonuses: (allowances.bonuses || 0) / 100,
-        otherAllowances: (allowances.otherAllowances || allowances.allowances || 0) / 100,
-        otherDeductions: (deductions.others || 0) / 100,
+        regularHours: round2(basicVal / HOURLY_RATE),
+        overtimeHours: round2(otVal / (HOURLY_RATE * OT_MULTIPLIER)),
+        nightDiffHours: round2(ndVal / (HOURLY_RATE * ND_MULTIPLIER)),
+        bonuses: bonuses / 100,
+        otherAllowances: otherAlls / 100,
+        otherDeductions: otherDeds / 100,
         basicSalary: basicVal,
         overtimePay: otVal,
         nightDiffPay: ndVal,
         grossPay: payslip.grossPay / 100,
-        sss: (deductions.sss || 0) / 100,
-        philHealth: (deductions.philHealth || 0) / 100,
-        pagIbig: (deductions.pagIbig || 0) / 100,
-        tax: (deductions.tax || 0) / 100,
+        sss: (payslip.sssContribution || 0) / 100,
+        philHealth: (payslip.philHealthContribution || 0) / 100,
+        pagIbig: (payslip.pagIbigContribution || 0) / 100,
+        tax: (payslip.withholdingTax || 0) / 100,
         netPay: payslip.netPay / 100
     });
     setIsEditOpen(true);
   };
 
-  const handleView = (payslip: any) => {
+  const handleView = (payslip: Payslip) => {
     setSelectedPayslip(payslip);
     setIsViewOpen(true);
   };
@@ -221,25 +219,28 @@ export default function PayslipHistory() {
   const handleSaveEdit = () => {
     if(!selectedPayslip) return;
     
-    // Pack data back into cents (Integers) for the API
+    // UPDATED: Packing data exactly to match the new strict schema columns
     const payload = {
         basicSalary: Math.round(editForm.basicSalary * 100),
-        allowances: {
-            ...(selectedPayslip.allowances as object),
-            overtime: Math.round(editForm.overtimePay * 100),
-            nightDiff: Math.round(editForm.nightDiffPay * 100),
-            bonuses: Math.round(editForm.bonuses * 100),
-            otherAllowances: Math.round(editForm.otherAllowances * 100),
-        },
-        deductions: {
-            ...(selectedPayslip.deductions as object),
-            sss: Math.round(editForm.sss * 100),
-            philHealth: Math.round(editForm.philHealth * 100),
-            pagIbig: Math.round(editForm.pagIbig * 100),
-            tax: Math.round(editForm.tax * 100),
-            others: Math.round(editForm.otherDeductions * 100),
-        },
+        overtimePay: Math.round(editForm.overtimePay * 100),
+        nightDiffPay: Math.round(editForm.nightDiffPay * 100),
+        
+        sssContribution: Math.round(editForm.sss * 100),
+        philHealthContribution: Math.round(editForm.philHealth * 100),
+        pagIbigContribution: Math.round(editForm.pagIbig * 100),
+        withholdingTax: Math.round(editForm.tax * 100),
+        
+        allowances: [
+            { name: "Bonus", amount: Math.round(editForm.bonuses * 100) },
+            { name: "Other Allowances", amount: Math.round(editForm.otherAllowances * 100) }
+        ].filter(a => a.amount > 0),
+        
+        otherDeductions: [
+            { name: "Other Deductions", amount: Math.round(editForm.otherDeductions * 100) }
+        ].filter(d => d.amount > 0),
+
         grossPay: Math.round(editForm.grossPay * 100),
+        totalDeductions: Math.round((editForm.sss + editForm.philHealth + editForm.pagIbig + editForm.tax + editForm.otherDeductions) * 100),
         netPay: Math.round(editForm.netPay * 100)
     };
     
@@ -251,11 +252,10 @@ export default function PayslipHistory() {
     setIsDeleteOpen(true);
   };
 
-  // --- Grouping Logic ---
+  // Grouping Logic
   const groupedPayslips = useMemo(() => {
     if (!payslips) return [];
 
-    // 1. Filter
     const filtered = payslips.filter((slip: Payslip) => {
         const matchMonth = filterMonth === "all" || slip.month.toString() === filterMonth;
         const matchYear = filterYear === "all" || slip.year.toString() === filterYear;
@@ -264,44 +264,35 @@ export default function PayslipHistory() {
         return matchMonth && matchYear && matchSearch;
     });
 
-    // 2. Group by User+Month+Year
     const groups: Record<string, any> = {};
 
     filtered.forEach((slip: Payslip) => {
         const key = `${slip.userId}-${slip.month}-${slip.year}`;
         if (!groups[key]) {
             groups[key] = {
-                id: key,
-                userId: slip.userId,
-                month: slip.month,
-                year: slip.year,
-                slips: [],
-                totalGross: 0,
-                totalNet: 0,
-                totalDeductions: 0,
-                totalRegHours: 0,
-                totalOTHours: 0,
-                totalNDHours: 0,
+                id: key, userId: slip.userId, month: slip.month, year: slip.year,
+                slips: [], totalGross: 0, totalNet: 0, totalDeductions: 0,
+                totalRegHours: 0, totalOTHours: 0, totalNDHours: 0,
                 deductions: { sss: 0, philHealth: 0, pagIbig: 0, tax: 0, others: 0 }
             };
         }
         
+        // UPDATED: Grouping logic references new explicit columns
         const basic = slip.basicSalary / 100;
-        const allowances = slip.allowances as any || {};
-        const deductions = slip.deductions as any || {};
-        
-        const ot = (allowances.overtime || 0) / 100;
-        const nd = (allowances.nightDiff || 0) / 100;
+        const ot = (slip.overtimePay || 0) / 100;
+        const nd = (slip.nightDiffPay || 0) / 100;
 
         groups[key].totalRegHours += basic / HOURLY_RATE;
         groups[key].totalOTHours += ot / (HOURLY_RATE * OT_MULTIPLIER);
         groups[key].totalNDHours += nd / (HOURLY_RATE * ND_MULTIPLIER);
 
-        groups[key].deductions.sss += (deductions.sss || 0);
-        groups[key].deductions.philHealth += (deductions.philHealth || 0);
-        groups[key].deductions.pagIbig += (deductions.pagIbig || 0);
-        groups[key].deductions.tax += (deductions.tax || 0);
-        groups[key].deductions.others += (deductions.others || 0);
+        const otherDeductionsTotal = (slip.otherDeductions as PayItems[] || []).reduce((sum, item) => sum + item.amount, 0);
+
+        groups[key].deductions.sss += (slip.sssContribution || 0);
+        groups[key].deductions.philHealth += (slip.philHealthContribution || 0);
+        groups[key].deductions.pagIbig += (slip.pagIbigContribution || 0);
+        groups[key].deductions.tax += (slip.withholdingTax || 0);
+        groups[key].deductions.others += otherDeductionsTotal;
 
         groups[key].slips.push(slip);
         groups[key].totalGross += slip.grossPay;
@@ -319,29 +310,29 @@ export default function PayslipHistory() {
     setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  if(isLoading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin" /></div>;
+  if(isLoading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-primary" /></div>;
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
-      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className={styles.container}>
+      {/* Header & Filters */}
+      <div className={styles.headerRow}>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Payslip History</h1>
-          <p className="text-slate-500 mt-1 text-sm">View and manage generated payslips.</p>
+          <h1 className={styles.title}>Payslip History</h1>
+          <p className={styles.subtitle}>View and manage generated payslips.</p>
         </div>
         
-        {/* Filters */}
-        <div className="flex items-center gap-4 bg-white/80 backdrop-blur-md p-2 rounded-2xl border border-slate-200/60 shadow-sm">
-            <div className="relative w-full max-w-[200px]">
+        <div className={styles.filterBox}>
+            <div className={styles.searchWrapper}>
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input 
-                    placeholder="Search..." 
-                    className="pl-9 h-8 border-none bg-transparent focus:ring-0"
+                    placeholder="Search employee..." 
+                    className={styles.searchInput}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
             </div>
-            <div className="w-px h-4 bg-slate-200" />
-            <div className="flex items-center gap-2 px-2">
+            <div className={styles.divider} />
+            <div className={styles.selectWrapper}>
                 <Filter className="w-4 h-4 text-slate-400" />
                 <Select value={filterMonth} onValueChange={setFilterMonth}>
                     <SelectTrigger className="w-[110px] h-8 border-none bg-transparent shadow-none text-xs font-medium"><SelectValue placeholder="Month" /></SelectTrigger>
@@ -363,28 +354,29 @@ export default function PayslipHistory() {
         </div>
       </div>
 
-      <Card className="glass-card">
+      {/* Main Table */}
+      <Card className={styles.tableCard}>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="bg-slate-50/50 border-b border-slate-200/60">
+              <thead className={styles.tableHead}>
                 <tr>
                   <th className="w-[50px] px-4 py-3"></th>
-                  <th className="px-4 py-3 font-semibold text-slate-500 uppercase tracking-wider text-xs">Employee</th>
-                  <th className="px-4 py-3 font-semibold text-slate-500 uppercase tracking-wider text-xs">Month</th>
-                  <th className="px-4 py-3 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right">Total Gross</th>
-                  <th className="px-4 py-3 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right text-rose-600">Total Deductions</th>
-                  <th className="px-4 py-3 font-semibold text-slate-500 uppercase tracking-wider text-xs text-right text-emerald-600">Total Net Pay</th>
-                  <th className="px-4 py-3 font-semibold text-slate-500 uppercase tracking-wider text-xs text-center">Actions</th>
+                  <th className={styles.thBase}>Employee</th>
+                  <th className={styles.thBase}>Month</th>
+                  <th className={cn(styles.thBase, "text-right")}>Total Gross</th>
+                  <th className={cn(styles.thBase, "text-right text-rose-600")}>Total Deductions</th>
+                  <th className={cn(styles.thBase, "text-right text-emerald-600")}>Total Net Pay</th>
+                  <th className={cn(styles.thBase, "text-center")}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {groupedPayslips.map((group: any) => (
                   <React.Fragment key={group.id}>
                     {/* Group Header Row */}
-                    <TableRow className="bg-slate-50/50 hover:bg-slate-100/80 cursor-pointer transition-colors border-l-4 border-l-transparent hover:border-l-primary/40" onClick={() => toggleGroup(group.id)}>
+                    <TableRow className={styles.groupRow} onClick={() => toggleGroup(group.id)}>
                         <TableCell className="text-center">
-                            {expandedGroups[group.id] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                            {expandedGroups[group.id] ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                         </TableCell>
                         <TableCell className="font-semibold text-slate-800">{getEmployeeName(group.userId)}</TableCell>
                         <TableCell className="font-medium text-slate-600">{group.month}/{group.year}</TableCell>
@@ -394,16 +386,15 @@ export default function PayslipHistory() {
                         <TableCell></TableCell>
                     </TableRow>
                     
-                    {/* Expanded Content */}
+                    {/* Expanded Summary */}
                     {expandedGroups[group.id] && (
                         <>
-                            {/* Summary Statistics Row */}
-                            <TableRow className="bg-slate-50/30">
+                            <TableRow className={styles.expandedSummaryBg}>
                                 <TableCell></TableCell>
                                 <TableCell colSpan={6} className="p-4">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm border border-slate-200/60 p-5 rounded-2xl bg-white/60 shadow-sm">
+                                    <div className={styles.expandedSummaryCard}>
                                         <div>
-                                            <h4 className="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
+                                            <h4 className={styles.sectionTitle}>
                                                 <Pencil className="w-4 h-4 text-blue-500" /> Monthly Hours
                                             </h4>
                                             <div className="grid grid-cols-2 gap-y-2">
@@ -416,7 +407,7 @@ export default function PayslipHistory() {
                                             </div>
                                         </div>
                                         <div>
-                                            <h4 className="font-semibold text-slate-800 mb-3 pb-2 border-b border-slate-100 flex items-center gap-2">
+                                            <h4 className={styles.sectionTitle}>
                                                 <Trash2 className="w-4 h-4 text-rose-500" /> Monthly Deductions
                                             </h4>
                                             <div className="grid grid-cols-2 gap-y-2">
@@ -440,7 +431,7 @@ export default function PayslipHistory() {
 
                             {/* Detailed Slip Rows */}
                             {group.slips.map((slip: Payslip) => (
-                                <TableRow key={slip.id} className="bg-white hover:bg-gray-50 transition-colors border-b border-gray-100">
+                                <TableRow key={slip.id} className={styles.detailRow}>
                                     <TableCell></TableCell>
                                     <TableCell className="pl-10 text-slate-500 text-sm border-l-4 border-l-transparent hover:border-l-primary/20">
                                         {slip.period === 1 ? '1st Half (1-15)' : '2nd Half (16-End)'}
@@ -450,16 +441,22 @@ export default function PayslipHistory() {
                                     <TableCell className="text-right text-rose-500 text-sm font-mono">-₱{((slip.grossPay - slip.netPay) / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                                     <TableCell className="text-right text-emerald-600 font-bold text-sm font-mono">₱{(slip.netPay / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                                     <TableCell className="text-center">
-                                        <div className="flex justify-center gap-2">
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-emerald-600 hover:bg-emerald-50 rounded-full" onClick={(e) => { e.stopPropagation(); handleView(slip); }} title="View Details">
+                                        <div className={styles.actionBtnGroup}>
+                                            <Button variant="ghost" size="icon" className={styles.viewBtn} onClick={(e) => { e.stopPropagation(); handleView(slip); }} title="View Details">
                                                 <Eye className="w-4 h-4" />
                                             </Button>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-blue-600 hover:bg-blue-50 rounded-full" onClick={(e) => { e.stopPropagation(); handleEdit(slip); }} title="Edit">
-                                                <Pencil className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-red-600 hover:bg-red-50 rounded-full" onClick={(e) => { e.stopPropagation(); handleDelete(slip); }} title="Delete">
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
+                                            
+                                            {/* RBAC: Only Payroll/Admin can edit or delete */}
+                                            {canManagePayroll && (
+                                              <>
+                                                <Button variant="ghost" size="icon" className={styles.editBtn} onClick={(e) => { e.stopPropagation(); handleEdit(slip); }} title="Edit">
+                                                    <Pencil className="w-4 h-4" />
+                                                </Button>
+                                                <Button variant="ghost" size="icon" className={styles.deleteBtn} onClick={(e) => { e.stopPropagation(); handleDelete(slip); }} title="Delete">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                              </>
+                                            )}
                                         </div>
                                     </TableCell>
                                 </TableRow>
@@ -468,6 +465,7 @@ export default function PayslipHistory() {
                     )}
                   </React.Fragment>
               ))}
+              
               {(!groupedPayslips || groupedPayslips.length === 0) && (
                 <TableRow>
                     <TableCell colSpan={7} className="text-center py-16 text-slate-400">
@@ -487,35 +485,45 @@ export default function PayslipHistory() {
             <DialogHeader>
                 <DialogTitle>Payslip Details</DialogTitle>
                 <DialogDescription>
-                   Detailed breakdown for {selectedPayslip && getEmployeeName(String(selectedPayslip.userId))}
+                    Detailed breakdown for {selectedPayslip && getEmployeeName(String(selectedPayslip.userId))}
                 </DialogDescription>
             </DialogHeader>
             {selectedPayslip && (
              <div className="grid gap-6 py-4">
-                <div className="grid grid-cols-2 gap-8 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <div className={styles.detailCard}>
                    <div>
-                     <h3 className="font-medium text-sm text-slate-500 uppercase tracking-wider border-b pb-2 mb-3">Earnings</h3>
+                     <h3 className={styles.sectionTitle}>Earnings</h3>
                      <div className="space-y-2 text-sm">
                          <div className="flex justify-between"><span className="text-slate-600">Basic Salary</span><span className="font-medium">₱{(selectedPayslip.basicSalary / 100).toLocaleString()}</span></div>
-                         <div className="flex justify-between"><span className="text-slate-600">Overtime</span><span className="font-medium">₱{((selectedPayslip.allowances?.overtime || 0) / 100).toLocaleString()}</span></div>
-                         <div className="flex justify-between"><span className="text-slate-600">Night Diff</span><span className="font-medium">₱{((selectedPayslip.allowances?.nightDiff || 0) / 100).toLocaleString()}</span></div>
-                         {selectedPayslip.allowances?.bonuses > 0 && <div className="flex justify-between"><span className="text-slate-600">Bonuses</span><span className="font-medium">₱{(selectedPayslip.allowances.bonuses / 100).toLocaleString()}</span></div>}
-                         {selectedPayslip.allowances?.otherAllowances > 0 && <div className="flex justify-between"><span className="text-slate-600">Allowances</span><span className="font-medium">₱{(selectedPayslip.allowances.otherAllowances / 100).toLocaleString()}</span></div>}
+                         {selectedPayslip.overtimePay > 0 && <div className="flex justify-between"><span className="text-slate-600">Overtime</span><span className="font-medium">₱{(selectedPayslip.overtimePay / 100).toLocaleString()}</span></div>}
+                         {selectedPayslip.nightDiffPay > 0 && <div className="flex justify-between"><span className="text-slate-600">Night Diff</span><span className="font-medium">₱{(selectedPayslip.nightDiffPay / 100).toLocaleString()}</span></div>}
+                         
+                         {/* Map JSON Array of Allowances */}
+                         {(selectedPayslip.allowances as PayItems[] || []).map((item, idx) => (
+                             <div key={`allowance-${idx}`} className="flex justify-between"><span className="text-slate-600">{item.name}</span><span className="font-medium">₱{(item.amount / 100).toLocaleString()}</span></div>
+                         ))}
+                         
                          <div className="pt-2 border-t flex justify-between font-bold text-slate-800"><span>Total Gross</span><span>₱{(selectedPayslip.grossPay / 100).toLocaleString()}</span></div>
                      </div>
                    </div>
                    <div>
-                      <h3 className="font-medium text-sm text-slate-500 uppercase tracking-wider border-b pb-2 mb-3">Deductions</h3>
+                      <h3 className={styles.sectionTitle}>Deductions</h3>
                       <div className="space-y-2 text-sm">
-                          <div className="flex justify-between"><span className="text-slate-600">SSS</span><span className="font-medium">₱{((selectedPayslip.deductions?.sss || 0) / 100).toLocaleString()}</span></div>
-                          <div className="flex justify-between"><span className="text-slate-600">PhilHealth</span><span className="font-medium">₱{((selectedPayslip.deductions?.philHealth || 0) / 100).toLocaleString()}</span></div>
-                          <div className="flex justify-between"><span className="text-slate-600">Pag-IBIG</span><span className="font-medium">₱{((selectedPayslip.deductions?.pagIbig || 0) / 100).toLocaleString()}</span></div>
-                          {selectedPayslip.deductions?.others > 0 && <div className="flex justify-between"><span className="text-slate-600">Others</span><span className="font-medium">₱{((selectedPayslip.deductions?.others || 0) / 100).toLocaleString()}</span></div>}
+                          <div className="flex justify-between"><span className="text-slate-600">SSS</span><span className="font-medium">₱{((selectedPayslip.sssContribution || 0) / 100).toLocaleString()}</span></div>
+                          <div className="flex justify-between"><span className="text-slate-600">PhilHealth</span><span className="font-medium">₱{((selectedPayslip.philHealthContribution || 0) / 100).toLocaleString()}</span></div>
+                          <div className="flex justify-between"><span className="text-slate-600">Pag-IBIG</span><span className="font-medium">₱{((selectedPayslip.pagIbigContribution || 0) / 100).toLocaleString()}</span></div>
+                          {selectedPayslip.withholdingTax > 0 && <div className="flex justify-between"><span className="text-slate-600">Withholding Tax</span><span className="font-medium">₱{((selectedPayslip.withholdingTax || 0) / 100).toLocaleString()}</span></div>}
+
+                          {/* Map JSON Array of other deductions */}
+                          {(selectedPayslip.otherDeductions as PayItems[] || []).map((item, idx) => (
+                             <div key={`deduction-${idx}`} className="flex justify-between"><span className="text-slate-600">{item.name}</span><span className="font-medium">₱{(item.amount / 100).toLocaleString()}</span></div>
+                          ))}
+
                           <div className="pt-2 border-t flex justify-between font-bold text-rose-600"><span>Total Deductions</span><span>-₱{((selectedPayslip.grossPay - selectedPayslip.netPay) / 100).toLocaleString()}</span></div>
                        </div>
                    </div>
                 </div>
-                <div className="flex justify-between items-center p-4 bg-green-50 border border-green-100 rounded-xl">
+                <div className={styles.netPayBanner}>
                    <span className="text-sm font-bold text-green-800 uppercase tracking-wide">Net Pay</span>
                    <span className="text-2xl font-bold text-green-700">₱{(selectedPayslip.netPay / 100).toLocaleString()}</span>
                 </div>
@@ -527,7 +535,7 @@ export default function PayslipHistory() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog */}
+      {/* Edit Dialog (RBAC Protected logically by the button that opens it) */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="max-w-3xl rounded-2xl">
             <DialogHeader>
@@ -540,7 +548,7 @@ export default function PayslipHistory() {
                 <div className="grid grid-cols-2 gap-6">
                     {/* Left Column: Inputs */}
                     <div className="space-y-4">
-                        <h3 className="font-medium text-sm text-slate-500 uppercase tracking-wider border-b border-slate-100 pb-2">Hours & Adjustments</h3>
+                        <h3 className={styles.sectionTitle}>Hours & Adjustments</h3>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <Label className="text-xs text-slate-500">Reg Hours</Label>
@@ -575,7 +583,7 @@ export default function PayslipHistory() {
 
                     {/* Right Column: Computed Values */}
                     <div className="space-y-4 bg-slate-50/80 p-5 rounded-2xl border border-slate-100">
-                         <h3 className="font-medium text-sm text-slate-500 uppercase tracking-wider border-b border-slate-200 pb-2">Calculated Summary</h3>
+                         <h3 className={styles.sectionTitle}>Calculated Summary</h3>
                          <div className="space-y-2 text-sm">
                             <div className="flex justify-between"><span className="text-slate-500">Basic Salary:</span><span className="font-medium text-slate-700">₱{editForm.basicSalary.toLocaleString()}</span></div>
                             <div className="flex justify-between"><span className="text-slate-500">Overtime Pay:</span><span className="font-medium text-slate-700">₱{editForm.overtimePay.toLocaleString()}</span></div>

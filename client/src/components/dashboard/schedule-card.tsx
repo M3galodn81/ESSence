@@ -32,7 +32,7 @@ export default function ScheduleCard({ schedules, isLoading }: ScheduleCardProps
 
   // Get config for current shift type
   const shift = todaySchedule 
-    ? (SHIFT_CONFIG[todaySchedule.type as keyof typeof SHIFT_CONFIG] || SHIFT_CONFIG.morning)
+    ? (SHIFT_CONFIG[todaySchedule.shiftType as keyof typeof SHIFT_CONFIG] || SHIFT_CONFIG.morning)
     : null;
 
   return (

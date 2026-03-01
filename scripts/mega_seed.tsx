@@ -97,34 +97,20 @@ const getHolidayType = (date: Date, holidayList: any[]) => {
     return holiday ? holiday.type : null;
 };
 
-// --- NEW HELPER: Map Job Titles to "cashier", "bar", "server", "kitchen" ---
 const mapPositionToShiftRole = (position: string): string => {
     const pos = position.toLowerCase();
     
-    if (pos.includes("cook") || pos.includes("chef") || pos.includes("dishwasher")) {
-        return "kitchen";
-    }
-    if (pos.includes("bartender")) {
-        return "bar";
-    }
-    if (pos.includes("cashier")) {
-        return "cashier";
-    }
-    // Default Hosts and Servers to "server"
-    if (pos.includes("server") || pos.includes("host") || pos.includes("waiter")) {
-        return "server";
-    }
-    
-    return "server"; // Fallback
+    if (pos.includes("cook") || pos.includes("chef") || pos.includes("dishwasher")) return "kitchen";
+    if (pos.includes("bartender")) return "bar";
+    if (pos.includes("cashier")) return "cashier";
+    return "server"; 
 };
 
-// --- SHIFT GENERATOR HELPER ---
 const getRandomShift = (role: string, date: Date) => {
     const rand = Math.random();
     let type = "morning";
     let startHour = 8;
     
-    // Logic: Customize probabilities based on granular role
     if (role === "Bartender") {
         if (rand < 0.1) { type = "morning"; startHour = 8; }
         else if (rand < 0.7) { type = "afternoon"; startHour = 16; } 
@@ -158,7 +144,6 @@ const getRandomShift = (role: string, date: Date) => {
     return { type, start, end };
 };
 
-// --- Dummy Data for New Columns ---
 const dummyAddress = {
     street: "123 Main St",
     city: "Metro Manila",
@@ -205,6 +190,8 @@ async function seed() {
     position: "System Administrator",
     employeeId: "ADM-001",
     hireDate: new Date("2023-01-01"),
+    gender: "Male",
+    civilStatus: "Single",
     salary: 8000000, 
     isActive: true,
     address: dummyAddress,
@@ -223,48 +210,50 @@ async function seed() {
     position: "Payroll Specialist",
     employeeId: "PAY-001",
     hireDate: new Date("2023-03-01"),
+    gender: "Female",
+    civilStatus: "Married",
     salary: 4500000, 
     isActive: true,
     address: dummyAddress,
     emergencyContact: dummyEmergencyContact
   }).returning();
 
-  // SINGLE MANAGER
-  const managersData = [
-    { username: "robert.chen", firstName: "Robert", lastName: "Chen", department: "Operations", position: "General Manager", employeeId: "MAN-001", salary: 7500000 },
-  ];
-
-  const managers = [];
-  for (const m of managersData) {
-    const [created] = await db.insert(users).values({
-      ...m,
-      email: `${m.username}@essence.com`,
+  // Manager
+  const [mainManager] = await db.insert(users).values({
+      username: "robert.chen", 
+      firstName: "Robert", 
+      lastName: "Chen", 
+      department: "Operations", 
+      position: "General Manager", 
+      employeeId: "MAN-001", 
+      salary: 7500000,
+      email: `robert.chen@essence.com`,
       password,
       role: "manager",
       hireDate: new Date("2023-02-01"),
+      gender: "Male",
+      civilStatus: "Married",
       isActive: true,
       annualLeaveBalance: 20,
       sickLeaveBalance: 15,
       address: dummyAddress,
       emergencyContact: dummyEmergencyContact
-    }).returning();
-    managers.push(created);
-  }
+  }).returning();
 
-  const mainManager = managers[0];
+  const managers = [mainManager];
 
-  // Employees
+  // Employees - Added Gender & Civil Status for DOLE leave logic testing
   const employeeProfiles = [
-    { first: "Marco", last: "Dalisay", pos: "Server", dept: "Operations" },
-    { first: "Sofia", last: "Reyes", pos: "Host", dept: "Operations" },
-    { first: "Liam", last: "Smith", pos: "Bartender", dept: "Operations" },
-    { first: "Angela", last: "Cruz", pos: "Server", dept: "Operations" },
-    { first: "Miguel", last: "Santos", pos: "Bartender", dept: "Operations" },
-    { first: "James", last: "Oliver", pos: "Line Cook", dept: "Kitchen" },
-    { first: "Elena", last: "Torres", pos: "Prep Cook", dept: "Kitchen" },
-    { first: "David", last: "Kim", pos: "Line Cook", dept: "Kitchen" },
-    { first: "Sarah", last: "Jenkins", pos: "Prep Cook", dept: "Kitchen" },
-    { first: "Carlos", last: "Rivera", pos: "Dishwasher", dept: "Kitchen" }
+    { first: "Marco", last: "Dalisay", pos: "Server", dept: "Operations", gender: "Male", civilStatus: "Single" },
+    { first: "Sofia", last: "Reyes", pos: "Host", dept: "Operations", gender: "Female", civilStatus: "Single" },
+    { first: "Liam", last: "Smith", pos: "Bartender", dept: "Operations", gender: "Male", civilStatus: "Married" }, // Eligible for paternity
+    { first: "Angela", last: "Cruz", pos: "Server", dept: "Operations", gender: "Female", civilStatus: "Married" }, // Eligible for maternity, magna carta
+    { first: "Miguel", last: "Santos", pos: "Bartender", dept: "Operations", gender: "Male", civilStatus: "Single" },
+    { first: "James", last: "Oliver", pos: "Line Cook", dept: "Kitchen", gender: "Male", civilStatus: "Single" },
+    { first: "Elena", last: "Torres", pos: "Prep Cook", dept: "Kitchen", gender: "Female", civilStatus: "Separated" }, // Eligible for solo parent
+    { first: "David", last: "Kim", pos: "Line Cook", dept: "Kitchen", gender: "Male", civilStatus: "Married" },
+    { first: "Sarah", last: "Jenkins", pos: "Prep Cook", dept: "Kitchen", gender: "Female", civilStatus: "Married" },
+    { first: "Carlos", last: "Rivera", pos: "Dishwasher", dept: "Kitchen", gender: "Male", civilStatus: "Single" }
   ];
 
   const employees = [];
@@ -282,13 +271,19 @@ async function seed() {
       role: "employee",
       department: profile.dept,
       position: profile.pos,
+      gender: profile.gender,
+      civilStatus: profile.civilStatus,
       employeeId: `EMP-${String(i + 1).padStart(3, '0')}`,
       managerId: mainManager.id,
       hireDate: new Date("2024-01-15"),
       salary: 2500000 + (Math.floor(Math.random() * 10) * 100000), 
       isActive: true,
+      
+      // Explicitly setting a few to show the feature works, the rest use defaults from schema
       annualLeaveBalance: 15,
       sickLeaveBalance: 10,
+      serviceIncentiveLeaveBalance: 5,
+      
       address: dummyAddress,
       emergencyContact: dummyEmergencyContact
     }).returning();
@@ -315,7 +310,6 @@ async function seed() {
     { name: "New Year's Day", date: new Date("2026-01-01"), type: "regular" },
   ];
   
-  // Adapt holiday object to new schema
   const holidayInserts = holidayList.map(h => ({
       ...h,
       description: h.name,
@@ -330,10 +324,10 @@ async function seed() {
   ]);
 
   // =========================================================================
-  // 4. LEAVE REQUESTS (UPDATED WITH PENDING)
+  // 4. LEAVE REQUESTS (UPDATED WITH PENDING & DOLE TYPES)
   // =========================================================================
   console.log("Generating leave requests...");
-  const leaveTypes = ["annual", "sick"];
+
   const leaveReasons = [
     "Family vacation", "Not feeling well", "Personal appointment", 
     "Emergency at home", "Scheduled medical checkup", "Out of town trip"
@@ -347,30 +341,41 @@ async function seed() {
   const leaveRequestsData = [];
   
   for (const emp of employees) {
-    // Generate 2-5 requests per employee
     const numRequests = Math.floor(Math.random() * 4) + 2; 
 
+    // Determine available leave types for this specific employee
+    const availableTypes = ["annual", "sick", "bereavement"];
+    if (emp.gender === "Female") {
+        availableTypes.push("maternity", "magna_carta", "vawc");
+    }
+    if (emp.gender === "Male" && emp.civilStatus === "Married") {
+        availableTypes.push("paternity");
+    }
+    if (emp.civilStatus === "Separated" || emp.civilStatus === "Widowed") {
+        availableTypes.push("solo_parent");
+    }
+
     for (let i = 0; i < numRequests; i++) {
-        // Random date in the past 6 months or next 1 month
         const dateOffset = Math.floor(Math.random() * 210) - 180; // -180 to +30 days
         const startDate = new Date();
         startDate.setDate(startDate.getDate() + dateOffset);
         
-        const days = Math.floor(Math.random() * 3) + 1; // 1-3 days
+        const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+        
+        // Maternity leaves are long, others are short
+        const days = type === 'maternity' ? 105 : (type === 'paternity' ? 7 : Math.floor(Math.random() * 3) + 1); 
+        
         const endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + (days - 1));
 
-        const type = leaveTypes[Math.floor(Math.random() * leaveTypes.length)];
         const reason = leaveReasons[Math.floor(Math.random() * leaveReasons.length)];
         
-        // Determine status (UPDATED LOGIC)
         const randStatus = Math.random();
         let status = "approved";
         let rejectionReason = null;
         let approvedBy = mainManager.id;
         let approvedAt = new Date(startDate.getTime() - (2 * 24 * 60 * 60 * 1000));
 
-        // Logic: 20% Pending, 20% Rejected, 60% Approved
         if (randStatus < 0.20) {
             status = "pending";
             approvedBy = null;
@@ -378,7 +383,7 @@ async function seed() {
         } else if (randStatus < 0.40) {
             status = "rejected";
             rejectionReason = rejectionReasons[Math.floor(Math.random() * rejectionReasons.length)];
-            approvedBy = mainManager.id; // technically "rejected by"
+            approvedBy = mainManager.id; 
             approvedAt = new Date(startDate.getTime() - (2 * 24 * 60 * 60 * 1000));
         }
 
@@ -394,7 +399,7 @@ async function seed() {
             rejectionReason,
             approvedBy,
             approvedAt,
-            createdAt: new Date(startDate.getTime() - (7 * 24 * 60 * 60 * 1000)) // Applied 7 days before
+            createdAt: new Date(startDate.getTime() - (7 * 24 * 60 * 60 * 1000))
         });
     }
   }
@@ -430,13 +435,13 @@ async function seed() {
       createdAt: new Date()
     },
     {
-      userId: employees[2].id,
-      type: "annual",
+      userId: employees[2].id, // Liam (Married Male)
+      type: "paternity",
       startDate: new Date(new Date().setDate(new Date().getDate() + 20)),
-      endDate: new Date(new Date().setDate(new Date().getDate() + 25)),
-      days: 5,
+      endDate: new Date(new Date().setDate(new Date().getDate() + 26)),
+      days: 7,
       dayType: "whole",
-      reason: "Planned Trip Abroad",
+      reason: "Expecting a newborn",
       status: "pending",
       rejectionReason: null,
       approvedBy: null,
@@ -454,61 +459,14 @@ async function seed() {
   console.log("Generating 1 year of incident reports...");
   
   const reportTemplates = [
-    { 
-      category: "awol", 
-      title: "Absent Without Official Leave", 
-      severity: "high", 
-      desc: "Employee failed to show up for the afternoon shift and did not answer calls.", 
-      location: "N/A", 
-      actionTaken: "Attempted to contact employee; documented for HR." 
-    },
-    { 
-      category: "tardiness", 
-      title: "Repeated Late Arrival", 
-      severity: "low", 
-      desc: "Employee arrived 20 minutes late for the third time this week.", 
-      location: "Front Desk", 
-      actionTaken: "Verbal warning issued regarding punctuality." 
-    },
-    { 
-      category: "breakages", 
-      title: "Plateware Damage during Rush", 
-      severity: "low", 
-      desc: "Server dropped a tray of dinner plates while clearing Table 4.", 
-      location: "Dining Hall", 
-      actionTaken: "Area cordoned off and cleaned immediately.", 
-      details: { items: [{ name: "Dinner Plate", quantity: 4 }, { name: "Wine Glass", quantity: 1 }] } 
-    },
-    { 
-      category: "cashier_shortage", 
-      title: "POS Cash Discrepancy", 
-      severity: "medium", 
-      desc: "End-of-day count showed a shortage of $50 compared to digital records.", 
-      location: "Main Bar POS", 
-      actionTaken: "Re-counting all receipts and checking security footage.", 
-      details: { items: [{ name: "Shortage Adjustment", quantity: 50 }] } 
-    },
-    { 
-      category: "awan", 
-      title: "Advanced Notice Leave", 
-      severity: "low", 
-      desc: "Employee requested emergency leave 48 hours in advance due to family matters.", 
-      location: "N/A", 
-      actionTaken: "Schedule adjusted to cover the gap.", 
-      details: {} 
-    },
-    { 
-      category: "others", 
-      title: "Uniform Policy Violation", 
-      severity: "low", 
-      desc: "Staff member arrived without the required apron.", 
-      location: "Staff Room", 
-      actionTaken: "Provided a spare apron for the shift.", 
-      details: {} 
-    }
+    { category: "awol", title: "Absent Without Official Leave", severity: "high", desc: "Employee failed to show up for the afternoon shift and did not answer calls.", location: "N/A", actionTaken: "Attempted to contact employee; documented for HR." },
+    { category: "tardiness", title: "Repeated Late Arrival", severity: "low", desc: "Employee arrived 20 minutes late for the third time this week.", location: "Front Desk", actionTaken: "Verbal warning issued regarding punctuality." },
+    { category: "breakages", title: "Plateware Damage during Rush", severity: "low", desc: "Server dropped a tray of dinner plates while clearing Table 4.", location: "Dining Hall", actionTaken: "Area cordoned off and cleaned immediately.", details: { items: [{ name: "Dinner Plate", quantity: 4 }, { name: "Wine Glass", quantity: 1 }] } },
+    { category: "cashier_shortage", title: "POS Cash Discrepancy", severity: "medium", desc: "End-of-day count showed a shortage of $50 compared to digital records.", location: "Main Bar POS", actionTaken: "Re-counting all receipts and checking security footage.", details: { items: [{ name: "Shortage Adjustment", quantity: 50 }] } },
+    { category: "awan", title: "Advanced Notice Leave", severity: "low", desc: "Employee requested emergency leave 48 hours in advance due to family matters.", location: "N/A", actionTaken: "Schedule adjusted to cover the gap.", details: {} },
+    { category: "others", title: "Uniform Policy Violation", severity: "low", desc: "Staff member arrived without the required apron.", location: "Staff Room", actionTaken: "Provided a spare apron for the shift.", details: {} }
   ];
   
-  // Sample explanations for NTEs
   const nteExplanations = [
     "I apologize for the oversight. There was a heavy accident on the highway causing severe traffic.",
     "I honestly forgot to double-check the schedule. It won't happen again.",
@@ -525,34 +483,28 @@ async function seed() {
 
   for (let i = 0; i < TOTAL_REPORTS; i++) {
     const template = reportTemplates[Math.floor(Math.random() * reportTemplates.length)];
-    
-    // Logic: Managers report Employees usually
     const reporter = managers[Math.floor(Math.random() * managers.length)];
     const subject = employees[Math.floor(Math.random() * employees.length)];
-    
     const randomTime = oneYearAgo.getTime() + Math.random() * (new Date().getTime() - oneYearAgo.getTime());
     const dateOccurred = new Date(randomTime);
     const isResolved = Math.random() > 0.4;
 
-    // Determine NTE Requirement based on Category
     let requiresNTE = false;
     if (['awol', 'cashier_shortage', 'tardiness'].includes(template.category)) {
-        requiresNTE = Math.random() > 0.1; // 90% chance
+        requiresNTE = Math.random() > 0.1; 
     } else if (template.category === 'breakages') {
-        requiresNTE = Math.random() > 0.6; // 40% chance
+        requiresNTE = Math.random() > 0.6; 
     }
 
-    // Determine if NTE was submitted (if required)
     let nteContent = null;
     if (requiresNTE && Math.random() > 0.3) {
         nteContent = nteExplanations[Math.floor(Math.random() * nteExplanations.length)];
     }
 
-    // Prepare involved parties string
     const involved = `${subject.firstName} ${subject.lastName}`;
     
     reportsData.push({
-      userId: reporter.id, // The Manager filing the report
+      userId: reporter.id, 
       category: template.category,
       title: template.title,
       description: template.desc,
@@ -563,12 +515,9 @@ async function seed() {
       timeOccurred: `${10 + Math.floor(Math.random() * 12)}:${Math.floor(Math.random() * 6) * 10}`,
       partiesInvolved: involved,
       witnesses: "Shift Lead / On-duty Staff",
-      
-      // NTE Fields
       nteRequired: requiresNTE,
-      assignedTo: requiresNTE ? subject.id : null, // Assign to the subject if NTE required
+      assignedTo: requiresNTE ? subject.id : null, 
       nteContent: nteContent,
-
       actionTaken: isResolved ? `Resolution: ${template.actionTaken}` : template.actionTaken,
       details: template.details || {},
       images: [],
@@ -578,7 +527,6 @@ async function seed() {
     });
   }
 
-  // Ensure a few recent critical reports for priority sorting
   reportsData.push({
       userId: mainManager.id,
       category: "others",
@@ -591,7 +539,7 @@ async function seed() {
       timeOccurred: "08:30",
       partiesInvolved: `${employees[0].firstName} ${employees[0].lastName}`,
       witnesses: "Front of House Team",
-      nteRequired: false, // Usually safety hazards don't need NTE from specific staff unless negligent
+      nteRequired: false, 
       assignedTo: null,
       nteContent: null,
       actionTaken: "Maintenance called, area cordoned off.",
@@ -600,7 +548,6 @@ async function seed() {
       createdAt: new Date()
   });
 
-  // Ensure a specific recent Pending NTE for testing
   reportsData.push({
       userId: mainManager.id,
       category: "tardiness",
@@ -609,13 +556,13 @@ async function seed() {
       severity: "medium",
       status: "pending",
       location: "Entrance",
-      dateOccurred: new Date(), // Today
+      dateOccurred: new Date(), 
       timeOccurred: "09:00",
       partiesInvolved: `${employees[0].firstName} ${employees[0].lastName}`,
       witnesses: "Reception",
       nteRequired: true,
-      assignedTo: employees[0].id, // Assign to first employee for testing
-      nteContent: null, // Empty content to show "Action Required"
+      assignedTo: employees[0].id, 
+      nteContent: null, 
       actionTaken: "Waiting for explanation.",
       details: {},
       images: [],
@@ -641,7 +588,6 @@ async function seed() {
   periods.reverse();
 
   const payslipsToInsert = [];
-  // UPDATED: Iterate only over `employees`, excluding `managers`
   for (const emp of employees) {
     for (const p of periods) {
         let periodRegHours = 0; let periodOtHours = 0; let periodNdHours = 0;
@@ -650,7 +596,7 @@ async function seed() {
 
         for (let d = p.startDay; d <= p.endDay; d++) {
             const workDate = new Date(p.year, p.month, d);
-            if (workDate.getDay() === 0) continue; // Sunday off
+            if (workDate.getDay() === 0) continue; 
 
             if (Math.random() > 0.1) {
                 const { start, end } = getRandomShift(emp.position || "Staff", workDate);
@@ -671,7 +617,6 @@ async function seed() {
                     userId: emp.id, date: workDate, timeIn: timeIn, timeOut: timeOut,
                     status: "clocked_out", totalBreakMinutes: breakMinutes, totalWorkMinutes: workMinutes, 
                     notes: "Regular shift",
-                    // New columns
                     clockInDevice: "Biometric Scanner A",
                     clockOutDevice: "Biometric Scanner A",
                     isLate: timeIn > start,
@@ -712,7 +657,6 @@ async function seed() {
         const pagIbig = computePagIbig(grossPay);
         const netPay = Math.max(0, grossPay - (sss + philHealth + pagIbig));
 
-        // Schema requires integers (cents) for DB storage
         payslipsToInsert.push({
             userId: emp.id, month: p.month + 1, year: p.year, period: p.periodNum,
             basicSalary: Math.round(basicSalary * 100),
@@ -720,13 +664,11 @@ async function seed() {
             nightDiffPay: Math.round(nightDiffPay * 100),
             holidayPay: Math.round(holidayPay * 100),
             
-            // Explicit Deductions
             sssContribution: Math.round(sss * 100),
             philHealthContribution: Math.round(philHealth * 100),
             pagIbigContribution: Math.round(pagIbig * 100),
             withholdingTax: 0,
 
-            // JSON fields for extras
             allowances: [{ name: "Rice Subsidy", amount: 100000 }], 
             otherDeductions: [], 
 
@@ -753,9 +695,8 @@ async function seed() {
   startOfWeek.setHours(0,0,0,0);
 
   const shiftData = [];
-  // UPDATED: Iterate only over `employees`, excluding `managers`
   for (const emp of employees) {
-    for (let d = 0; d < 6; d++) { // Mon-Sat
+    for (let d = 0; d < 6; d++) { 
       const workDate = new Date(startOfWeek);
       workDate.setDate(startOfWeek.getDate() + d);
       
@@ -767,8 +708,8 @@ async function seed() {
         date: workDate,
         startTime: start,
         endTime: end,
-        shiftType: shiftTimeType, // "Morning", "Afternoon", "Night"
-        shiftRole: mappedRole, // Now explicitly using the column
+        shiftType: shiftTimeType, 
+        shiftRole: mappedRole, 
         location: emp.department === 'Kitchen' ? 'Kitchen' : 'Main Hall',
         isRemote: false,
         gracePeriodMinutes: 15,
@@ -785,23 +726,15 @@ async function seed() {
   const payrollByMonth = payslipsToInsert.reduce((acc: any, p: any) => {
       const key = `${p.year}-${p.month}`;
       if (!acc[key]) acc[key] = 0;
-      acc[key] += p.grossPay; // This is in "cents" (grossPay * 100)
+      acc[key] += p.grossPay; 
       return acc;
   }, {});
 
   for (const [key, totalCostInCents] of Object.entries(payrollByMonth)) {
       const [y, m] = key.split('-');
-      
-      // Randomize labor cost percentage between 9.0 and 13.0
-      // Math.random() * (max - min) + min
       const randomPercentage = Math.random() * (13 - 9) + 9;
-      
-      // Calculate Total Sales based on the labor cost and the random percentage
-      // formula: Sales = LaborCost / Percentage
-      // Example: If Labor is 100k and % is 10, Sales is 1M.
       const totalSales = (totalCostInCents as number) / (randomPercentage / 100);
 
-      // Determine status based on your 12% benchmark
       let status = "Warning";
       let performanceRating = "warning";
 
@@ -816,9 +749,9 @@ async function seed() {
       laborData.push({
         month: parseInt(m), 
         year: parseInt(y),
-        totalSales: Math.round(totalSales), // Stored as integer
-        totalLaborCost: totalCostInCents as number, // Already stored as integer
-        laborCostPercentage: Math.round(randomPercentage * 100), // stored as integer (e.g., 1250 for 12.5%)
+        totalSales: Math.round(totalSales), 
+        totalLaborCost: totalCostInCents as number, 
+        laborCostPercentage: Math.round(randomPercentage * 100), 
         targetSales: Math.round(totalSales * 1.1),
         budgetedLaborCost: Math.round((totalCostInCents as number) * 0.95),
         status: status, 

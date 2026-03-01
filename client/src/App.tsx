@@ -54,95 +54,95 @@ function Router() {
         </MainLayout>
       )} />
       <ProtectedRoute path="/profile" component={() => (
-        <MainLayout>
+        <MainLayout title="My Profile">
           <Profile />
         </MainLayout>
       )} />
       <ProtectedRoute path="/leave-management" component={() => (
-        <MainLayout>
+        <MainLayout title="Leave Management">
           <LeaveManagement />
         </MainLayout>
       )} />
       <ProtectedRoute path="/payslips" component={() => (
-        <MainLayout>
+        <MainLayout title="My Payslips">
           <PayslipsEnhanced />
         </MainLayout>
       )} />
 
       <ProtectedRoute path="/payslip-history" component={() => (
-        <MainLayout>
+        <MainLayout title="Payslip History">
           <PayslipHistory />
         </MainLayout>
       )} />
       
       <ProtectedRoute path="/salary-computation" component={() => (
-        <MainLayout>
+        <MainLayout title="Salary Computation">
           <SalaryComputation />
         </MainLayout>
       )} />
       <ProtectedRoute path="/schedules" component={() => (
-        <MainLayout>
+        <MainLayout title="My Schedule">
           <Schedules />
         </MainLayout>
       )} />
       <ProtectedRoute path="/time-clock" component={() => (
-        <MainLayout>
+        <MainLayout title="Time Clock">
           <TimeClock />
         </MainLayout>
       )} />
       <ProtectedRoute path="/attendance" component={() => (
-        <MainLayout>
+        <MainLayout title="Attendance Logs">
           <Attendance />
         </MainLayout>
       )} />
       <ProtectedRoute path="/shift-management" component={() => (
-        <MainLayout>
+        <MainLayout title="Shift Management">
           <ShiftManagement />
         </MainLayout>
       )} />
       <ProtectedRoute path="/team-management" component={() => (
-        <MainLayout>
+        <MainLayout title="Team Management">
           <TeamManagement />
         </MainLayout>
       )} />
       <ProtectedRoute path="/reports" component={() => (
-        <MainLayout>
+        <MainLayout title="Reports">
           <Reports />
         </MainLayout>
       )} />
       <ProtectedRoute path="/payroll-management" component={() => (
-        <MainLayout>
+        <MainLayout title="Payroll Management">
           <PayslipManagement />
         </MainLayout>
       )} />
       <ProtectedRoute path="/labor-cost-analytics" component={() => (
-        <MainLayout>
+        <MainLayout title="Labor Cost Analytics">
           <LaborCostAnalytics />
         </MainLayout>
       )} />
       <ProtectedRoute path="/announcements" component={() => (
-        <MainLayout>
+        <MainLayout title="Announcements">
           <Announcements />
         </MainLayout>
       )} />
       <ProtectedRoute path="/user-management" component={() => (
-        <MainLayout>
+        <MainLayout title="User Management">
           <UserManagement />
         </MainLayout>
       )} />
 
       <ProtectedRoute path="/admin-attendance" component={() => (
-        <MainLayout>
+        <MainLayout title="Admin Attendance">
           <AdminAttendance />
         </MainLayout>
       )} />
       <ProtectedRoute path="/holiday-calendar" component={() => (
-        <MainLayout>
+        <MainLayout title="Holiday Calendar">
           <HolidayCalendar />
         </MainLayout>
       )} />
       <ProtectedRoute path="/qr-attendance" component={() => (
-        <MainLayout>
+        <MainLayout title="QR Attendance">
           <QRAttendance />
         </MainLayout>
       )} />

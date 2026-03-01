@@ -18,8 +18,9 @@ import { DollarSign, Plus, AlertCircle, CheckCircle, Lightbulb, TrendingUp, Tren
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from "recharts";
 import type { LaborCostData } from "@shared/schema";
 import { Loader2 } from "lucide-react";
-import { canViewLaborCostAnalysis } from "@/utils/permissions";
+import { Permission } from "@/lib/permissions";
 import { LABOR_THRESHOLDS, IDEAL_TARGET } from "@/utils/labor-metrics";
+import { usePermission } from "@/hooks/use-permission";
 
 const formSchema = z.object({
   month: z.number().min(1).max(12),
@@ -33,6 +34,8 @@ type LaborCostForm = z.infer<typeof formSchema>;
 
 export default function LaborCostAnalytics() {
   const { user } = useAuth();
+  const { hasPermission } = usePermission();
+  
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -232,7 +235,7 @@ export default function LaborCostAnalytics() {
       }));
   }, [laborCostData, timeRange]);
 
-  if (!canViewLaborCostAnalysis(user)) {
+  if (!hasPermission(Permission.VIEW_LABOR_COST)) {
     return (
       <div className="p-8 flex justify-center items-center h-screen bg-slate-50">
         <Card className="w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200 shadow-xl">
