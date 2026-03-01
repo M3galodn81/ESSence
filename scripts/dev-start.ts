@@ -23,47 +23,50 @@ async function main() {
   if (dbExists) {
     console.log('📊 Existing database found: ESS.db\n');
     console.log('Choose an option:');
-    console.log('  1. Use existing database (keep all data)');
-    console.log('  2. Create new database (delete existing data)');
-    console.log('  3. Cancel\n');
+    console.log('  1. Use existing database (keep all data, start server)');
+    console.log('  2. Update schema (generate & run migrations)');
+    console.log('  3. Create new database (no seeding)');
+    console.log('  4. Create new database and re-seed');
+    console.log('  5. Cancel\n');
 
-    const answer = await question('Enter your choice (1-3): ');
+    const answer = await question('Enter your choice (1-5): ');
 
-    if (answer.trim() === '3') {
+    if (answer.trim() === '5') {
       console.log('\n❌ Cancelled. Exiting...\n');
       rl.close();
       process.exit(0);
     } else if (answer.trim() === '2') {
-      console.log('\n⚠️  WARNING: This will delete all existing data!');
-      const confirm = await question('Are you sure? Type "yes" to confirm: ');
+      console.log('\n🔄 Updating database schema...');
+      console.log('How would you like to apply the schema changes?');
+      console.log('  1. Retain database (Safely generate and apply migrations)');
+      console.log('  2. Nuke it! (Delete DB & history, apply new schema, and re-seed)');
+      
+      const schemaOption = await question('\nEnter your choice (1-2): ');
 
-      if (confirm.trim().toLowerCase() === 'yes') {
-        console.log('\n🗑️  Deleting existing database...');
-
-        // Delete database and related files
-        const filesToDelete = [
-          dbPath,
-          `${dbPath}-shm`,
-          `${dbPath}-wal`
-        ];
-
-        filesToDelete.forEach(file => {
-          if (fs.existsSync(file)) {
-            fs.unlinkSync(file);
-            console.log(`   Deleted: ${path.basename(file)}`);
-          }
-        });
-
-        console.log('✅ Database deleted successfully\n');
-        console.log('🔄 Running migrations to create new database...\n');
-
-        // Run migrations
-        await runCommand('npm', ['run', 'db:migrate']);
-
-        console.log('\n✅ New database created successfully\n');
+      if (schemaOption.trim() === '2') {
+        await nukeDatabase(true); // true = seed after nuke
       } else {
-        console.log('\n❌ Database deletion cancelled. Using existing database.\n');
+        // Default to safe update
+        console.log('\n🔄 Applying schema changes safely (Retaining data)...');
+        try {
+          console.log('-> Generating new migrations...');
+          await runCommand('npx', ['drizzle-kit', 'generate']);
+          
+          console.log('-> Applying migrations...');
+          await runCommand('npm', ['run', 'db:migrate']);
+          
+          console.log('✅ Schema updated successfully\n');
+        } catch (error) {
+          console.error('\n❌ Failed to update schema. Please check your schema.ts for errors.\n');
+          rl.close();
+          process.exit(1);
+        }
       }
+
+    } else if (answer.trim() === '3') {
+      await nukeDatabase(false); // false = don't seed
+    } else if (answer.trim() === '4') {
+      await nukeDatabase(true);  // true = seed
     } else if (answer.trim() === '1') {
       console.log('\n✅ Using existing database\n');
     } else {
@@ -71,12 +74,25 @@ async function main() {
     }
   } else {
     console.log('📊 No existing database found.\n');
-    console.log('🔄 Creating new database...\n');
     
-    // Run migrations
+    console.log('🔄 Running migrations to create new database...');
+    await runCommand('npx', ['drizzle-kit', 'generate']);
     await runCommand('npm', ['run', 'db:migrate']);
+    console.log('✅ Migrations complete\n');
+
+    console.log('Would you like to seed the new database with initial data?');
+    console.log('  1. Yes, seed it');
+    console.log('  2. No, leave it empty\n');
     
-    console.log('\n✅ Database created successfully\n');
+    const seedAnswer = await question('Enter your choice (1-2): ');
+    
+    if (seedAnswer.trim() === '1') {
+        console.log('\n🌱 Seeding the database with fresh data...');
+        await runCommand('npm', ['run', 'db:seed']);
+        console.log('✅ Seeding complete\n');
+    } else {
+        console.log('\n✅ Database created empty.\n');
+    }
   }
 
   rl.close();
@@ -106,6 +122,55 @@ async function main() {
   });
 }
 
+// Extracted the Nuke logic into a reusable function
+async function nukeDatabase(shouldSeed: boolean) {
+  console.log('\n⚠️  WARNING: This will delete all existing data AND migration history!');
+  const confirm = await question('Are you sure? Type "yes" to confirm: ');
+
+  if (confirm.trim().toLowerCase() === 'yes') {
+    console.log('\n🗑️  Deleting existing database and migration history...');
+
+    // We target the DB files AND common Drizzle migration output folders
+    const pathsToDelete = [
+      dbPath,
+      `${dbPath}-shm`,
+      `${dbPath}-wal`,
+      path.join(process.cwd(), 'migrations'),
+      path.join(process.cwd(), 'drizzle'),
+      path.join(process.cwd(), 'server', 'migrations')
+    ];
+
+    pathsToDelete.forEach(targetPath => {
+      if (fs.existsSync(targetPath)) {
+        if (fs.statSync(targetPath).isDirectory()) {
+          fs.rmSync(targetPath, { recursive: true, force: true });
+        } else {
+          fs.unlinkSync(targetPath);
+        }
+        console.log(`   Deleted: ${path.basename(targetPath)}`);
+      }
+    });
+
+    console.log('✅ Database and history deleted successfully\n');
+    
+    console.log('🔄 Generating and applying fresh schema...');
+    await runCommand('npx', ['drizzle-kit', 'generate']);
+    await runCommand('npm', ['run', 'db:migrate']);
+    console.log('✅ Migrations complete\n');
+
+    if (shouldSeed) {
+        console.log('🌱 Seeding the database with fresh data...');
+        await runCommand('npm', ['run', 'db:seed']);
+        console.log('✅ Seeding complete\n');
+    } else {
+        console.log('✅ Database created empty (No seeding).\n');
+    }
+
+  } else {
+    console.log('\n❌ Database deletion cancelled. Using existing database.\n');
+  }
+}
+
 function runCommand(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, {
@@ -132,4 +197,3 @@ main().catch((error) => {
   rl.close();
   process.exit(1);
 });
-

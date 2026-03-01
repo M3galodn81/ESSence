@@ -66,14 +66,27 @@ export const users = sqliteTable("users", {
   salary: integer("salary"), // Stored in cents
   managerId: text("manager_id").references(() => users.id, { onDelete: "set null" }),
   
-  // -- Leave Balances --
+  // -- Leave Balances (Company & DOLE Mandated) --
   annualLeaveBalance: integer("annual_leave_balance").default(15),
   sickLeaveBalance: integer("sick_leave_balance").default(10),
-  serviceIncentiveLeaveBalance: integer("emergency_leave_balance").default(5),
+  serviceIncentiveLeaveBalance: integer("service_incentive_leave_balance").default(5), // SIL (DOLE)
+  bereavementLeaveBalance: integer("bereavement_leave_balance").default(3),
+  maternityLeaveBalance: integer("maternity_leave_balance").default(105), // Expanded Maternity Leave
+  paternityLeaveBalance: integer("paternity_leave_balance").default(7), // Paternity Leave Act
+  soloParentLeaveBalance: integer("solo_parent_leave_balance").default(7), // Solo Parents Welfare Act
+  magnaCartaLeaveBalance: integer("magna_carta_leave_balance").default(60), // Magna Carta for Women
+  vawcLeaveBalance: integer("vawc_leave_balance").default(10), // VAWC Leave
 
+  // -- Leave Balance Limits --
   annualLeaveBalanceLimit: integer("annual_leave_balance_limit").default(15),
   sickLeaveBalanceLimit: integer("sick_leave_balance_limit").default(10),
-  serviceIncentiveLeaveBalanceLimit: integer("emergency_leave_balance_limit").default(5),
+  serviceIncentiveLeaveBalanceLimit: integer("service_incentive_leave_balance_limit").default(5),
+  bereavementLeaveBalanceLimit: integer("bereavement_leave_balance_limit").default(3),
+  maternityLeaveBalanceLimit: integer("maternity_leave_balance_limit").default(105),
+  paternityLeaveBalanceLimit: integer("paternity_leave_balance_limit").default(7),
+  soloParentLeaveBalanceLimit: integer("solo_parent_leave_balance_limit").default(7),
+  magnaCartaLeaveBalanceLimit: integer("magna_carta_leave_balance_limit").default(60),
+  vawcLeaveBalanceLimit: integer("vawc_leave_balance_limit").default(10),
 
   createdAt: integer("created_at", { mode: 'timestamp_ms' }).$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: 'timestamp_ms' }).$onUpdateFn(() => new Date()),

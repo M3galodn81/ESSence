@@ -206,10 +206,11 @@ export const RolePermissions: Record<Role, Permission[]> = {
         Permission.VIEW_OWN_ATTENDANCE,
         Permission.VIEW_TEAM_ATTENDANCE,
         
-        Permission.SUBMIT_LEAVE_REQUEST,
         Permission.VIEW_OWN_LEAVES,
-        Permission.VIEW_TEAM_LEAVES,
+        Permission.SUBMIT_LEAVE_REQUEST,
+        Permission.VIEW_ALL_LEAVES,
         Permission.APPROVE_LEAVES,
+        Permission.MANAGE_LEAVE_BALANCES, // Adjust leave limits for their team
         
         Permission.VIEW_OWN_PAYSLIP,
         

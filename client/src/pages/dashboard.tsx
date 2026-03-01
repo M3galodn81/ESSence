@@ -7,12 +7,20 @@ import QuickActionsCard from "@/components/dashboard/quick-actions-card";
 import PendingTasksCard from "@/components/dashboard/pending-tasks-card";
 // import LaborCostCard from "@/components/dashboard/labor-cost-card"; // Assuming this new component exists
 import { Calendar, Clock, AlertTriangle, Wallet, Users } from "lucide-react";
-import { canViewDashoardHoursThisWeek, canViewDashoardLeaveBalance, canViewDashoardWeekSchedule } from "@/utils/permissions";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permission";
+import { Permission } from "@/lib/permissions";
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const isManager = user?.role === 'manager' || user?.role === 'admin';
+  const { hasPermission } = usePermission();
+
+  // Granular permission checks
+  const canViewTeam = hasPermission(Permission.VIEW_TEAM_ATTENDANCE);
+  const canViewLabor = hasPermission(Permission.VIEW_LABOR_COST);
+  const canViewOwnLeaves = hasPermission(Permission.VIEW_OWN_LEAVES);
+  const canViewOwnAttendance = hasPermission(Permission.VIEW_OWN_ATTENDANCE);
+  const canViewSchedule = hasPermission(Permission.VIEW_OWN_SCHEDULE);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["/api/dashboard-stats"],
@@ -22,16 +30,14 @@ export default function Dashboard() {
     queryKey: ["/api/announcements"],
   });
 
-  const { data: activities, isLoading: activitiesLoading } = 
-  isManager ? useQuery({
-    queryKey: ["/api/activities/all"],
-  }) : useQuery({
-    queryKey: ["/api/activities"],
+  // Dynamically fetch all activities or just personal activities based on permissions
+  const { data: activities, isLoading: activitiesLoading } = useQuery({
+    queryKey: canViewTeam ? ["/api/activities/all"] : ["/api/activities"],
   });
-
 
   const { data: schedules, isLoading: schedulesLoading } = useQuery({
     queryKey: ["/api/schedules"],
+    enabled: canViewSchedule, // Optimization: only fetch if permitted
   });
 
   return (
@@ -39,8 +45,8 @@ export default function Dashboard() {
       
       {/* 1. Bento Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Manager: Show Team Strength instead of personal leave */}
-        {isManager ? (
+        {/* Manager/Admin: Show Team Strength instead of personal leave */}
+        {canViewTeam ? (
            <StatCard
             title="Team Present"
             value={stats?.activeStaffCount?.toString() || "0/12"}
@@ -50,7 +56,7 @@ export default function Dashboard() {
             testId="stat-team-present"
           />
         ) : (
-          canViewDashoardLeaveBalance(user) && (
+          canViewOwnLeaves && (
             <StatCard
               title="Leave Balance"
               value={stats?.leaveBalance || "0 days"}
@@ -62,8 +68,8 @@ export default function Dashboard() {
           )
         )}
 
-        {/* Manager: Show Labor Cost vs Sales */}
-        {isManager ? (
+        {/* Manager/Admin: Show Labor Cost vs Sales */}
+        {canViewLabor ? (
            <StatCard
             title="Labor Cost %"
             value={stats?.laborCostPercentage ? `${stats.laborCostPercentage}%` : "--"}
@@ -73,7 +79,7 @@ export default function Dashboard() {
             testId="stat-labor-cost"
           />
         ) : (
-          canViewDashoardHoursThisWeek(user) && (
+          canViewOwnAttendance && (
             <StatCard
               title="Hours This Week"
               value={stats?.weeklyHours || "0 hrs"}
@@ -112,7 +118,7 @@ export default function Dashboard() {
         <div className="lg:col-span-2 space-y-8">
           
           {/* Manager Exclusive: Analytics Snapshot */}
-          {/* {isManager && (
+          {/* {canViewLabor && (
              <LaborCostCard 
                 data={stats?.laborTrends || []} 
                 isLoading={statsLoading} 
@@ -124,8 +130,8 @@ export default function Dashboard() {
             isLoading={announcementsLoading}
           />
           
-          {/* Only show recent activities if not a manager (managers have analytics instead to save space) */}
-          {!isManager && (
+          {/* Only show recent activities if not viewing labor costs (managers have analytics instead to save space) */}
+          {!canViewLabor && (
             <ActivitiesCard
               activities={activities || []}
               isLoading={activitiesLoading}
@@ -137,7 +143,7 @@ export default function Dashboard() {
         <div className="space-y-8">
           <QuickActionsCard />
           
-          {canViewDashoardWeekSchedule(user) && (
+          {canViewSchedule && (
             <ScheduleCard
               schedules={schedules || []}
               isLoading={schedulesLoading}

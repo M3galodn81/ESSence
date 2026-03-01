@@ -1,10 +1,10 @@
-import { db } from "../../server/db";
+import { db } from "../server/db";
 import { 
   users, holidays, announcements, leaveRequests, 
   schedules, reports, laborCostData, attendance, 
   breaks, activities, payslips
-} from "../../shared/schema";
-import { hashPassword } from "../../server/auth";
+} from "../shared/schema";
+import { hashPassword } from "../server/auth";
 
 // --- TOGGLE FEATURES ---
 const SHOW_HOLIDAY_FEATURES = true; 

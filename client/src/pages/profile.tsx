@@ -10,18 +10,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { User, Mail, Phone, MapPin, Briefcase, Calendar, Edit, Shield, HeartPulse, Home } from "lucide-react";
+import { User, Mail, MapPin, Briefcase, Calendar, Edit, Shield, HeartPulse, Home } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
 const profileUpdateSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
+  middleName: z.string().optional(), // <-- Added Middle Name
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Invalid email address"),
+  gender: z.string().optional(),
+  civilStatus: z.string().optional(),
+  nationality: z.string().optional(),
   phoneNumber: z.string().optional().refine((val) => {
     if (!val || val.trim() === "") return true;
     const phoneRegex = /^[\d\s\-\(\)\+]+$/;
@@ -54,7 +59,9 @@ export default function Profile() {
   const { user } = useAuth();
   const { hasPermission } = usePermission();
   const queryClient = useQueryClient();
+  
   const [isEditing, setIsEditing] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("personal");
   
   // Verify access
   const canViewProfile = hasPermission(Permission.VIEW_OWN_PROFILE);
@@ -63,9 +70,13 @@ export default function Profile() {
     resolver: zodResolver(profileUpdateSchema),
     defaultValues: {
       firstName: user?.firstName || "",
+      middleName: user?.middleName || "", // <-- Default Value Added
       lastName: user?.lastName || "",
       email: user?.email || "",
       phoneNumber: user?.phoneNumber || "",
+      gender: user?.gender || "Prefer not to say",
+      civilStatus: user?.civilStatus || "Single",
+      nationality: user?.nationality || "Filipino",
     },
   });
 
@@ -89,10 +100,9 @@ export default function Profile() {
     },
   });
 
-  // --- FIXED: Changed from /api/profile to /api/users/:id ---
   const updateProfileMutation = useMutation({
     mutationFn: async (data: ProfileUpdateForm) => {
-      const res = await apiRequest("PATCH", `/api/users/${user?.id}`, data);
+      const res = await apiRequest("PATCH", `/api/users/profile`, data);
       return await res.json();
     },
     onSuccess: () => {
@@ -107,7 +117,7 @@ export default function Profile() {
 
   const updateEmergencyContactMutation = useMutation({
     mutationFn: async (data: EmergencyContactForm) => {
-      const res = await apiRequest("PATCH", `/api/users/${user?.id}`, { emergencyContact: data });
+      const res = await apiRequest("PATCH", `/api/users/profile`, { emergencyContact: data });
       return await res.json();
     },
     onSuccess: () => {
@@ -121,7 +131,7 @@ export default function Profile() {
 
   const updateAddressMutation = useMutation({
     mutationFn: async (data: AddressForm) => {
-      const res = await apiRequest("PATCH", `/api/users/${user?.id}`, { address: data });
+      const res = await apiRequest("PATCH", `/api/users/profile`, { address: data });
       return await res.json();
     },
     onSuccess: () => {
@@ -139,7 +149,6 @@ export default function Profile() {
 
   if (!user) return null;
 
-  // Render unauthorized state if permission is missing
   if (!canViewProfile) {
     return (
       <div className="p-8 flex justify-center items-center h-screen">
@@ -154,6 +163,9 @@ export default function Profile() {
       </div>
     );
   }
+
+  // Helper for full name formatting
+  const fullName = `${user.firstName} ${user.middleName ? user.middleName + ' ' : ''}${user.lastName}`;
 
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
@@ -171,7 +183,7 @@ export default function Profile() {
           </Avatar>
           
           <div className="flex-1 text-center md:text-left space-y-2 pb-2">
-             <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">{user.firstName} {user.lastName}</h1>
+             <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">{fullName}</h1>
              <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-slate-400">
                 <Badge variant="outline" className="border-slate-700 text-slate-300 px-3 py-1 capitalize">
                    <Briefcase className="w-3 h-3 mr-1.5" /> {user.position || "Employee"}
@@ -197,7 +209,7 @@ export default function Profile() {
         </div>
       </div>
 
-      <Tabs defaultValue="personal" className="space-y-8">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
         <div className="flex justify-center">
            <TabsList className="bg-white/80 backdrop-blur-md border border-slate-200/60 p-1 rounded-full h-auto shadow-sm" data-testid="profile-tabs">
              <TabsTrigger value="personal" className="rounded-full px-6 py-2.5 data-[state=active]:bg-slate-900 data-[state=active]:text-white transition-all" data-testid="tab-personal">Personal Info</TabsTrigger>
@@ -226,6 +238,10 @@ export default function Profile() {
                                 {profileForm.formState.errors.firstName && <p className="text-xs text-red-500">{profileForm.formState.errors.firstName.message}</p>}
                              </div>
                              <div className="space-y-2">
+                                <Label htmlFor="middleName" className="text-slate-600">Middle Name</Label>
+                                <Input id="middleName" {...profileForm.register("middleName")} className="rounded-xl bg-white border-slate-200 focus:ring-blue-500/20" placeholder="Optional" />
+                             </div>
+                             <div className="space-y-2">
                                 <Label htmlFor="lastName" className="text-slate-600">Last Name</Label>
                                 <Input id="lastName" {...profileForm.register("lastName")} className="rounded-xl bg-white border-slate-200 focus:ring-blue-500/20" />
                                 {profileForm.formState.errors.lastName && <p className="text-xs text-red-500">{profileForm.formState.errors.lastName.message}</p>}
@@ -239,6 +255,54 @@ export default function Profile() {
                                 <Label htmlFor="phoneNumber" className="text-slate-600">Phone Number</Label>
                                 <Input id="phoneNumber" {...profileForm.register("phoneNumber")} className="rounded-xl bg-white border-slate-200 focus:ring-blue-500/20" />
                              </div>
+                             
+                             <div className="space-y-2">
+                                <Label className="text-slate-600">Gender</Label>
+                                <Controller
+                                  control={profileForm.control}
+                                  name="gender"
+                                  render={({ field }) => (
+                                    <Select value={field.value} onValueChange={field.onChange}>
+                                      <SelectTrigger className="rounded-xl bg-white border-slate-200">
+                                        <SelectValue placeholder="Select gender" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="Male">Male</SelectItem>
+                                        <SelectItem value="Female">Female</SelectItem>
+                                        <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                />
+                             </div>
+
+                             <div className="space-y-2">
+                                <Label className="text-slate-600">Civil Status</Label>
+                                <Controller
+                                  control={profileForm.control}
+                                  name="civilStatus"
+                                  render={({ field }) => (
+                                    <Select value={field.value} onValueChange={field.onChange}>
+                                      <SelectTrigger className="rounded-xl bg-white border-slate-200">
+                                        <SelectValue placeholder="Select status" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="Single">Single</SelectItem>
+                                        <SelectItem value="Married">Married</SelectItem>
+                                        <SelectItem value="Widowed">Widowed</SelectItem>
+                                        <SelectItem value="Separated">Separated</SelectItem>
+                                        <SelectItem value="Divorced">Divorced</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                />
+                             </div>
+
+                             <div className="space-y-2">
+                                <Label htmlFor="nationality" className="text-slate-600">Nationality</Label>
+                                <Input id="nationality" {...profileForm.register("nationality")} className="rounded-xl bg-white border-slate-200 focus:ring-blue-500/20" />
+                             </div>
+
                           </div>
                           <div className="flex justify-end pt-4">
                              <Button type="submit" disabled={updateProfileMutation.isPending} className="rounded-full bg-slate-900 hover:bg-slate-800 px-8">
@@ -250,7 +314,7 @@ export default function Profile() {
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                           <div className="space-y-1">
                              <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Full Name</p>
-                             <p className="text-lg font-semibold text-slate-900">{user.firstName} {user.lastName}</p>
+                             <p className="text-lg font-semibold text-slate-900">{fullName}</p>
                           </div>
                           <div className="space-y-1">
                              <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Email</p>
@@ -261,8 +325,16 @@ export default function Profile() {
                              <p className="text-lg font-semibold text-slate-900">{user.phoneNumber || "Not provided"}</p>
                           </div>
                           <div className="space-y-1">
-                             <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Employee ID</p>
-                             <p className="text-lg font-semibold text-slate-900 font-mono">{user.employeeId || "N/A"}</p>
+                             <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Gender</p>
+                             <p className="text-lg font-semibold text-slate-900">{user.gender || "Not specified"}</p>
+                          </div>
+                          <div className="space-y-1">
+                             <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Civil Status</p>
+                             <p className="text-lg font-semibold text-slate-900">{user.civilStatus || "Not specified"}</p>
+                          </div>
+                          <div className="space-y-1">
+                             <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Nationality</p>
+                             <p className="text-lg font-semibold text-slate-900">{user.nationality || "Filipino"}</p>
                           </div>
                        </div>
                     )}

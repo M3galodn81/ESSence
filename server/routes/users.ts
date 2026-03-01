@@ -48,6 +48,43 @@ const router = Router();
   }
 });
 
+router.patch("/profile", async (req, res) => {
+  // 1. Ensure user is logged in
+  if (!req.isAuthenticated()) return res.sendStatus(401);
+  
+  try {
+    // 2. Get the ID from the authenticated session, NOT req.params
+    const userId = req.user!.id; 
+    const updates = { ...req.body };
+    
+    // 3. SECURITY: Prevent mass-assignment vulnerabilities.
+    // Strip out fields that employees should never be able to change themselves.
+    const protectedFields = [
+      'id', 'role', 'salary', 'managerId', 'employmentStatus', 
+      'department', 'position', 'hireDate', 'employeeId', 'isActive',
+      'annualLeaveBalanceLimit', 'sickLeaveBalanceLimit', 'serviceIncentiveLeaveBalanceLimit',
+      'annualLeaveBalance', 'sickLeaveBalance', 'serviceIncentiveLeaveBalance'
+    ];
+    
+    protectedFields.forEach(field => {
+      delete updates[field];
+    });
+
+    // 4. Convert timestamps to Date objects for Drizzle (for allowed fields)
+    if (updates.birthDate) updates.birthDate = new Date(updates.birthDate);
+
+    // 5. Update the user in the database
+    const updatedUser = await storage.updateUser(userId, updates);
+    
+    if (!updatedUser) return res.status(404).send("User not found");
+    
+    // Return the updated profile
+    res.json(updatedUser);
+    
+  } catch (error: any) {
+    res.status(400).send(error.message || "Failed to update profile");
+  }
+});
 
   // --- Edit users ---
 router.patch("/:id", async (req, res) => {
@@ -67,6 +104,8 @@ router.patch("/:id", async (req, res) => {
     res.status(400).send(error.message || "Failed to update user");
   }
 });
+
+
 
   // --- Change password ---
   router.patch("/:id/password", async (req, res) => {
