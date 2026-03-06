@@ -67,7 +67,7 @@ export default function QuickActionsCard() {
       icon: BarChart3,
       label: "Analytics",
       desc: "Labor cost & trends",
-      action: () => navigate("/analytics"),
+      action: () => navigate("/labor-cost-analytics"),
       color: "text-indigo-600",
       bg: "bg-indigo-50 hover:bg-indigo-100",
     },

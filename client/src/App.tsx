@@ -27,7 +27,8 @@ import MainLayout from "@/components/layout/main-layout";
 import PayslipHistory from "@/pages/payslip-history";
 import AdminAttendance from "@/pages/admin-attendance";
 import HolidayCalendar from "@/pages/holiday-calendar";
-import QRAttendance from "@/pages/qr-attendance";
+import ManagerAttendance from "@/pages/manager-attendance";
+import AdminLogs from "@/pages/admin-logs";
 
 function Router() {
   const { needsSetup, isLoading } = useAuth();
@@ -141,9 +142,15 @@ function Router() {
           <HolidayCalendar />
         </MainLayout>
       )} />
-      <ProtectedRoute path="/qr-attendance" component={() => (
-        <MainLayout title="QR Attendance">
-          <QRAttendance />
+      <ProtectedRoute path="/manager-attendance" component={() => (
+        <MainLayout title="Manager Attendance">
+          <ManagerAttendance />
+        </MainLayout>
+      )} />
+
+      <ProtectedRoute path="/admin-logs" component={() => (
+        <MainLayout title="System Audit Logs">
+          <AdminLogs />
         </MainLayout>
       )} />
 

@@ -18,6 +18,13 @@ export enum Role {
  * Mapped directly to the tables and actions in your Drizzle schema.
  */
 export enum Permission {
+    //Pages
+    ACCESS_USER_MANAGEMENT = 'access:user_management',
+
+
+
+
+
     // #region User Management (`users` table)
     VIEW_OWN_PROFILE = 'view:own_profile',
     VIEW_ALL_USERS = 'view:all_users',
@@ -25,7 +32,7 @@ export enum Permission {
     VIEW_SENSITIVE_USER_DATA = 'view:sensitive_user_data', 
     // #endregion
     
-    // #region ATTENDANCE (`attendance`, `breaks` tables)
+    // #region ATTENDANCE (`attendance`, `breaks` tables)  
     SUBMIT_ATTENDANCE = 'submit:attendance',
     VIEW_OWN_ATTENDANCE = 'view:own_attendance',
     VIEW_TEAM_ATTENDANCE = 'view:team_attendance',
@@ -34,7 +41,7 @@ export enum Permission {
     // #endregion
 
     // #region LEAVE MANAGEMENT (`leave_requests` table)
-    SUBMIT_LEAVE_REQUEST = 'submit:leave_request',
+    SUBMIT_LEAVE = 'submit:leave',
     VIEW_OWN_LEAVES = 'view:own_leaves',
     VIEW_TEAM_LEAVES = 'view:team_leaves',
     VIEW_ALL_LEAVES = 'view:all_leaves',
@@ -76,6 +83,7 @@ export enum Permission {
 
     // #region SYSTEM AUDIT (`activities` table) ---
     VIEW_AUDIT_LOGS = 'view:audit_logs',
+    VIEW_ACTIVITY_LOGS = 'view:activity_logs',
     // #endregion
 }
 
@@ -97,6 +105,9 @@ export const RolePermissions: Record<Role, Permission[]> = {
         Permission.VIEW_SENSITIVE_USER_DATA,
         Permission.MANAGE_ANNOUNCEMENTS,
         Permission.VIEW_ANNOUNCEMENTS,
+
+        Permission.ACCESS_USER_MANAGEMENT,
+        Permission.VIEW_AUDIT_LOGS
     ],
 
     // =========================================================
@@ -190,7 +201,6 @@ export const RolePermissions: Record<Role, Permission[]> = {
         
         Permission.VIEW_OWN_PAYSLIP,
         
-        Permission.VIEW_OWN_SCHEDULE,
         Permission.VIEW_TEAM_SCHEDULE,
         Permission.MANAGE_SCHEDULES,
         
@@ -204,6 +214,10 @@ export const RolePermissions: Record<Role, Permission[]> = {
         Permission.VIEW_ANNOUNCEMENTS,
         Permission.MANAGE_ANNOUNCEMENTS, 
         Permission.VIEW_HOLIDAYS,
+
+        Permission.MANAGE_ATTENDANCE,
+
+        Permission.VIEW_ACTIVITY_LOGS
     ],
 
     // =========================================================

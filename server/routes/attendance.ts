@@ -6,7 +6,6 @@ import { Permission, RolePermissions, Role } from "@/lib/permissions";
 
 const router = Router();
 
-// Helper: Get Start/End of a specific date for Attendance queries
 const getDayRange = (dateObj: Date) => {
   const start = new Date(dateObj);
   start.setHours(0, 0, 0, 0);
@@ -15,197 +14,171 @@ const getDayRange = (dateObj: Date) => {
   return { start, end }; 
 };
 
-// Backend helper to check permissions based on the shared RBAC config
 const hasServerPermission = (role: string, permission: Permission) => {
   const userPermissions = RolePermissions[role as Role] || [];
   return userPermissions.includes(permission);
 };
 
-// --- Clock In---
-router.post("/clock-in", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Unauthorized", message: "Not authenticated" });
-  }
+// --- Helper to resolve target user for Manager Overrides ---
+const getTargetUserId = (req: any) => {
   const user = req.user as any;
-
-  if (!hasServerPermission(user.role, Permission.SUBMIT_ATTENDANCE)) {
-    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to clock in." });
-  }
+  const targetId = req.body.userId || user.id;
   
-  const clockInTime = req.body.date ? new Date(req.body.date) : new Date();
+  if (targetId !== user.id && !hasServerPermission(user.role, Permission.MANAGE_ATTENDANCE)) {
+    throw new Error("Forbidden: Cannot manage others' attendance");
+  }
+  return targetId;
+};
 
+// --- Clock In ---
+router.post("/clock-in", async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
+  
   try {
+    const targetUserId = getTargetUserId(req);
+    const clockInTime = req.body.date ? new Date(req.body.date) : new Date();
+
     const activeSession = await db.query.attendance.findFirst({
-      where: and(eq(attendance.userId, user.id), isNull(attendance.timeOut))
+      where: and(eq(attendance.userId, targetUserId), isNull(attendance.timeOut))
     });
 
-    if (activeSession) {
-      return res.status(400).json({ error: "Bad Request", message: "You are already clocked in." });
-    } 
+    if (activeSession) return res.status(400).json({ error: "Bad Request", message: "Employee is already clocked in." });
     
-    const { notes } = req.body;
     const newRecord = await db.insert(attendance).values({
-      userId: user.id,
+      userId: targetUserId,
       date: clockInTime,
       timeIn: clockInTime,
       status: "clocked_in",
-      notes: notes,
+      notes: req.body.notes || (req.body.userId ? "Clocked in manually by Manager" : null),
       totalBreakMinutes: 0,
       totalWorkMinutes: 0
     }).returning();
     
+    // FIX: Send a string instead of an object to the details text field to prevent 500 error
     await db.insert(activities).values({
-      userId: user.id,
+      userId: targetUserId,
       type: "clock_in",
       entityType: "attendance",
-      entityId: newRecord[0].id,
-      details: { action: "clock_in", userName: `${user.firstName} ${user.lastName}` }
+      entityId: String(newRecord[0].id), 
+      details: req.body.userId ? `Manually clocked in by Manager (ID: ${(req.user as any).id})` : `Clocked in normally`,
     });
     
     res.json(newRecord[0]);
-  } catch (error) {
-    console.error("Clock in error:", error);
+  } catch (error: any) {
+    if (error.message.includes("Forbidden")) return res.status(403).json({ error: "Forbidden", message: error.message });
+    console.error("Clock In Error:", error);
     res.status(500).json({ error: "Internal Server Error", message: "Failed to clock in" });
   }
 });
 
 // --- Clock Out ---
 router.post("/clock-out", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Unauthorized", message: "Not authenticated" });
-  }
-  const user = req.user as any;
-
-  if (!hasServerPermission(user.role, Permission.SUBMIT_ATTENDANCE)) {
-    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to clock out." });
-  }
-
-  const clockOutTime = new Date(); 
+  if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
 
   try {
+    const targetUserId = getTargetUserId(req);
+    const clockOutTime = new Date(); 
+
     const currentAttendance = await db.query.attendance.findFirst({
-      where: and(eq(attendance.userId, user.id), isNull(attendance.timeOut))
+      where: and(eq(attendance.userId, targetUserId), isNull(attendance.timeOut))
     });
 
-    if (!currentAttendance) {
-      return res.status(400).json({ error: "Bad Request", message: "No active clock-in found." });
-    }
+    if (!currentAttendance) return res.status(400).json({ error: "Bad Request", message: "No active clock-in found." });
 
     const activeBreak = await db.query.breaks.findFirst({
       where: and(eq(breaks.attendanceId, currentAttendance.id), isNull(breaks.breakEnd))
     });
     
-    if (activeBreak) {
-      return res.status(400).json({ error: "Bad Request", message: "Please end your break before clocking out" });
-    }
+    if (activeBreak) return res.status(400).json({ error: "Bad Request", message: "Please end the break before clocking out." });
 
-    const durationMs = clockOutTime.getTime() - Number(currentAttendance.timeIn);
+    // FIX: Safely calculate duration using new Date() wrapper
+    const durationMs = clockOutTime.getTime() - new Date(currentAttendance.timeIn).getTime();
     const workMinutes = Math.floor(durationMs / 60000) - (currentAttendance.totalBreakMinutes || 0);
 
     const updated = await db.update(attendance)
-      .set({ 
-          timeOut: clockOutTime,
-          status: "clocked_out", 
-          totalWorkMinutes: workMinutes > 0 ? workMinutes : 0 
-      })
+      .set({ timeOut: clockOutTime, status: "clocked_out", totalWorkMinutes: workMinutes > 0 ? workMinutes : 0 })
       .where(eq(attendance.id, currentAttendance.id))
       .returning();
 
+    // FIX: Send string instead of object
     await db.insert(activities).values({
-      userId: user.id,
+      userId: targetUserId,
       type: "clock_out",
       entityType: "attendance",
-      entityId: currentAttendance.id,
-      details: { action: "clock_out", userName: `${user.firstName} ${user.lastName}` }
+      entityId: String(currentAttendance.id),
+      details: req.body.userId ? `Manually clocked out by Manager (ID: ${(req.user as any).id})` : `Clocked out normally`,
     });
     
     res.json(updated[0]);
-  } catch (error) {
-    console.error("Clock out error:", error);
+  } catch (error: any) {
+    if (error.message.includes("Forbidden")) return res.status(403).json({ error: "Forbidden", message: error.message });
+    console.error("Clock Out Error:", error);
     res.status(500).json({ error: "Internal Server Error", message: "Failed to clock out" });
   }
 });
 
 // --- Break Start ---
 router.post("/break-start", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Unauthorized", message: "Not authenticated" });
-  }
-  const user = req.user as any;
-
-  if (!hasServerPermission(user.role, Permission.SUBMIT_ATTENDANCE)) {
-    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to log breaks." });
-  }
-
-  const breakStartTime = new Date();
+  if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
 
   try {
+    const targetUserId = getTargetUserId(req);
+    const breakStartTime = new Date();
+
     const currentAttendance = await db.query.attendance.findFirst({
-      where: and(eq(attendance.userId, user.id), isNull(attendance.timeOut))
+      where: and(eq(attendance.userId, targetUserId), isNull(attendance.timeOut))
     });
     
-    if (!currentAttendance) {
-      return res.status(400).json({ error: "Bad Request", message: "Must be clocked in to take a break" });
-    }
+    if (!currentAttendance) return res.status(400).json({ error: "Bad Request", message: "Must be clocked in to take a break" });
 
     const activeBreak = await db.query.breaks.findFirst({
       where: and(eq(breaks.attendanceId, currentAttendance.id), isNull(breaks.breakEnd))
     });
     
-    if (activeBreak) {
-      return res.status(400).json({ error: "Bad Request", message: "Already on break" });
-    }
+    if (activeBreak) return res.status(400).json({ error: "Bad Request", message: "Already on break" });
 
-    const { breakType, notes } = req.body;
-    
     const newBreak = await db.insert(breaks).values({
       attendanceId: currentAttendance.id,
-      userId: user.id,
+      userId: targetUserId,
       breakStart: breakStartTime,
-      breakType: breakType || "regular",
-      notes: notes
+      breakType: req.body.breakType || "regular",
+      notes: req.body.notes || (req.body.userId ? "Break started manually by Manager" : null)
     }).returning();
 
     await db.update(attendance).set({ status: "on_break" }).where(eq(attendance.id, currentAttendance.id));
-
+    
+    // FIX: Log activities as strings
     await db.insert(activities).values({
-      userId: user.id,
+      userId: targetUserId,
       type: "break_start",
       entityType: "break",
-      entityId: newBreak[0].id,
-      details: { action: "break_start", breakType: breakType || 'regular', userName: `${user.firstName} ${user.lastName}` }
+      entityId: String(newBreak[0].id),
+      details: req.body.userId ? `Break started by Manager` : `Break started normally`,
     });
-    
+
     res.json(newBreak[0]);
-  } catch (error) {
-    console.error("Break start error:", error);
-    res.status(500).json({ error: "Internal Server Error", message: "Failed to start break" });
+  } catch (error: any) {
+    if (error.message.includes("Forbidden")) return res.status(403).json({ error: "Forbidden", message: error.message });
+    console.error("Break Start Error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
 // --- Break End ---
 router.post("/break-end", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Unauthorized", message: "Not authenticated" });
-  }
-  const user = req.user as any;
-
-  if (!hasServerPermission(user.role, Permission.SUBMIT_ATTENDANCE)) {
-    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to log breaks." });
-  }
-
-  const breakEndTime = new Date();
+  if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
 
   try {
+    const targetUserId = getTargetUserId(req);
+    const breakEndTime = new Date();
+
     const activeBreak = await db.query.breaks.findFirst({
-      where: and(eq(breaks.userId, user.id), isNull(breaks.breakEnd))
+      where: and(eq(breaks.userId, targetUserId), isNull(breaks.breakEnd))
     });
     
-    if (!activeBreak) {
-      return res.status(400).json({ error: "Bad Request", message: "No active break found" });
-    }
+    if (!activeBreak) return res.status(400).json({ error: "Bad Request", message: "No active break found" });
 
-    const breakDuration = Math.floor((breakEndTime.getTime() - Number(activeBreak.breakStart)) / 60000);
+    const breakDuration = Math.floor((breakEndTime.getTime() - new Date(activeBreak.breakStart!).getTime()) / 60000);
 
     const updatedBreak = await db.update(breaks)
       .set({ breakEnd: breakEndTime, breakMinutes: breakDuration })
@@ -218,35 +191,67 @@ router.post("/break-end", async (req, res) => {
         .set({ status: "clocked_in", totalBreakMinutes: (att.totalBreakMinutes || 0) + breakDuration })
         .where(eq(attendance.id, att.id));
     }
-
+    
+    // FIX: Log activities as strings
     await db.insert(activities).values({
-      userId: user.id,
+      userId: targetUserId,
       type: "break_end",
       entityType: "break",
-      entityId: activeBreak.id,
-      details: { action: "break_end", userName: `${user.firstName} ${user.lastName}` }
+      entityId: String(activeBreak.id),
+      details: req.body.userId ? `Break ended by Manager` : `Break ended normally`,
     });
-    
+
     res.json(updatedBreak[0]);
-  } catch (error) {
-    console.error("Break end error:", error);
-    res.status(500).json({ error: "Internal Server Error", message: "Failed to end break" });
+  } catch (error: any) {
+    if (error.message.includes("Forbidden")) return res.status(403).json({ error: "Forbidden", message: error.message });
+    console.error("Break End Error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
-// --- Get Today's Attendance ---
-router.get("/today", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Unauthorized", message: "Not authenticated" });
-  }
+// --- Get Manager View: Specific Employee Today ---
+router.get("/user-today/:id", async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
   const user = req.user as any;
-
-  if (!hasServerPermission(user.role, Permission.VIEW_OWN_ATTENDANCE)) {
-    return res.status(403).json({ error: "Forbidden", message: "You do not have permission to view attendance." });
+  
+  if (!hasServerPermission(user.role, Permission.MANAGE_ATTENDANCE)) {
+    return res.status(403).json({ error: "Forbidden", message: "Manager access required." });
   }
 
+  const targetUserId = req.params.id;
   const today = new Date();
   const { start, end } = getDayRange(today);
+
+  try {
+    let todayAttendance = await db.query.attendance.findFirst({
+      where: and(eq(attendance.userId, targetUserId), isNull(attendance.timeOut))
+    });
+
+    if (!todayAttendance) {
+        todayAttendance = await db.query.attendance.findFirst({
+          where: and(eq(attendance.userId, targetUserId), gte(attendance.date, start), lte(attendance.date, end)),
+          orderBy: [desc(attendance.timeIn)]
+        });
+    }
+
+    let activeBreak = null;
+    let breaksList = [];
+
+    if (todayAttendance) {
+      breaksList = await db.query.breaks.findMany({ where: eq(breaks.attendanceId, todayAttendance.id) });
+      activeBreak = breaksList.find(b => !b.breakEnd) || null;
+    }
+
+    res.json({ attendance: todayAttendance || null, activeBreak, breaks: breaksList });
+  } catch (error) {
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// --- Get Today's Attendance (Self) ---
+router.get("/today", async (req, res) => { 
+  const user = req.user as any;
+  const { start, end } = getDayRange(new Date());
 
   try {
     let todayAttendance = await db.query.attendance.findFirst({
@@ -270,16 +275,13 @@ router.get("/today", async (req, res) => {
 
     res.json({ attendance: todayAttendance || null, activeBreak: activeBreak, breaks: breaksList });
   } catch (error) {
-    console.error("Get today attendance error:", error);
-    res.status(500).json({ error: "Internal Server Error", message: "Failed to get attendance" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
 // --- Get Own Attendance History ---
-router.get("/", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Unauthorized", message: "Not authenticated" });
-  }
+router.get("/", async (req, res) => { 
+  if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
   const user = req.user!;
 
   if (!hasServerPermission(user.role, Permission.VIEW_OWN_ATTENDANCE)) {
@@ -301,21 +303,17 @@ router.get("/", async (req, res) => {
     });
     res.json(records);
   } catch (error) {
-    console.error("Get attendance history error:", error);
-    res.status(500).json({ error: "Internal Server Error", message: "Failed to fetch attendance records" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
 // --- Get All Attendance (for Managers/Admin/Payroll) ---
-router.get("/all", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ error: "Unauthorized", message: "Not authenticated" });
-  }
+router.get("/all", async (req, res) => { 
+  if (!req.isAuthenticated()) return res.status(401).json({ error: "Unauthorized" });
   const user = req.user!;
 
-  // Allow if user has VIEW_ALL_ATTENDANCE or VIEW_TEAM_ATTENDANCE
   if (!hasServerPermission(user.role, Permission.VIEW_ALL_ATTENDANCE) && !hasServerPermission(user.role, Permission.VIEW_TEAM_ATTENDANCE)) {
-    return res.status(403).json({ error: "Forbidden", message: "Access denied. You do not have permission to view company attendance records." });
+    return res.status(403).json({ error: "Forbidden", message: "Access denied." });
   }
  
   try {
@@ -333,8 +331,7 @@ router.get("/all", async (req, res) => {
     });
     res.json(attendanceRecords);
   } catch (error) {
-    console.error("Get all attendance error:", error);
-    res.status(500).json({ error: "Internal Server Error", message: "Failed to get attendance records" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 

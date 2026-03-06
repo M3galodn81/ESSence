@@ -116,8 +116,8 @@ export function registerRoutes(app: Express): Server {
     }
     
     // Check for audit log permissions instead of hardcoding 'admin'
-    if (!hasServerPermission(req.user!.role, Permission.VIEW_AUDIT_LOGS)) {
-      return res.status(403).json({ error: "Forbidden", message: "You do not have permission to view system audit logs." });
+    if (!hasServerPermission(req.user!.role, Permission.VIEW_ACTIVITY_LOGS)) {
+      return res.status(403).json({ error: "Forbidden", message: "You do not have permission to view system activity logs." });
     }
 
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;

@@ -292,7 +292,6 @@ export default function TeamManagement() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <BentoCard title="Total Members" value={stats.total} icon={Users} variant="default" testIdPrefix="total-members" />
         <BentoCard title="Active Members" value={stats.active} icon={CheckCircle} variant="emerald" testIdPrefix="active-members" />
-        <BentoCard title="Managers" value={stats.managers} icon={Briefcase} variant="amber" testIdPrefix="manager-count" />
       </div>
 
       {/* Controls & Table */}
@@ -365,7 +364,6 @@ export default function TeamManagement() {
                         <TableHead>Role</TableHead>
                         <TableHead>ID</TableHead>
                         <TableHead>Department / Position</TableHead>
-                        <TableHead>Manager</TableHead>
                         <TableHead>Hire Date</TableHead>
                         <TableHead>Active Duration</TableHead>
                         <TableHead>Status</TableHead>
@@ -421,14 +419,7 @@ export default function TeamManagement() {
                                         <span className="text-xs text-slate-500">{member.position || "—"}</span>
                                     </div>
                                 </TableCell>
-                                <TableCell>
-                                    <div className="flex items-center gap-1.5">
-                                        {member.managerId && <UserIcon className="w-3 h-3 text-slate-400" />}
-                                        <span className="text-sm text-slate-600">
-                                            {member.role === 'employee' ? getManagerName(member.managerId) : "—"}
-                                        </span>
-                                    </div>
-                                </TableCell>
+                                
                                 <TableCell>
                                     <div className="flex items-center gap-1.5 text-sm text-slate-600">
                                         <Calendar className="w-3 h-3 text-slate-400" />

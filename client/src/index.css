@@ -2,80 +2,86 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: hsl(0 0% 98%);
-  --foreground: hsl(0 0% 10%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(0 0% 10%);
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(0 0% 10%);
-  --primary: hsl(0 84% 50%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(0 0% 90%);
-  --secondary-foreground: hsl(0 0% 10%);
-  --muted: hsl(0 0% 95%);
-  --muted-foreground: hsl(0 0% 45%);
-  --accent: hsl(0 0% 20%);
-  --accent-foreground: hsl(0 0% 100%);
-  --destructive: hsl(0 84% 50%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(0 0% 88%);
-  --input: hsl(0 0% 88%);
-  --ring: hsl(0 84% 50%);
-  --success: hsl(0 84% 50%);
-  --warning: hsl(0 0% 40%);
-  --chart-1: hsl(0 84% 50%);
-  --chart-2: hsl(0 0% 20%);
-  --chart-3: hsl(0 0% 50%);
-  --chart-4: hsl(0 0% 70%);
-  --chart-5: hsl(0 60% 40%);
-  --sidebar: hsl(0 0% 10%);
-  --sidebar-foreground: hsl(0 0% 100%);
-  --sidebar-primary: hsl(0 84% 50%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(0 0% 20%);
-  --sidebar-accent-foreground: hsl(0 0% 100%);
-  --sidebar-border: hsl(0 0% 25%);
-  --sidebar-ring: hsl(0 84% 50%);
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: Menlo, monospace;
-  --radius: 8px;
-}
-
-.dark {
-  --background: hsl(0 0% 10%);
-  --foreground: hsl(0 0% 98%);
-  --card: hsl(0 0% 15%);
-  --card-foreground: hsl(0 0% 98%);
-  --popover: hsl(0 0% 15%);
-  --popover-foreground: hsl(0 0% 98%);
-  --primary: hsl(0 84% 50%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(0 0% 25%);
-  --secondary-foreground: hsl(0 0% 98%);
-  --muted: hsl(0 0% 25%);
-  --muted-foreground: hsl(0 0% 65%);
-  --accent: hsl(0 84% 50%);
-  --accent-foreground: hsl(0 0% 100%);
-  --destructive: hsl(0 84% 50%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(0 0% 25%);
-  --input: hsl(0 0% 25%);
-  --ring: hsl(0 84% 50%);
-  --success: hsl(0 84% 50%);
-  --warning: hsl(0 0% 60%);
-  --sidebar: hsl(0 0% 5%);
-  --sidebar-foreground: hsl(0 0% 98%);
-  --sidebar-primary: hsl(0 84% 50%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(0 0% 20%);
-  --sidebar-accent-foreground: hsl(0 0% 98%);
-  --sidebar-border: hsl(0 0% 20%);
-  --sidebar-ring: hsl(0 84% 50%);
-}
-
 @layer base {
+  :root {
+    --background: hsl(0 0% 98%);
+    --foreground: hsl(0 0% 10%);
+    --card: hsl(0 0% 100%);
+    --card-foreground: hsl(0 0% 10%);
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: hsl(0 0% 10%);
+    --primary: hsl(0 84% 50%);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: hsl(0 0% 90%);
+    --secondary-foreground: hsl(0 0% 10%);
+    --muted: hsl(0 0% 95%);
+    --muted-foreground: hsl(0 0% 45%);
+    
+    /* FIX: Made accent a soft light gray for standard hover effects */
+    --accent: hsl(0 0% 94%);
+    --accent-foreground: hsl(0 0% 10%);
+    
+    --destructive: hsl(0 84% 50%);
+    --destructive-foreground: hsl(0 0% 100%);
+    --border: hsl(0 0% 88%);
+    --input: hsl(0 0% 88%);
+    --ring: hsl(0 84% 50%);
+    --success: hsl(0 84% 50%);
+    --warning: hsl(0 0% 40%);
+    --chart-1: hsl(0 84% 50%);
+    --chart-2: hsl(0 0% 20%);
+    --chart-3: hsl(0 0% 50%);
+    --chart-4: hsl(0 0% 70%);
+    --chart-5: hsl(0 60% 40%);
+    --sidebar: hsl(0 0% 10%);
+    --sidebar-foreground: hsl(0 0% 100%);
+    --sidebar-primary: hsl(0 84% 50%);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-accent: hsl(0 0% 20%);
+    --sidebar-accent-foreground: hsl(0 0% 100%);
+    --sidebar-border: hsl(0 0% 25%);
+    --sidebar-ring: hsl(0 84% 50%);
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-serif: Georgia, serif;
+    --font-mono: Menlo, monospace;
+    --radius: 8px;
+  }
+
+  .dark {
+    --background: hsl(0 0% 10%);
+    --foreground: hsl(0 0% 98%);
+    --card: hsl(0 0% 15%);
+    --card-foreground: hsl(0 0% 98%);
+    --popover: hsl(0 0% 15%);
+    --popover-foreground: hsl(0 0% 98%);
+    --primary: hsl(0 84% 50%);
+    --primary-foreground: hsl(0 0% 100%);
+    --secondary: hsl(0 0% 25%);
+    --secondary-foreground: hsl(0 0% 98%);
+    --muted: hsl(0 0% 25%);
+    --muted-foreground: hsl(0 0% 65%);
+    
+    /* FIX: Changed to a dark gray so dark mode hovers look professional */
+    --accent: hsl(0 0% 20%);
+    --accent-foreground: hsl(0 0% 98%);
+    
+    --destructive: hsl(0 84% 50%);
+    --destructive-foreground: hsl(0 0% 100%);
+    --border: hsl(0 0% 25%);
+    --input: hsl(0 0% 25%);
+    --ring: hsl(0 84% 50%);
+    --success: hsl(0 84% 50%);
+    --warning: hsl(0 0% 60%);
+    --sidebar: hsl(0 0% 5%);
+    --sidebar-foreground: hsl(0 0% 98%);
+    --sidebar-primary: hsl(0 84% 50%);
+    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-accent: hsl(0 0% 20%);
+    --sidebar-accent-foreground: hsl(0 0% 98%);
+    --sidebar-border: hsl(0 0% 20%);
+    --sidebar-ring: hsl(0 84% 50%);
+  }
+
   * {
     @apply border-border;
   }
@@ -95,7 +101,6 @@
   /* =========================
      PAGE / LAYOUT
   ========================== */
-
   .page {
     @apply min-h-screen bg-background text-foreground font-sans;
   }
@@ -111,12 +116,11 @@
   /* =========================
      TYPOGRAPHY
   ========================== */
-
-  .header-title{
+  .header-title {
     @apply text-2xl font-bold tracking-tight text-slate-900;
   } 
 
-  .header-subtitle{
+  .header-subtitle {
     @apply text-sm font-medium text-slate-500;
   }
 
@@ -139,8 +143,7 @@
   /* =========================
      CARDS
   ========================== */
-
-  .glass-card{
+  .glass-card {
     @apply bg-white/40 backdrop-blur-md border-slate-200/60 shadow-sm rounded-3xl overflow-hidden;
   }
   
@@ -163,7 +166,6 @@
   /* =========================
      BENTO / STATS CARDS
   ========================== */
-
   .bento-grid {
     @apply grid gap-4;
   }
@@ -187,7 +189,6 @@
   /* =========================
      TABLES
   ========================== */
-
   .table-wrapper {
     @apply overflow-x-auto;
   }
@@ -215,7 +216,6 @@
   /* =========================
      STATUS BADGES
   ========================== */
-
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize border;
   }
@@ -239,7 +239,6 @@
   /* =========================
      CONTROLS / FILTERS
   ========================== */
-
   .filter-bar {
     @apply flex flex-col lg:flex-row gap-4 items-center;
   }
@@ -255,7 +254,6 @@
   /* =========================
      BUTTONS (semantic)
   ========================== */
-
   .btn-primary {
     @apply bg-primary text-primary-foreground rounded-xl px-4 py-2 font-medium hover:opacity-90;
   }
