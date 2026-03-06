@@ -21,7 +21,7 @@ import {
   FileText, MapPin, CheckCircle2, AlertCircle, X, Users, Shield,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, BarChart3, 
   List as ListIcon, Banknote, Search, History, Filter, Check,
-  Loader2, ChevronsUpDown, Send, FileDown, Download
+  Loader2, ChevronsUpDown, Send, FileDown, Download, Activity, TrendingUp
 } from "lucide-react";
 import { format, subMonths, startOfMonth } from "date-fns"; 
 import { cn } from "@/lib/utils";
@@ -47,12 +47,12 @@ const styles = {
   subtitle: "text-slate-500 mt-1",
   
   // Action Buttons & Toggles
-  topActionsGroup: "flex items-center gap-2",
-  viewToggleGroup: "flex items-center bg-slate-100 p-1 rounded-lg",
+  topActionsGroup: "flex flex-wrap items-center gap-3 w-full md:w-auto",
+  viewToggleGroup: "flex items-center bg-slate-100 p-1 rounded-lg shrink-0",
   viewToggleBtn: "text-xs",
   viewToggleActive: "bg-white shadow-sm text-slate-900",
-  exportBtn: "bg-white border-slate-200",
-  fileReportBtn: "bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800 ml-2",
+  exportBtn: "bg-white border-slate-200 text-slate-700 shadow-sm hover:bg-slate-50 h-10 shrink-0",
+  fileReportBtn: "bg-slate-900 text-white rounded-full px-6 shadow-lg hover:bg-slate-800 h-10 shrink-0",
   
   // Filters
   filterBar: "flex flex-wrap gap-2 p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl items-center",
@@ -108,6 +108,36 @@ const styles = {
   lockoutCard: "w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-lg rounded-3xl",
   lockoutContent: "py-12 text-center space-y-4",
   lockoutIconBox: "w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto text-rose-500",
+};
+
+/**
+ * CUSTOM BEAUTIFUL RECHARTS TOOLTIP
+ */
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white/95 backdrop-blur-xl border border-slate-200/80 p-3.5 rounded-xl shadow-xl min-w-[140px] z-50">
+        {label && (
+            <p className="text-sm font-bold text-slate-800 mb-2 border-b border-slate-100 pb-1.5">
+                {label}
+            </p>
+        )}
+        <div className="space-y-1.5 mt-1">
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center justify-between gap-4 text-xs font-medium text-slate-600">
+              <div className="flex items-center gap-2">
+                {/* Fallback to entry.payload.fill if entry.color is empty (common in Custom Bar/Pie charts) */}
+                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color || entry.fill || entry.payload.fill || '#cbd5e1' }} />
+                <span className="capitalize">{entry.name}:</span>
+              </div>
+              <span className="font-bold text-slate-900">{entry.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
 };
 
 /**
@@ -189,7 +219,6 @@ export default function Reports() {
   ];
 
   // --- DATA FETCHING ---
-  // The API automatically handles filtering Own vs All based on user role inside the endpoint
   const { data: reports, isLoading } = useQuery({ 
     queryKey: ["/api/reports"],
     enabled: canViewPage
@@ -269,13 +298,14 @@ export default function Reports() {
 
   // --- ADVANCED ANALYTICS CALCULATION ---
   const stats = useMemo(() => {
-    if (!reports) return { monthlyStacked: [], byCategory: [], mostInvolved: [] };
+    if (!reports) return { monthlyStacked: [], byCategory: [], bySeverity: [], byStatus: [], mostInvolved: [], total: 0, resolutionRate: 0, criticalCount: 0 };
 
     const range = parseInt(analyticsRange);
     const startDateObj = startOfMonth(subMonths(new Date(), range - 1));
 
     const rangeReports = reports.filter((r: any) => new Date(r.dateOccurred) >= startDateObj);
 
+    // 1. Monthly Trends
     const monthsMap = new Map(); 
     for (let i = range - 1; i >= 0; i--) {
         const d = subMonths(new Date(), i);
@@ -285,28 +315,49 @@ export default function Reports() {
         monthsMap.set(key, initObj);
     }
 
+    const catCounts: Record<string, number> = {};
+    const severityCounts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+    const statusCounts: Record<string, number> = { pending: 0, resolved: 0, closed: 0 };
+    let resolvedCount = 0;
+
     rangeReports.forEach((r: any) => {
-        const d = new Date(r.dateOccurred);
-        const key = format(d, "MMM yyyy");
+        // Timeline
+        const key = format(new Date(r.dateOccurred), "MMM yyyy");
         if (monthsMap.has(key)) {
-            const entry = monthsMap.get(key);
-            if (entry[r.category] !== undefined) {
-                entry[r.category]++;
-            }
+            monthsMap.get(key)[r.category] = (monthsMap.get(key)[r.category] || 0) + 1;
         }
+        
+        // Breakdowns
+        catCounts[r.category] = (catCounts[r.category] || 0) + 1;
+        severityCounts[r.severity] = (severityCounts[r.severity] || 0) + 1;
+        statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
+        
+        if (r.status === 'resolved' || r.status === 'closed') resolvedCount++;
     });
 
     const monthlyStacked = Array.from(monthsMap.values());
 
-    const catCounts: Record<string, number> = {};
-    rangeReports.forEach((r: any) => {
-        catCounts[r.category] = (catCounts[r.category] || 0) + 1;
-    });
+    // 2. Category Pie
     const categoryData = Object.entries(catCounts).map(([id, value]) => {
         const cat = categories.find(c => c.id === id);
         return { name: cat?.label || id, value, fill: cat?.fill || "#cbd5e1" };
     });
 
+    // 3. Severity Bar
+    const bySeverity = [
+        { name: 'Critical', value: severityCounts.critical, fill: '#ef4444' },
+        { name: 'High', value: severityCounts.high, fill: '#f97316' },
+        { name: 'Medium', value: severityCounts.medium, fill: '#eab308' },
+        { name: 'Low', value: severityCounts.low, fill: '#3b82f6' }
+    ].filter(s => s.value > 0);
+
+    // 4. Status Donut
+    const byStatus = [
+        { name: 'Resolved', value: statusCounts.resolved + (statusCounts.closed || 0), fill: '#10b981' },
+        { name: 'Pending', value: statusCounts.pending, fill: '#f59e0b' }
+    ].filter(s => s.value > 0);
+
+    // 5. People Counts
     const peopleCounts: Record<string, number> = {};
     rangeReports.forEach((r: any) => {
         if (r.partiesInvolved) {
@@ -318,7 +369,16 @@ export default function Reports() {
     });
     const mostInvolved = Object.entries(peopleCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-    return { monthlyStacked, byCategory: categoryData, mostInvolved };
+    return { 
+        monthlyStacked, 
+        byCategory: categoryData, 
+        bySeverity,
+        byStatus,
+        mostInvolved,
+        total: rangeReports.length,
+        resolutionRate: rangeReports.length ? Math.round((resolvedCount / rangeReports.length) * 100) : 0,
+        criticalCount: severityCounts.critical || 0
+    };
   }, [reports, analyticsRange]);
 
   // --- PDF GENERATION ---
@@ -580,8 +640,18 @@ export default function Reports() {
           <h1 className={styles.title}>Reporting</h1>
           <p className={styles.subtitle}>Document AWOL, breakage, and other incidents</p>
         </div>
+        
         <div className={styles.topActionsGroup}>
             
+            {/* Export Button Conditional - Moved to the LEFT side of the group so right-aligned items stay locked */}
+            {view === "list" && (
+                <Button variant="outline" onClick={generateAllReportsPDF} className={styles.exportBtn}>
+                    <Download className="w-4 h-4 mr-2" /> Export
+                </Button>
+            )}
+
+            <div className="flex-1 md:hidden" /> {/* Spacer for mobile */}
+
             {/* Analytics Toggle (Only for Managers/Admins) */}
             {canManageReports && (
               <div className={styles.viewToggleGroup}>
@@ -593,13 +663,8 @@ export default function Reports() {
                   </Button>
               </div>
             )}
-            
-            {view === "list" && (
-                <Button variant="outline" size="sm" onClick={generateAllReportsPDF} className={styles.exportBtn}>
-                    <Download className="w-4 h-4 mr-2" /> Export List
-                </Button>
-            )}
 
+            {/* File Report Button - Anchored to the right */}
             {canSubmitReport && (
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
@@ -999,41 +1064,127 @@ export default function Reports() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* 1. STACKED BAR CHART */}
-                <Card className="col-span-1 md:col-span-2 lg:col-span-1">
-                    <CardHeader><CardTitle className="text-lg">Incident Trends</CardTitle><CardDescription>Stacked Breakdown by Month</CardDescription></CardHeader>
+            {/* NEW KPI Cards Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+               <Card className="bg-white border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                 <CardContent className="p-6 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                       <FileText className="w-6 h-6" />
+                    </div>
+                    <div>
+                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Incidents</p>
+                       <h3 className="text-3xl font-bold text-slate-900">{stats.total}</h3>
+                    </div>
+                 </CardContent>
+               </Card>
+               <Card className="bg-white border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                 <CardContent className="p-6 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                       <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                    <div>
+                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Resolution Rate</p>
+                       <h3 className="text-3xl font-bold text-slate-900">{stats.resolutionRate}%</h3>
+                    </div>
+                 </CardContent>
+               </Card>
+               <Card className="bg-white border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                 <CardContent className="p-6 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                       <AlertTriangle className="w-6 h-6" />
+                    </div>
+                    <div>
+                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Critical Priority</p>
+                       <h3 className="text-3xl font-bold text-slate-900">{stats.criticalCount}</h3>
+                    </div>
+                 </CardContent>
+               </Card>
+            </div>
+
+            {/* 1. STACKED BAR CHART (Monthly Trends) */}
+            <Card className="bg-white border-slate-200 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2"><TrendingUp className="w-5 h-5 text-slate-400" /> Incident Trends</CardTitle>
+                  <CardDescription>Stacked Breakdown by Month</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="h-[350px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={stats.monthlyStacked} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
+                                <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                                <RechartsTooltip content={<CustomTooltip />} cursor={{fill: 'rgba(241, 245, 249, 0.5)'}} />
+                                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                                
+                                {categories.map((cat, index) => (
+                                    <Bar key={cat.id} dataKey={cat.id} stackId="a" fill={cat.fill} name={cat.label} radius={index === categories.length - 1 ? [4, 4, 0, 0] : [0,0,0,0]} />
+                                ))}
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Bottom Row Breakdown Charts */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                {/* 2. PIE CHART (Category) */}
+                <Card className="bg-white border-slate-200 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-sm font-bold text-slate-700">By Category</CardTitle>
+                    </CardHeader>
                     <CardContent>
-                        <div className="h-[350px] w-full">
+                        <div className="h-[250px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={stats.monthlyStacked} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="name" fontSize={11} tickLine={false} axisLine={false} />
-                                    <YAxis fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                                    <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
-                                    <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                                    
-                                    {categories.map((cat, index) => (
-                                        <Bar key={cat.id} dataKey={cat.id} stackId="a" fill={cat.fill} name={cat.label} radius={index === categories.length - 1 ? [4, 4, 0, 0] : [0,0,0,0]} />
-                                    ))}
+                                <PieChart>
+                                    <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
+                                        {stats.byCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                                    </Pie>
+                                    <RechartsTooltip content={<CustomTooltip />} />
+                                    <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: '11px' }} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* 3. BAR CHART (Severity) */}
+                <Card className="bg-white border-slate-200 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-sm font-bold text-slate-700">By Severity</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="h-[250px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={stats.bySeverity} layout="vertical" margin={{ top: 0, right: 30, left: 10, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                                    <XAxis type="number" hide />
+                                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} fontSize={12} />
+                                    <RechartsTooltip content={<CustomTooltip />} cursor={{fill: 'rgba(241, 245, 249, 0.5)'}} />
+                                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={24}>
+                                      {stats.bySeverity.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                                    </Bar>
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* 2. PIE CHART */}
-                <Card className="col-span-1 md:col-span-2 lg:col-span-1">
-                    <CardHeader><CardTitle className="text-lg">Reports by Category</CardTitle><CardDescription>Distribution over {analyticsRange} months</CardDescription></CardHeader>
+                {/* 4. DONUT CHART (Status) */}
+                <Card className="bg-white border-slate-200 shadow-sm">
+                    <CardHeader>
+                      <CardTitle className="text-sm font-bold text-slate-700">Resolution Status</CardTitle>
+                    </CardHeader>
                     <CardContent>
-                        <div className="h-[350px] w-full">
+                        <div className="h-[250px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
-                                    <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={2} dataKey="value">
-                                        {stats.byCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                                    <Pie data={stats.byStatus} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={2} dataKey="value">
+                                        {stats.byStatus.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
                                     </Pie>
-                                    <RechartsTooltip contentStyle={{borderRadius: '8px', border: 'none'}} />
-                                    <Legend verticalAlign="middle" align="right" layout="vertical" wrapperStyle={{ fontSize: '11px' }} />
+                                    <RechartsTooltip content={<CustomTooltip />} />
+                                    <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: '11px' }} />
                                 </PieChart>
                             </ResponsiveContainer>
                         </div>
