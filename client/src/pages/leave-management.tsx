@@ -357,10 +357,12 @@ export default function LeaveManagement() {
     }
   };
 
+  // --- COMPREHENSIVE PDF DOWNLOAD ---
   const downloadPDF = () => {
     const doc = new jsPDF({ orientation: "landscape" });
     
-    const dataToExport = canManageLeaves ? mgrFilteredRequests : filteredRequests;
+    // Create a deeply copied array to sort without mutating the original state
+    let dataToExport = canManageLeaves ? [...mgrFilteredRequests] : [...filteredRequests];
     const reportTitle = canManageLeaves ? "Organization Leave Report" : "My Leave History";
 
     if (!dataToExport || dataToExport.length === 0) { 
@@ -368,20 +370,51 @@ export default function LeaveManagement() {
         return; 
     }
 
-    doc.setFontSize(18);
-    doc.setTextColor(15, 23, 42); 
+    // Sort logically: Manager sees grouped by name, then date. Employee sees date descending.
+    dataToExport.sort((a, b) => {
+        if (canManageLeaves) {
+            const nameA = getUserName(a.userId).toLowerCase();
+            const nameB = getUserName(b.userId).toLowerCase();
+            if (nameA < nameB) return -1;
+            if (nameA > nameB) return 1;
+        }
+        return new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime();
+    });
+
+    // 1. Header
+    doc.setFontSize(20);
+    doc.setTextColor(15, 23, 42); // Slate 900
     doc.text(reportTitle, 14, 20);
     
     doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 26);
+    doc.setTextColor(100); // Slate 500
+    doc.text(`Generated on: ${format(new Date(), "PPpp")}`, 14, 28);
+    
+    // 2. Summary Row
+    const approved = dataToExport.filter(r => r.status === 'approved').length;
+    const pending = dataToExport.filter(r => r.status === 'pending').length;
+    const rejected = dataToExport.filter(r => r.status === 'rejected').length;
+    
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Total Records: ${dataToExport.length}   |   Approved: ${approved}   |   Pending: ${pending}   |   Rejected: ${rejected}`, 14, 36);
 
+    // 3. Build Table Rows
     const rows = dataToExport.map((req: any) => {
+        // Merge Leave Type and Duration to save horizontal space
+        const typeDuration = `${LEAVE_TYPES[req.type] || req.type.toUpperCase()}\n${formatDate(req.startDate)} to ${formatDate(req.endDate)}`;
+        
+        // Merge Reason and Rejection Comments for context
+        let notes = req.reason ? `Reason: ${req.reason}` : "No reason provided";
+        if (req.status === 'rejected' && req.comments) {
+            notes += `\nRejection Note: ${req.comments}`;
+        }
+
         const baseRow = [
-            LEAVE_TYPES[req.type] || req.type.toUpperCase(),
-            `${formatDate(req.startDate)} to ${formatDate(req.endDate)}`,
-            `${req.days} Day(s)`,
+            typeDuration,
+            `${req.days}`,
             req.status.toUpperCase(),
+            notes,
             formatDate(req.createdAt)
         ];
 
@@ -392,23 +425,61 @@ export default function LeaveManagement() {
         return baseRow;
     });
 
+    // 4. Build Table Headers
     const head = canManageLeaves 
-        ? [["Employee", "Leave Type", "Duration", "Days", "Status", "Filed On"]]
-        : [["Leave Type", "Duration", "Days", "Status", "Filed On"]];
+        ? [["Employee", "Leave Type & Duration", "Days", "Status", "Reason / Notes", "Filed On"]]
+        : [["Leave Type & Duration", "Days", "Status", "Reason / Notes", "Filed On"]];
 
+    // 5. Draw AutoTable
     autoTable(doc, {
         head: head,
         body: rows,
-        startY: 35,
-        theme: 'striped',
-        headStyles: { fillColor: [15, 23, 42] }, 
-        styles: { fontSize: 9, cellPadding: 3 },
-        alternateRowStyles: { fillColor: [248, 250, 252] } 
+        startY: 42,
+        theme: 'grid',
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' }, 
+        styles: { fontSize: 8, cellPadding: 4, overflow: 'linebreak' },
+        columnStyles: canManageLeaves ? {
+            0: { cellWidth: 35, fontStyle: 'bold' }, // Employee
+            1: { cellWidth: 50 }, // Type & Duration
+            2: { cellWidth: 15, halign: 'center' }, // Days
+            3: { cellWidth: 25, fontStyle: 'bold' }, // Status
+            4: { cellWidth: 'auto' }, // Notes (expands)
+            5: { cellWidth: 25 } // Filed On
+        } : {
+            0: { cellWidth: 55, fontStyle: 'bold' }, // Type & Duration
+            1: { cellWidth: 20, halign: 'center' }, // Days
+            2: { cellWidth: 30, fontStyle: 'bold' }, // Status
+            3: { cellWidth: 'auto' }, // Notes
+            4: { cellWidth: 30 } // Filed On
+        },
+        // Colorize the Status column dynamically
+        didParseCell: function (data) {
+            const statusColIndex = canManageLeaves ? 3 : 2;
+            if (data.section === 'body' && data.column.index === statusColIndex) {
+                if (data.cell.raw === 'APPROVED') {
+                    data.cell.styles.textColor = [16, 185, 129]; // Emerald 500
+                } else if (data.cell.raw === 'REJECTED') {
+                    data.cell.styles.textColor = [244, 63, 94]; // Rose 500
+                } else if (data.cell.raw === 'PENDING') {
+                    data.cell.styles.textColor = [245, 158, 11]; // Amber 500
+                }
+            }
+        }
     });
 
+    // 6. Add Page Numbers
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for(let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Page ${i} of ${pageCount}`, doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    }
+
+    // 7. Save
     const fileName = canManageLeaves 
-        ? `leave_report_${format(new Date(), "yyyy-MM-dd")}.pdf` 
-        : `my_leaves_${format(new Date(), "yyyy-MM-dd")}.pdf`;
+        ? `Organization_Leave_Report_${format(new Date(), "yyyy-MM-dd")}.pdf` 
+        : `My_Leave_History_${format(new Date(), "yyyy-MM-dd")}.pdf`;
         
     doc.save(fileName);
     toast.success("PDF downloaded successfully!");
@@ -979,7 +1050,6 @@ export default function LeaveManagement() {
       </AlertDialog>
 
       {/* 3. Reject Dialog */}
-     {/* 3. Reject Dialog */}
       <Dialog open={isRejectDialogOpen} onOpenChange={(open) => { setIsRejectDialogOpen(open); if (!open) { rejectForm.reset(); }}}>
         <DialogContent className="rounded-3xl w-[95vw] max-w-md p-4 md:p-6">
             <DialogHeader>

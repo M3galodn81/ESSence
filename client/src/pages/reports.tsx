@@ -381,117 +381,145 @@ export default function Reports() {
     };
   }, [reports, analyticsRange]);
 
-  // --- PDF GENERATION ---
+  // --- COMPREHENSIVE PDF GENERATION ---
+  
   const generateSinglePDF = (report: any) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     
+    // 1. HEADER
     doc.setFontSize(22);
-    doc.setTextColor(15, 23, 42);
-    doc.text("Incident Report", pageWidth / 2, 20, { align: "center" });
+    doc.setTextColor(15, 23, 42); // Slate 900
+    doc.text("Incident Report", 14, 20);
     
     doc.setFontSize(10);
     doc.setTextColor(100);
-    doc.text(`Reference ID: #${report.id.toString().padStart(6, '0')}`, pageWidth / 2, 27, { align: "center" });
-    
-    doc.setDrawColor(report.status === 'resolved' ? 16 : 245, report.status === 'resolved' ? 185 : 158, report.status === 'resolved' ? 129 : 11);
-    doc.setFillColor(report.status === 'resolved' ? 220 : 254, report.status === 'resolved' ? 252 : 251, report.status === 'resolved' ? 231 : 235);
-    doc.roundedRect(160, 15, 30, 8, 2, 2, "FD");
-    doc.setFontSize(9);
-    doc.setTextColor(report.status === 'resolved' ? 21 : 180, report.status === 'resolved' ? 128 : 83, report.status === 'resolved' ? 61 : 33);
-    doc.text(report.status.toUpperCase(), 175, 20, { align: "center" });
+    doc.text(`Reference ID: #${report.id.toString().padStart(6, '0')}`, 14, 28);
+    doc.text(`Generated: ${format(new Date(), "PPpp")}`, 14, 34);
 
-    let y = 40;
-    doc.setTextColor(0);
-    doc.setFontSize(11);
+    // STATUS BADGE (Top Right)
+    const statusText = report.status.toUpperCase();
+    doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.text(report.title, 14, y);
-    
-    y += 10;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    
-    const details = [
-        ["Date", format(new Date(report.dateOccurred), "MMM dd, yyyy")],
-        ["Time", report.timeOccurred],
-        ["Location", report.location],
-        ["Category", categories.find(c=>c.id===report.category)?.label || report.category],
-        ["Severity", report.severity.toUpperCase()],
-        ["Filed By", getEmployeeName(report.userId)]
-    ];
+    let statusColor: [number, number, number] = [245, 158, 11]; // Amber pending
+    if (report.status === 'resolved') statusColor = [16, 185, 129]; // Emerald resolved
+    if (report.status === 'rejected') statusColor = [244, 63, 94]; // Rose rejected
+    doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
+    doc.text(`STATUS: ${statusText}`, pageWidth - 14, 20, { align: "right" });
 
+    // 2. METADATA TABLE
     autoTable(doc, {
-        startY: y,
-        head: [],
-        body: details,
-        theme: 'plain',
-        styles: { fontSize: 10, cellPadding: 1.5 },
-        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 30 } },
+        startY: 40,
+        theme: 'grid',
+        head: [["Report Metadata", ""]],
+        body: [
+            ["Title", report.title],
+            ["Category", categories.find(c=>c.id===report.category)?.label || report.category.toUpperCase()],
+            ["Severity", report.severity.toUpperCase()],
+            ["Date & Time Occurred", `${format(new Date(report.dateOccurred), "MMMM dd, yyyy")} at ${report.timeOccurred}`],
+            ["Location", report.location || "N/A"],
+            ["Filed By", getEmployeeName(report.userId)],
+        ],
+        headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' }, // Slate 100 Head
+        styles: { fontSize: 10, cellPadding: 4 },
+        columnStyles: { 
+            0: { fontStyle: 'bold', cellWidth: 55, fillColor: [248, 250, 252] }, // Slate 50 column 1
+            1: { cellWidth: 'auto' } 
+        },
     });
 
-    y = (doc as any).lastAutoTable.finalY + 10;
+    // 3. DETAILS TABLE
+    autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 10,
+        theme: 'grid',
+        head: [["Incident Details"]],
+        body: [
+            [`DESCRIPTION:\n${report.description || "N/A"}`],
+            [`IMMEDIATE ACTION TAKEN:\n${report.actionTaken || "N/A"}`],
+            [`PARTIES INVOLVED:\n${report.partiesInvolved || "None"}`],
+            [`WITNESSES:\n${report.witnesses || "None"}`],
+        ],
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' }, // Slate 900 Head
+        styles: { fontSize: 10, cellPadding: 5 },
+    });
 
-    const drawSection = (title: string, content: string) => {
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        doc.setTextColor(50);
-        doc.text(title, 14, y);
-        y += 5;
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(10);
-        doc.setTextColor(0);
-        
-        const splitText = doc.splitTextToSize(content || "N/A", pageWidth - 28);
-        doc.text(splitText, 14, y);
-        y += (splitText.length * 5) + 8;
-    };
-
-    drawSection("Description", report.description);
-    drawSection("Involved Parties", report.partiesInvolved);
-    drawSection("Immediate Action Taken", report.actionTaken);
-    
+    // 4. NTE TABLE (If Required)
     if (report.nteRequired) {
-        y += 5;
-        doc.setDrawColor(251, 146, 60); 
-        doc.line(14, y, pageWidth - 14, y);
-        y += 8;
-        drawSection("Notice to Explain (NTE)", report.nteContent ? `Employee Response: ${report.nteContent}` : "Pending employee response.");
+        autoTable(doc, {
+            startY: (doc as any).lastAutoTable.finalY + 10,
+            theme: 'grid',
+            head: [["Notice to Explain (NTE)"]],
+            body: [
+                [`ASSIGNED TO:\n${getEmployeeName(report.assignedTo)}`],
+                [`EMPLOYEE EXPLANATION:\n${report.nteContent || "Pending employee response."}`]
+            ],
+            headStyles: { fillColor: [234, 88, 12], textColor: 255, fontStyle: 'bold' }, // Orange 600 Head
+            styles: { fontSize: 10, cellPadding: 5 },
+        });
     }
 
-    const footerY = doc.internal.pageSize.getHeight() - 20;
-    doc.setFontSize(8);
-    doc.setTextColor(150);
-    doc.text(`Generated on ${new Date().toLocaleString()}`, 14, footerY);
-    doc.text("Internal Use Only", pageWidth - 14, footerY, { align: "right" });
+    // 5. FOOTER (Pagination)
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for(let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    }
 
-    doc.save(`report_${report.id}.pdf`);
+    doc.save(`Report_${report.id.toString().padStart(6, '0')}.pdf`);
   };
 
   const generateAllReportsPDF = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(18);
+    // Landscape mode for wider tables
+    const doc = new jsPDF({ orientation: "landscape" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    doc.setFontSize(20);
+    doc.setTextColor(15, 23, 42);
     doc.text("Incident Reports Summary", 14, 20);
+    
     doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 26);
+    doc.setTextColor(100);
+    doc.text(`Generated on: ${format(new Date(), "PPpp")}`, 14, 28);
+    doc.text(`Total Reports: ${filteredReports.length}`, 14, 34);
 
     const rows = filteredReports.map((r: any) => [
-        format(new Date(r.dateOccurred), "MMM dd, yyyy"),
-        r.category.toUpperCase(),
-        r.severity.toUpperCase(),
-        r.title,
-        r.status.toUpperCase(),
-        r.partiesInvolved
+        `${format(new Date(r.dateOccurred), "MMM dd, yyyy")}\n${r.timeOccurred}`,
+        r.location || 'N/A',
+        `${categories.find(c=>c.id===r.category)?.label || r.category.toUpperCase()}\n(${r.severity.toUpperCase()})`,
+        `${r.title}\n\n${r.description}`,
+        r.partiesInvolved || 'None',
+        r.status.toUpperCase()
     ]);
 
     autoTable(doc, {
-        head: [["Date", "Cat", "Sev", "Title", "Status", "Involved"]],
+        head: [["Date & Time", "Location", "Category & Severity", "Incident Details", "Parties Involved", "Status"]],
         body: rows,
-        startY: 35,
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [15, 23, 42] }
+        startY: 40,
+        styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
+        columnStyles: { 
+          0: { cellWidth: 30 },
+          1: { cellWidth: 30 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 'auto' }, // Description takes remaining space and wraps
+          4: { cellWidth: 40 },
+          5: { cellWidth: 25 }
+        },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
     });
 
-    doc.save("all_reports_summary.pdf");
+    // FOOTER (Pagination)
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for(let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    }
+
+    doc.save(`All_Reports_${format(new Date(), "yyyy-MM-dd")}.pdf`);
   };
 
   // --- FORM HANDLING ---
