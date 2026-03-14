@@ -569,22 +569,25 @@ export default function TeamManagement() {
               {selectedMember && (
                 <div className="space-y-6 py-4">
                   {/* Account Status */}
-                  <div className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-slate-50/50">
+                  <div className={cn("flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm", user?.role === 'manager' ? "bg-slate-100/50 opacity-70" : "bg-slate-50/50")}>
                     <div className="space-y-0.5">
                       <Label className="text-sm font-bold text-slate-800">Account Active</Label>
-                      <p className="text-xs text-slate-500">Allow user to log in and use the system.</p>
+                      <p className="text-xs text-slate-500">
+                        {user?.role === 'manager' ? "Only Administrators can modify account status." : "Allow user to log in and use the system."}
+                      </p>
                     </div>
                     <Switch 
                       checked={editForm.isActive} 
                       onCheckedChange={(val) => setEditForm(prev => ({ ...prev, isActive: val }))} 
+                      disabled={user?.role === 'manager'}
                     />
                   </div>
 
                   {/* Role Assignment */}
                   <div className="space-y-2">
                     <Label className="text-sm font-bold text-slate-800">System Role</Label>
-                    <Select value={editForm.role} onValueChange={(val) => setEditForm(prev => ({ ...prev, role: val }))}>
-                        <SelectTrigger className="w-full">
+                    <Select value={editForm.role} onValueChange={(val) => setEditForm(prev => ({ ...prev, role: val }))} disabled={user?.role === 'manager'}>
+                        <SelectTrigger className={cn("w-full", user?.role === 'manager' && "opacity-70")}>
                           <SelectValue placeholder="Select role..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -595,6 +598,7 @@ export default function TeamManagement() {
                             <SelectItem value="admin">Administrator</SelectItem>
                         </SelectContent>
                     </Select>
+                    {user?.role === 'manager' && <p className="text-[11px] text-slate-400 mt-1">Role modification is restricted to Administrators.</p>}
                   </div>
 
                   {/* Leave Balances */}

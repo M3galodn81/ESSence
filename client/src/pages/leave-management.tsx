@@ -19,7 +19,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertLeaveRequestSchema } from "@shared/schema";
 import { z } from "zod";
-import { Loader2, Calendar, Clock, Plus, Check, X, Activity, User, FileDown, Filter, PieChart, Users, ChevronsUpDown, Search, ChevronDown, Baby, FileText, ExternalLink, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, Calendar, Clock, Plus, Check, X, Activity, FileDown, Filter, PieChart, Users, ChevronsUpDown, Search, ChevronDown, Baby, FileText, ExternalLink, AlertCircle, CheckCircle2 } from "lucide-react";
 import { DayPicker } from "react-day-picker"; 
 import "react-day-picker/dist/style.css"; 
 import type { LeaveRequest, User as UserType } from "@shared/schema";
@@ -27,7 +27,8 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Avatar, AvatarImage, AvatarFallback } from "@radix-ui/react-avatar";
+// FIX: Imported Avatar from your UI components folder instead of raw Radix to preserve styles
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { format } from "date-fns";
 
 // --- GLOBAL HELPERS & MAPPINGS ---
@@ -70,6 +71,19 @@ const getAvailableLeaveTypes = (user: UserType | null) => {
   }
 
   return types;
+};
+
+// --- REUSABLE AVATAR COMPONENT ---
+const UserAvatar = ({ user, className, fallbackClassName }: { user?: UserType | null, className?: string, fallbackClassName?: string }) => {
+  const initials = getInitials(user?.firstName, user?.lastName);
+  return (
+    <Avatar className={cn("border border-slate-200 shrink-0 bg-white", className)}>
+      <AvatarImage src={user?.profilePicture || ""} alt={`${user?.firstName} ${user?.lastName}`} className="object-cover" />
+      <AvatarFallback className={cn("bg-slate-100 text-slate-600 font-bold flex items-center justify-center w-full h-full", fallbackClassName)}>
+        {initials}
+      </AvatarFallback>
+    </Avatar>
+  );
 };
 
 // --- SCHEMAS ---
@@ -357,12 +371,10 @@ export default function LeaveManagement() {
     }
   };
 
-  // --- COMPREHENSIVE PDF DOWNLOAD ---
   const downloadPDF = () => {
     const doc = new jsPDF({ orientation: "landscape" });
     
-    // Create a deeply copied array to sort without mutating the original state
-    let dataToExport = canManageLeaves ? [...mgrFilteredRequests] : [...filteredRequests];
+    const dataToExport = canManageLeaves ? mgrFilteredRequests : filteredRequests;
     const reportTitle = canManageLeaves ? "Organization Leave Report" : "My Leave History";
 
     if (!dataToExport || dataToExport.length === 0) { 
@@ -370,51 +382,20 @@ export default function LeaveManagement() {
         return; 
     }
 
-    // Sort logically: Manager sees grouped by name, then date. Employee sees date descending.
-    dataToExport.sort((a, b) => {
-        if (canManageLeaves) {
-            const nameA = getUserName(a.userId).toLowerCase();
-            const nameB = getUserName(b.userId).toLowerCase();
-            if (nameA < nameB) return -1;
-            if (nameA > nameB) return 1;
-        }
-        return new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime();
-    });
-
-    // 1. Header
-    doc.setFontSize(20);
-    doc.setTextColor(15, 23, 42); // Slate 900
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42); 
     doc.text(reportTitle, 14, 20);
     
     doc.setFontSize(10);
-    doc.setTextColor(100); // Slate 500
-    doc.text(`Generated on: ${format(new Date(), "PPpp")}`, 14, 28);
-    
-    // 2. Summary Row
-    const approved = dataToExport.filter(r => r.status === 'approved').length;
-    const pending = dataToExport.filter(r => r.status === 'pending').length;
-    const rejected = dataToExport.filter(r => r.status === 'rejected').length;
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.text(`Total Records: ${dataToExport.length}   |   Approved: ${approved}   |   Pending: ${pending}   |   Rejected: ${rejected}`, 14, 36);
+    doc.setTextColor(100);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 26);
 
-    // 3. Build Table Rows
     const rows = dataToExport.map((req: any) => {
-        // Merge Leave Type and Duration to save horizontal space
-        const typeDuration = `${LEAVE_TYPES[req.type] || req.type.toUpperCase()}\n${formatDate(req.startDate)} to ${formatDate(req.endDate)}`;
-        
-        // Merge Reason and Rejection Comments for context
-        let notes = req.reason ? `Reason: ${req.reason}` : "No reason provided";
-        if (req.status === 'rejected' && req.comments) {
-            notes += `\nRejection Note: ${req.comments}`;
-        }
-
         const baseRow = [
-            typeDuration,
-            `${req.days}`,
+            LEAVE_TYPES[req.type] || req.type.toUpperCase(),
+            `${formatDate(req.startDate)} to ${formatDate(req.endDate)}`,
+            `${req.days} Day(s)`,
             req.status.toUpperCase(),
-            notes,
             formatDate(req.createdAt)
         ];
 
@@ -425,61 +406,23 @@ export default function LeaveManagement() {
         return baseRow;
     });
 
-    // 4. Build Table Headers
     const head = canManageLeaves 
-        ? [["Employee", "Leave Type & Duration", "Days", "Status", "Reason / Notes", "Filed On"]]
-        : [["Leave Type & Duration", "Days", "Status", "Reason / Notes", "Filed On"]];
+        ? [["Employee", "Leave Type", "Duration", "Days", "Status", "Filed On"]]
+        : [["Leave Type", "Duration", "Days", "Status", "Filed On"]];
 
-    // 5. Draw AutoTable
     autoTable(doc, {
         head: head,
         body: rows,
-        startY: 42,
-        theme: 'grid',
-        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' }, 
-        styles: { fontSize: 8, cellPadding: 4, overflow: 'linebreak' },
-        columnStyles: canManageLeaves ? {
-            0: { cellWidth: 35, fontStyle: 'bold' }, // Employee
-            1: { cellWidth: 50 }, // Type & Duration
-            2: { cellWidth: 15, halign: 'center' }, // Days
-            3: { cellWidth: 25, fontStyle: 'bold' }, // Status
-            4: { cellWidth: 'auto' }, // Notes (expands)
-            5: { cellWidth: 25 } // Filed On
-        } : {
-            0: { cellWidth: 55, fontStyle: 'bold' }, // Type & Duration
-            1: { cellWidth: 20, halign: 'center' }, // Days
-            2: { cellWidth: 30, fontStyle: 'bold' }, // Status
-            3: { cellWidth: 'auto' }, // Notes
-            4: { cellWidth: 30 } // Filed On
-        },
-        // Colorize the Status column dynamically
-        didParseCell: function (data) {
-            const statusColIndex = canManageLeaves ? 3 : 2;
-            if (data.section === 'body' && data.column.index === statusColIndex) {
-                if (data.cell.raw === 'APPROVED') {
-                    data.cell.styles.textColor = [16, 185, 129]; // Emerald 500
-                } else if (data.cell.raw === 'REJECTED') {
-                    data.cell.styles.textColor = [244, 63, 94]; // Rose 500
-                } else if (data.cell.raw === 'PENDING') {
-                    data.cell.styles.textColor = [245, 158, 11]; // Amber 500
-                }
-            }
-        }
+        startY: 35,
+        theme: 'striped',
+        headStyles: { fillColor: [15, 23, 42] }, 
+        styles: { fontSize: 9, cellPadding: 3 },
+        alternateRowStyles: { fillColor: [248, 250, 252] } 
     });
 
-    // 6. Add Page Numbers
-    const pageCount = (doc as any).internal.getNumberOfPages();
-    for(let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setTextColor(150);
-        doc.text(`Page ${i} of ${pageCount}`, doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
-    }
-
-    // 7. Save
     const fileName = canManageLeaves 
-        ? `Organization_Leave_Report_${format(new Date(), "yyyy-MM-dd")}.pdf` 
-        : `My_Leave_History_${format(new Date(), "yyyy-MM-dd")}.pdf`;
+        ? `leave_report_${format(new Date(), "yyyy-MM-dd")}.pdf` 
+        : `my_leaves_${format(new Date(), "yyyy-MM-dd")}.pdf`;
         
     doc.save(fileName);
     toast.success("PDF downloaded successfully!");
@@ -516,54 +459,57 @@ export default function LeaveManagement() {
                 <FileDown className="w-4 h-4 mr-2" /> Download Report
             </Button>
 
-            <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) form.reset(); }}>
-                <DialogTrigger asChild>
-                    <Button className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white shadow-lg rounded-full px-6">
-                    <Plus className="w-4 h-4 mr-2" /> Apply for Leave
-                    </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-lg w-[95vw] rounded-2xl p-4 md:p-6">
-                    <DialogHeader>
-                    <DialogTitle>Apply for Leave</DialogTitle>
-                    <DialogDescription>Submit a new request for time off</DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 md:space-y-5 mt-2">
-                    <div className="space-y-2">
-                        <Label>Leave Type</Label>
-                        <Select onValueChange={(value) => form.setValue("type", value)} defaultValue="annual">
-                        <SelectTrigger className="rounded-xl w-full"><SelectValue /></SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                            {availableLeaveTypes.map(leave => (
-                                <SelectItem key={leave.id} value={leave.id}>{leave.label}</SelectItem>
-                            ))}
-                        </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                        <Label>Start Date</Label>
-                        <Input type="date" className="rounded-xl w-full" min={getMinStartDate()} {...form.register("startDate")} />
-                        {form.formState.errors.startDate && <p className="text-xs text-red-500">{form.formState.errors.startDate.message}</p>}
-                        </div>
-                        <div className="space-y-2">
-                        <Label>End Date</Label>
-                        <Input type="date" className="rounded-xl w-full" min={form.watch("startDate")} {...form.register("endDate")} />
-                        {form.formState.errors.endDate && <p className="text-xs text-red-500">{form.formState.errors.endDate.message}</p>}
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Reason (Optional)</Label>
-                        <Textarea className="rounded-xl resize-none w-full" rows={3} {...form.register("reason")} placeholder="Why are you taking leave?" />
-                    </div>
-                    <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
-                        <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="rounded-full w-full sm:w-auto">Cancel</Button>
-                        <Button type="submit" disabled={createLeaveRequestMutation.isPending} className="rounded-full bg-slate-900 w-full sm:w-auto">
-                        {createLeaveRequestMutation.isPending ? "Submitting..." : "Submit Request"}
+            {/* FIX: Hide the "Apply for Leave" button if the user is a manager */}
+            {!canManageLeaves && (
+                <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) form.reset(); }}>
+                    <DialogTrigger asChild>
+                        <Button className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white shadow-lg rounded-full px-6">
+                        <Plus className="w-4 h-4 mr-2" /> Apply for Leave
                         </Button>
-                    </div>
-                    </form>
-                </DialogContent>
-            </Dialog>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-lg w-[95vw] rounded-2xl p-4 md:p-6">
+                        <DialogHeader>
+                        <DialogTitle>Apply for Leave</DialogTitle>
+                        <DialogDescription>Submit a new request for time off</DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 md:space-y-5 mt-2">
+                        <div className="space-y-2">
+                            <Label>Leave Type</Label>
+                            <Select onValueChange={(value) => form.setValue("type", value)} defaultValue="annual">
+                            <SelectTrigger className="rounded-xl w-full"><SelectValue /></SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                                {availableLeaveTypes.map(leave => (
+                                    <SelectItem key={leave.id} value={leave.id}>{leave.label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                            <Label>Start Date</Label>
+                            <Input type="date" className="rounded-xl w-full" min={getMinStartDate()} {...form.register("startDate")} />
+                            {form.formState.errors.startDate && <p className="text-xs text-red-500">{form.formState.errors.startDate.message}</p>}
+                            </div>
+                            <div className="space-y-2">
+                            <Label>End Date</Label>
+                            <Input type="date" className="rounded-xl w-full" min={form.watch("startDate")} {...form.register("endDate")} />
+                            {form.formState.errors.endDate && <p className="text-xs text-red-500">{form.formState.errors.endDate.message}</p>}
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Reason (Optional)</Label>
+                            <Textarea className="rounded-xl resize-none w-full" rows={3} {...form.register("reason")} placeholder="Why are you taking leave?" />
+                        </div>
+                        <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
+                            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} className="rounded-full w-full sm:w-auto">Cancel</Button>
+                            <Button type="submit" disabled={createLeaveRequestMutation.isPending} className="rounded-full bg-slate-900 w-full sm:w-auto">
+                            {createLeaveRequestMutation.isPending ? "Submitting..." : "Submit Request"}
+                            </Button>
+                        </div>
+                        </form>
+                    </DialogContent>
+                </Dialog>
+            )}
         </div>
       </div>
 
@@ -741,8 +687,13 @@ export default function LeaveManagement() {
                         {mgrFilteredRequests.map((request) => (
                           <div key={request.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 md:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all group gap-4">
                             <div className="flex items-start gap-3 md:gap-4 w-full md:w-auto">
-                                <div className={`h-10 w-10 md:h-12 md:w-12 rounded-full flex items-center justify-center shrink-0 border ${request.status === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                                  <User className="w-5 h-5" />
+                                <div className="relative shrink-0">
+                                    <UserAvatar user={users?.find(u => u.id === request.userId)} className="h-10 w-10 md:h-12 md:w-12" fallbackClassName="text-sm md:text-base" />
+                                    {request.status === 'pending' && (
+                                        <div className="absolute -bottom-1 -right-1 bg-amber-100 border-2 border-white rounded-full p-1">
+                                            <Clock className="w-3 h-3 text-amber-600" />
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <h4 className="font-bold text-slate-900 text-base md:text-lg flex flex-wrap items-center gap-2 leading-tight">
@@ -801,6 +752,7 @@ export default function LeaveManagement() {
                                         <div className={cn("flex items-center justify-center w-8 h-8 rounded-full font-bold text-xs shadow-sm border shrink-0", i < 3 ? "bg-blue-50 text-blue-700 border-blue-100" : "bg-slate-50 text-slate-600 border-slate-200")}>
                                             {i + 1}
                                         </div>
+                                        <UserAvatar user={users?.find(u => u.id === stat.id)} className="h-10 w-10 hidden sm:flex" fallbackClassName="text-sm" />
                                         <div className="min-w-0">
                                             <p className="font-bold text-slate-900 text-sm md:text-base truncate">{stat.name}</p>
                                             <div className="flex flex-wrap gap-2 md:gap-3 text-[10px] md:text-xs font-medium text-slate-500 mt-0.5">
@@ -920,12 +872,7 @@ export default function LeaveManagement() {
                     <div className="bg-white p-4 md:p-6 lg:p-8 border-b border-slate-200">
                         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                             <div className="flex items-center gap-4 w-full md:w-auto">
-                                <Avatar className="h-14 w-14 md:h-16 md:w-16 border-2 border-white shadow-md shrink-0">
-                                    <AvatarImage src={users?.find(u => u.id === selectedRequest.userId)?.profilePicture || ""} />
-                                    <AvatarFallback className="bg-blue-100 text-blue-700 text-lg md:text-xl font-bold">
-                                        {getInitials(users?.find(u => u.id === selectedRequest.userId)?.firstName || "", users?.find(u => u.id === selectedRequest.userId)?.lastName || "")}
-                                    </AvatarFallback>
-                                </Avatar>
+                                <UserAvatar user={users?.find(u => u.id === selectedRequest.userId)} className="h-14 w-14 md:h-16 md:w-16 shadow-md" fallbackClassName="text-lg md:text-xl bg-blue-100 text-blue-700" />
                                 <div className="min-w-0">
                                     <h2 className="text-xl md:text-2xl font-bold text-slate-900 truncate">{getUserName(selectedRequest.userId)}</h2>
                                     <p className="text-slate-500 text-xs md:text-sm font-medium flex items-center gap-2 mt-1 flex-wrap">

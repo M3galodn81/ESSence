@@ -81,7 +81,7 @@ const managementItems = [
   { path: "/shift-management", label: "Shift Management", icon: Calendar, permission: Permission.MANAGE_SCHEDULES },
   { path: "/labor-cost-analytics", label: "Labor Analytics", icon: Briefcase, permission: Permission.VIEW_LABOR_COST },
   { path: "/manager-attendance", label: "Manager Attendance", icon: FileText, permission: Permission.MANAGE_ATTENDANCE },
-  { path: "/admin-logs", label: "System Audit Logs", icon: Shield, permission: Permission.VIEW_AUDIT_LOGS },
+  // { path: "/admin-logs", label: "System Audit Logs", icon: Shield, permission: Permission.VIEW_AUDIT_LOGS },
 ];
 
 const payrollItems = [

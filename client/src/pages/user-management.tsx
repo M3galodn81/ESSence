@@ -1,4 +1,4 @@
-import { useState, useEffect, useDeferredValue } from "react";
+import { useState, useEffect, useDeferredValue, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,44 +12,91 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
-  UserPlus,
-  Users,
-  Shield,
-  Edit,
-  Trash2,
-  Key,
-  Briefcase,
-  AlertTriangle,
-  UserCheck,
-  Search,
-  MapPin,
-  Phone
+  UserPlus, Users, Shield, Edit, Trash2, Key, Briefcase, AlertTriangle, 
+  UserCheck, Search, MapPin, Phone, Loader2, Save, X
 } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { usePermission } from "@/hooks/use-permission"; // <-- Added RBAC hook
-import { Permission, Role } from "@/lib/permissions";   // <-- Added Enums
+import { usePermission } from "@/hooks/use-permission"; 
+import { Permission } from "@/lib/permissions"; 
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { BentoCard } from "@/components/custom/bento-card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { cn } from "@/lib/utils";
+import type { User as UserType } from "@shared/schema";
 
-// --- Helpers ---
+// --- ORG STRUCTURE CONSTANTS ---
+const DEPARTMENTS = [
+  "Kitchen",
+  "Service",
+  "Management",
+  "Human Resources",
+  "Administration",
+  "Finance",
+];
+
+// Mapping Roles to allowed Departments
+const ROLE_DEPARTMENTS_MAP: Record<string, string[]> = {
+  admin: ["Administration", "Management", "Human Resources"],
+  hr: ["Human Resources", "Administration"],
+  manager: ["Management"],
+  payroll_officer: ["Finance"],
+  employee: ["Kitchen", "Service"]
+};
+
+// Mapping Departments to allowed Positions
+const POSITIONS_MAP: Record<string, string[]> = {
+  "Kitchen": ["Head Chef", "Sous Chef", "Line Cook", "Prep Cook", "Dishwasher"],
+  "Service": ["Head Waiter", "Server", "Bartender", "Host/Hostess", "Busser"],
+  "Management": ["General Manager", "Assistant Manager", "Shift Supervisor", "Floor Manager"],
+  "Human Resources": ["HR Director", "HR Manager", "HR Generalist", "Recruiter", "Training Coordinator"],
+  "Administration": ["System Administrator"],
+  "Finance": ["Payroll Officer", "Accountant", "Clerk"],
+};
+
+// --- SEPARATED STYLES ---
+const styles = {
+  container: "p-6 md:p-8 max-w-[1600px] mx-auto space-y-8",
+  headerRow: "flex flex-col md:flex-row md:items-center justify-between gap-4",
+  title: "text-3xl font-bold tracking-tight text-slate-900",
+  subtitle: "text-slate-500 mt-1 text-sm",
+  addBtn: "bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/20 rounded-full px-6",
+  
+  toolbarCard: "flex flex-col xl:flex-row gap-4 justify-between items-start xl:items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm",
+  searchWrapper: "relative w-full xl:w-72",
+  searchInput: "pl-9 h-9 w-full bg-slate-50 border-slate-200 focus:bg-white transition-all rounded-lg",
+  filterGroup: "flex flex-wrap gap-2 w-full xl:w-auto",
+  filterLabel: "flex items-center gap-2 text-sm font-medium text-slate-600",
+  filterSelect: "w-[130px] h-9 text-xs",
+  sortSelect: "w-[160px] h-9 text-xs",
+  resetBtn: "h-9 text-xs text-red-500 hover:text-red-600 hover:bg-red-50",
+  
+  tableWrapper: "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden",
+  tableHead: "bg-slate-50/50",
+  tableRow: "hover:bg-slate-50/50 transition-colors",
+  
+  roleBadgeBase: "border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+  statusActive: "flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full w-fit border border-emerald-100",
+  statusInactive: "flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full w-fit border border-slate-200",
+  
+  viewHeaderCard: "flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100",
+  viewSectionTitle: "text-xs font-bold text-slate-900 uppercase tracking-wider pb-1 border-b border-slate-100",
+  
+  lockoutCard: "w-full max-w-md bg-white/60 backdrop-blur-xl border-slate-200/60 shadow-lg rounded-3xl",
+  lockoutContent: "py-12 text-center space-y-4",
+  lockoutIconBox: "w-16 h-16 bg-rose-50 rounded-full flex items-center justify-center mx-auto text-rose-500",
+};
+
+// --- HELPERS ---
 const formatDateForInput = (date?: number | string | Date | null) => {
   if (!date) return "";
   const d = new Date(date);
   return d.toISOString().split('T')[0];
 };
 
-// Parses ugly database constraints into friendly UI messages
 const parseUniqueConstraintError = (errorMessage: string): string => {
   const msg = errorMessage.toLowerCase();
   if (msg.includes("unique constraint failed") || msg.includes("already exists") || msg.includes("duplicate")) {
@@ -61,8 +108,7 @@ const parseUniqueConstraintError = (errorMessage: string): string => {
   return errorMessage || "An unexpected error occurred.";
 };
 
-// --- Schemas ---
-
+// --- SCHEMAS ---
 const addressSchema = z.object({
   street: z.string().min(1, "Street is required").trim(),
   city: z.string().min(1, "City is required").trim(),
@@ -78,7 +124,6 @@ const emergencyContactSchema = z.object({
 });
 
 const createUserSchema = z.object({
-  // Identity
   firstName: z.string().min(2, "First name is required").trim(),
   middleName: z.string().optional(),
   lastName: z.string().min(2, "Last name is required").trim(),
@@ -87,21 +132,18 @@ const createUserSchema = z.object({
   civilStatus: z.enum(["Single", "Married", "Widowed", "Separated", "Divorced"], { required_error: "Civil Status is required" }),
   nationality: z.string().min(2, "Nationality is required").default("Filipino"),
   
-  // Account
   username: z.string().min(3, "Username must be at least 3 characters").trim(),
   password: z.string().min(6, "Password must be at least 6 characters"),
   email: z.string().email("Invalid email address format").trim().toLowerCase(),
   role: z.enum(["employee", "manager", "payroll_officer", "admin", "hr"]),
   
-  // Employment
   employeeId: z.string().min(1, "Employee ID is required"),
   department: z.string().min(2, "Department is required").optional(),
   position: z.string().min(2, "Position is required").optional(),
-  employmentStatus: z.enum(["regular", "probationary", "contractual"]).default("contractual"), // <-- Updated Default
+  employmentStatus: z.enum(["regular", "probationary", "contractual"]).default("contractual"),
   hireDate: z.string().min(1, "Hire date is required"),
   managerId: z.string().optional(),
   
-  // Contact
   phoneNumber: z.string().min(10, "Valid mobile number is required").trim(),
   address: addressSchema,
   emergencyContact: emergencyContactSchema,
@@ -125,8 +167,7 @@ type CreateUserForm = z.infer<typeof createUserSchema>;
 type EditUserForm = z.infer<typeof editUserSchema>;
 type ChangePasswordForm = z.infer<typeof changePasswordSchema>;
 
-// --- Helper Components ---
-
+// --- HELPER COMPONENTS ---
 const ErrorMsg = ({ error }: { error?: { message?: string } }) => {
   if (!error?.message) return null;
   return <p className="text-xs text-rose-500 mt-1.5 font-medium flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> {error.message}</p>;
@@ -194,125 +235,193 @@ const PersonalInfoSection = ({ form }: { form: UseFormReturn<any> }) => (
     </div>
 );
 
-const EmploymentSection = ({ form, isEdit = false, managers }: { form: UseFormReturn<any>, isEdit?: boolean, managers: any[] }) => (
-    <div className="space-y-4">
-        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-            <Briefcase className="w-4 h-4 text-slate-500" /> Employment & Account
-        </h3>
-        
-        {/* IDs and Auto-gens */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
-            <div>
-                <Label className="text-slate-500">Hire Date *</Label>
-                <Input type="date" {...form.register("hireDate")} className="rounded-xl mt-1.5 bg-white" />
-                <ErrorMsg error={form.formState.errors.hireDate} />
-                {!isEdit && <p className="text-[10px] text-slate-400 mt-1">Used for ID generation</p>}
-            </div>
-             <div>
-                <Label className="text-slate-500">{isEdit ? "Employee ID" : "Auto-Generated ID"}</Label>
-                <Input {...form.register("employeeId")} readOnly={!isEdit} className={`rounded-xl mt-1.5 ${!isEdit ? "bg-slate-100 font-mono text-slate-500" : "bg-white"}`} />
-                <ErrorMsg error={form.formState.errors.employeeId} />
-            </div>
-            <div>
-                <Label className="text-slate-500">{isEdit ? "Username" : "Auto-Generated Username"}</Label>
-                <Input {...form.register("username")} readOnly={!isEdit} className={`rounded-xl mt-1.5 ${!isEdit ? "bg-slate-100 font-mono text-slate-500" : "bg-white"}`} />
-                <ErrorMsg error={form.formState.errors.username} />
-            </div>
-        </div>
+const EmploymentSection = ({ form, isEdit = false, managers }: { form: UseFormReturn<any>, isEdit?: boolean, managers: any[] }) => {
+    const role = form.watch("role");
+    const department = form.watch("department");
+    const position = form.watch("position");
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-                <Label>Department</Label>
-                <Input {...form.register("department")} className="rounded-xl mt-1.5" />
-                <ErrorMsg error={form.formState.errors.department} />
-            </div>
-            <div>
-                <Label>Position</Label>
-                <Input {...form.register("position")} className="rounded-xl mt-1.5" />
-                <ErrorMsg error={form.formState.errors.position} />
-            </div>
-        </div>
+    const [deptMode, setDeptMode] = useState<"select" | "custom">("select");
+    const [posMode, setPosMode] = useState<"select" | "custom">("select");
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-             <div>
-                <Label>Employment Status</Label>
-                <Select onValueChange={(val) => form.setValue("employmentStatus", val)} defaultValue={form.getValues("employmentStatus")}>
-                    <SelectTrigger className="rounded-xl mt-1.5"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="regular">Regular</SelectItem>
-                        <SelectItem value="probationary">Probationary</SelectItem>
-                        <SelectItem value="contractual">Contractual</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-            <div>
-                <Label>Role</Label>
-                <Select onValueChange={(val) => form.setValue("role", val)} defaultValue={form.getValues("role")}>
-                    <SelectTrigger className="rounded-xl mt-1.5"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                         <SelectItem value="admin">Admin</SelectItem>
-                         <SelectItem value="hr">HR</SelectItem>
-                         <SelectItem value="manager">Manager</SelectItem>
-                         <SelectItem value="payroll_officer">Payroll Officer</SelectItem>
-                         <SelectItem value="employee">Employee</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-        </div>
-        
-         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-             <div>
-                <Label>Email *</Label>
-                <Input type="email" {...form.register("email")} className="rounded-xl mt-1.5" />
-                <ErrorMsg error={form.formState.errors.email} />
-             </div>
-             {!isEdit && (
-                 <div>
-                    <Label>Password *</Label>
-                    <Input type="password" {...form.register("password")} className="rounded-xl mt-1.5" />
-                    <ErrorMsg error={form.formState.errors.password} />
-                 </div>
-             )}
-        </div>
+    // Get valid departments for the selected role
+    const availableDepartments = ROLE_DEPARTMENTS_MAP[role] || DEPARTMENTS;
 
-         {/* Manager Logic */}
-         {(form.watch("role") === "employee") && (
-            <div>
-                <Label>Manager (Optional)</Label>
-                <Select onValueChange={(value) => form.setValue("managerId", value)} defaultValue={form.getValues("managerId")}>
-                <SelectTrigger className="rounded-xl mt-1.5"><SelectValue placeholder="Select manager" /></SelectTrigger>
-                <SelectContent className="rounded-xl">
-                    <SelectItem value="none">No Manager</SelectItem>
-                    {managers.map((m: any) => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}
-                </SelectContent>
-                </Select>
-            </div>
-        )}
+    // Get valid positions for the selected department
+    const availablePositions = deptMode === "select" && DEPARTMENTS.includes(department) 
+        ? POSITIONS_MAP[department] || [] 
+        : [];
 
-        {isEdit && (
-            <div className="space-y-3 pt-4 border-t border-slate-100">
-                <h4 className="text-sm font-semibold text-slate-900">Leave Limits (Annual)</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <Label className="text-xs text-slate-500">Vacation Leave</Label>
-                      <Input type="number" {...form.register("annualLeaveBalanceLimit")} className="rounded-xl mt-1" />
-                      <ErrorMsg error={form.formState.errors.annualLeaveBalanceLimit} />
-                    </div>
-                    <div>
-                      <Label className="text-xs text-slate-500">Sick Leave</Label>
-                      <Input type="number" {...form.register("sickLeaveBalanceLimit")} className="rounded-xl mt-1" />
-                      <ErrorMsg error={form.formState.errors.sickLeaveBalanceLimit} />
-                    </div>
-                    <div>
-                      <Label className="text-xs text-slate-500">Service Incentive</Label>
-                      <Input type="number" {...form.register("serviceIncentiveLeaveBalanceLimit")} className="rounded-xl mt-1" />
-                      <ErrorMsg error={form.formState.errors.serviceIncentiveLeaveBalanceLimit} />
-                    </div>
+    // 1. Sync Custom/Select modes on mount or during edit initialization
+    useEffect(() => {
+        const d = form.getValues("department");
+        if (d && !DEPARTMENTS.includes(d)) setDeptMode("custom");
+        else setDeptMode("select");
+
+        const p = form.getValues("position");
+        const avail = DEPARTMENTS.includes(d) ? POSITIONS_MAP[d] || [] : [];
+        if (p && !avail.includes(p)) setPosMode("custom");
+        else setPosMode("select");
+    }, [isEdit, form]);
+
+    // 2. Clear department/position if role changes to one that doesn't support the current department
+    useEffect(() => {
+        const d = form.getValues("department");
+        if (deptMode === "select" && d && !availableDepartments.includes(d)) {
+            form.setValue("department", "", { shouldValidate: true });
+            form.setValue("position", "", { shouldValidate: true });
+        }
+    }, [role, availableDepartments, deptMode, form]);
+
+    const handleDeptChange = (val: string) => {
+        if (val === "custom") {
+            setDeptMode("custom");
+            form.setValue("department", "", { shouldValidate: true });
+            setPosMode("custom");
+            form.setValue("position", "", { shouldValidate: true });
+        } else {
+            setDeptMode("select");
+            form.setValue("department", val, { shouldValidate: true });
+            setPosMode("select");
+            form.setValue("position", "", { shouldValidate: true });
+        }
+    };
+
+    const handlePosChange = (val: string) => {
+        if (val === "custom") {
+            setPosMode("custom");
+            form.setValue("position", "", { shouldValidate: true });
+        } else {
+            setPosMode("select");
+            form.setValue("position", val, { shouldValidate: true });
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                <Briefcase className="w-4 h-4 text-slate-500" /> Employment & Account
+            </h3>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                <div>
+                    <Label className="text-slate-500">Hire Date *</Label>
+                    <Input type="date" {...form.register("hireDate")} className="rounded-xl mt-1.5 bg-white" />
+                    <ErrorMsg error={form.formState.errors.hireDate} />
+                    {!isEdit && <p className="text-[10px] text-slate-400 mt-1">Used for ID generation</p>}
+                </div>
+                <div>
+                    <Label className="text-slate-500">{isEdit ? "Employee ID" : "Auto-Generated ID"}</Label>
+                    <Input {...form.register("employeeId")} readOnly={!isEdit} className={`rounded-xl mt-1.5 ${!isEdit ? "bg-slate-100 font-mono text-slate-500" : "bg-white"}`} />
+                    <ErrorMsg error={form.formState.errors.employeeId} />
+                </div>
+                <div>
+                    <Label className="text-slate-500">{isEdit ? "Username" : "Auto-Generated Username"}</Label>
+                    <Input {...form.register("username")} readOnly={!isEdit} className={`rounded-xl mt-1.5 ${!isEdit ? "bg-slate-100 font-mono text-slate-500" : "bg-white"}`} />
+                    <ErrorMsg error={form.formState.errors.username} />
                 </div>
             </div>
-        )}
-    </div>
-);
+
+            {/* MOVED ROLE ABOVE DEPARTMENT TO ESTABLISH LOGICAL FLOW */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <Label>Role</Label>
+                    <Select onValueChange={(val) => form.setValue("role", val)} defaultValue={form.getValues("role")}>
+                        <SelectTrigger className="rounded-xl mt-1.5"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="hr">HR</SelectItem>
+                            <SelectItem value="manager">Manager</SelectItem>
+                            <SelectItem value="payroll_officer">Payroll Officer</SelectItem>
+                            <SelectItem value="employee">Employee</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div>
+                    <Label>Employment Status</Label>
+                    <Select onValueChange={(val) => form.setValue("employmentStatus", val)} defaultValue={form.getValues("employmentStatus")}>
+                        <SelectTrigger className="rounded-xl mt-1.5"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="regular">Regular</SelectItem>
+                            <SelectItem value="probationary">Probationary</SelectItem>
+                            <SelectItem value="contractual">Contractual</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <Label>Department</Label>
+                    {deptMode === "select" ? (
+                        <Select value={department || undefined} onValueChange={handleDeptChange}>
+                            <SelectTrigger className="rounded-xl mt-1.5"><SelectValue placeholder="Select Department" /></SelectTrigger>
+                            <SelectContent>
+                                {availableDepartments.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                                <SelectItem value="custom" className="text-blue-600 font-medium">Type Custom...</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    ) : (
+                        <div className="flex items-center gap-2 mt-1.5">
+                            <Input {...form.register("department")} placeholder="Type department name..." className="rounded-xl bg-white" autoFocus />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => handleDeptChange("")} title="Select from list" className="shrink-0 text-slate-400 hover:text-rose-500">
+                                <X className="w-4 h-4"/>
+                            </Button>
+                        </div>
+                    )}
+                    <ErrorMsg error={form.formState.errors.department} />
+                </div>
+                <div>
+                    <Label>Position</Label>
+                    {posMode === "select" ? (
+                        <Select value={position || undefined} onValueChange={handlePosChange} disabled={!department && deptMode === "select"}>
+                            <SelectTrigger className="rounded-xl mt-1.5"><SelectValue placeholder="Select Position" /></SelectTrigger>
+                            <SelectContent>
+                                {availablePositions.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                                <SelectItem value="custom" className="text-blue-600 font-medium">Type Custom...</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    ) : (
+                        <div className="flex items-center gap-2 mt-1.5">
+                            <Input {...form.register("position")} placeholder="Type position name..." className="rounded-xl bg-white" autoFocus />
+                            <Button type="button" variant="ghost" size="icon" onClick={() => handlePosChange("")} title="Select from list" className="shrink-0 text-slate-400 hover:text-rose-500">
+                                <X className="w-4 h-4"/>
+                            </Button>
+                        </div>
+                    )}
+                    <ErrorMsg error={form.formState.errors.position} />
+                </div>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <Label>Email *</Label>
+                    <Input type="email" {...form.register("email")} className="rounded-xl mt-1.5" />
+                    <ErrorMsg error={form.formState.errors.email} />
+                </div>
+                {!isEdit && (
+                    <div>
+                        <Label>Password *</Label>
+                        <Input type="password" {...form.register("password")} className="rounded-xl mt-1.5" />
+                        <ErrorMsg error={form.formState.errors.password} />
+                    </div>
+                )}
+            </div>
+
+            {(form.watch("role") === "employee") && (
+                <div>
+                    <Label>Manager (Optional)</Label>
+                    <Select onValueChange={(value) => form.setValue("managerId", value)} defaultValue={form.getValues("managerId")}>
+                    <SelectTrigger className="rounded-xl mt-1.5"><SelectValue placeholder="Select manager" /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                        <SelectItem value="none">No Manager</SelectItem>
+                        {managers.map((m: any) => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName}</SelectItem>)}
+                    </SelectContent>
+                    </Select>
+                </div>
+            )}
+        </div>
+    );
+};
 
 const ContactSection = ({ form }: { form: UseFormReturn<any> }) => (
     <div className="space-y-4">
@@ -380,9 +489,8 @@ const ContactSection = ({ form }: { form: UseFormReturn<any> }) => (
 
 export default function UserManagement() {
   const { user } = useAuth();
-  const { hasPermission } = usePermission(); // Integrate RBAC
+  const { hasPermission } = usePermission(); 
 
-  // Verify access using the new permission enums
   const canManageUsers = hasPermission(Permission.MANAGE_USERS);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -392,7 +500,6 @@ export default function UserManagement() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [isDemotionAlertOpen, setIsDemotionAlertOpen] = useState(false);
   
-  // Search State
   const [searchQuery, setSearchQuery] = useState("");
   const deferredQuery = useDeferredValue(searchQuery);
 
@@ -401,7 +508,7 @@ export default function UserManagement() {
     defaultValues: {
       role: "employee",
       nationality: "Filipino",
-      employmentStatus: "contractual", // Applied Default update
+      employmentStatus: "contractual",
       address: { country: "Philippines" }
     },
   });
@@ -420,7 +527,7 @@ export default function UserManagement() {
 
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ["/api/users"],
-    enabled: canManageUsers, // Only fetch if allowed
+    enabled: canManageUsers, 
   });
 
   const filteredUsers = users.filter((u: any) => {
@@ -690,12 +797,11 @@ export default function UserManagement() {
     return <Badge variant="outline" className={`capitalize ${colors[role] || "bg-gray-100"} border px-2.5 py-0.5`}>{role.replace(/_/g, " ")}</Badge>;
   };
   
-  // Adjusted scoped modification check
   const canModifyUser = (targetUser: any) => {
     if (!canManageUsers) return false; 
     if (user?.role === "admin" || user?.role === "hr") return true; 
-    if (user?.id === targetUser.id) return true; // Modifying self
-    if (targetUser.managerId === user?.id) return true; // Line managers modifying direct reports
+    if (user?.id === targetUser.id) return true; 
+    if (targetUser.managerId === user?.id) return true; 
     return false;
   };
 
@@ -706,7 +812,6 @@ export default function UserManagement() {
     employees: users.filter((u: any) => u.role === 'employee').length,
   };
 
-  // Block users without proper access
   if (!canManageUsers) {
     return (
       <div className="p-8 flex justify-center items-center h-screen">
@@ -935,3 +1040,14 @@ export default function UserManagement() {
     </div>
   );
 }
+
+// Helper component for detail rows in dialog
+const DetailRow = ({ icon: Icon, label, value }: { icon: any, label: string, value: string }) => (
+    <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-slate-400">
+            <Icon className="w-3.5 h-3.5" />
+            <span className="text-[10px] uppercase font-semibold tracking-wider">{label}</span>
+        </div>
+        <p className="text-sm font-medium text-slate-700 pl-5.5 truncate" title={value}>{value}</p>
+    </div>
+);
